@@ -1,14 +1,24 @@
 {
   "name": "agenty",
-  "version": "1.0.0",
-  "description": "",
-  "main": "dist/index.js",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "build": "tsc"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "dependencies": {},
+  "dependencies": {
+    "lucide-react": "^0.576.0",
+    "next": "^16.1.6",
+    "openai": "^6.25.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zod": "^4.3.6"
+  },
   "devDependencies": {
-    "typescript": "^5.5.3"
-  },
-  "private": true
+    "@types/node": "25.3.3",
+    "prisma": "^7.4.2",
+    "typescript": "5.9.3"
+  }
 }
