@@ -10,13 +10,26 @@ export default function HomePage() {
     const handleMagicSubmit = async (description: string) => {
         setLoading(true);
         try {
-            setTimeout(() => {
-                console.log("Texto enviado:", description);
-                setLoading(false);
-                setStep(2);
-            }, 2000);
+            const response = await fetch("/api/onboarding", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ ownerDescription: description }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Error al procesar la descripción");
+            }
+
+            console.log("Configuración generada:", data.data);
+            setLoading(false);
+            setStep(2);
         } catch (error) {
-            alert("Hubo un error.");
+            console.error("Error:", error);
+            alert(error instanceof Error ? error.message : "Hubo un error al procesar tu descripción.");
             setLoading(false);
         }
     };
