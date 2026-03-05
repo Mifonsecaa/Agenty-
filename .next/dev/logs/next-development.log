@@ -1,4 +1,0 @@
-[00:00:12.851] Server  LOG     ✓ Ready in 8.2s
-[00:00:15.890] Server  LOG     ○ Compiling / ...
-[00:00:17.559] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[00:00:17.954] Browser WARN    Image with src "/logo.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio.
