@@ -70,29 +70,32 @@ const Header = () => {
           {/* Menus (Centrados) */}
           <div className="hidden md:flex flex-grow justify-center items-center space-x-8">
             {menuItems.map((item) => (
-              <div key={item.id} className="relative group">
-                <button className="text-gray-300 hover:text-white focus:outline-none">
-                  {item.title}
-                </button>
-                <div className="absolute left-0 mt-3 w-64 bg-[#0a0a0a]/90 border border-white/10 rounded-xl shadow-2xl z-50
-                                opacity-0 invisible group-hover:opacity-100 group-hover:visible 
-                                transition-all duration-300 overflow-hidden backdrop-blur-md">
-                  <div className="p-2 space-y-1">
-                    {item.links.map((link) => (
-                      <Link key={link.href} href={link.href} className="block px-4 py-3 text-sm text-gray-400 rounded-lg
-                                                                      hover:bg-purple-500/10 hover:text-purple-300 
-                                                                      transition-all duration-200 flex items-center gap-2">
-                        {link.label}
-                      </Link>
-                    ))}
+              <React.Fragment key={item.id}>
+                <div className="relative group">
+                  <button className="text-gray-300 hover:text-white focus:outline-none">
+                    {item.title}
+                  </button>
+                  <div className="absolute left-0 mt-3 w-64 bg-[#0a0a0a]/90 border border-white/10 rounded-xl shadow-2xl z-50
+                                  opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+                                  transition-all duration-300 overflow-hidden backdrop-blur-md">
+                    <div className="p-2 space-y-1">
+                      {item.links.map((link) => (
+                        <Link key={link.href} href={link.href} className="block px-4 py-3 text-sm text-gray-400 rounded-lg
+                                                                        hover:bg-purple-500/10 hover:text-purple-300 
+                                                                        transition-all duration-200 flex items-center gap-2">
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+                {item.id === 'services' && (
+                  <Link href="/pricing" className="text-gray-300 hover:text-white transition-colors">
+                    Precios
+                  </Link>
+                )}
+              </React.Fragment>
             ))}
-            {/* Enlace de Precios */}
-            <Link href="/pricing" className="text-gray-300 hover:text-white">
-              Precios
-            </Link>
           </div>
 
           {/* Auth Buttons */}

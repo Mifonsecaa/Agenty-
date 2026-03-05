@@ -48,9 +48,9 @@ const plans = [
 
 const PricingPage = () => {
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-24 sm:pt-32">
-      <div className="aurora-bg" />
-      <div className="container mx-auto px-6 py-12">
+    <div className="min-h-screen bg-[#050505] text-white pt-24 sm:pt-32 relative overflow-hidden">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="container mx-auto px-6 py-12 relative z-10">
         <div className="text-center max-w-4xl mx-auto">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-white mb-4">
             Planes diseñados para tu negocio
@@ -64,37 +64,39 @@ const PricingPage = () => {
           {plans.map((plan) => (
             <div
               key={plan.name}
-              className={`relative flex flex-col p-8 rounded-2xl border ${
-                plan.isPopular ? 'border-purple-500 bg-gray-800' : 'border-gray-700 bg-gray-800/50'
-              }`}
+              className={`relative flex flex-col p-8 rounded-3xl transition-all duration-300 hover:-translate-y-2 ${plan.isPopular
+                  ? 'border border-purple-500/30 bg-[#111111] shadow-2xl shadow-purple-500/10'
+                  : 'border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md'
+                }`}
             >
               {plan.isPopular && (
                 <div className="absolute top-0 -translate-y-1/2 w-full flex justify-center">
-                  <span className="bg-purple-500 text-white text-xs font-semibold px-3 py-1 rounded-full uppercase">
+                  <span className="bg-purple-500/20 text-purple-400 border border-purple-500/30 text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest backdrop-blur-md">
                     Más Popular
                   </span>
                 </div>
               )}
-              <h3 className="text-2xl font-semibold">{plan.name}</h3>
-              <p className="mt-2 text-white/60">{plan.description}</p>
+              <h3 className="text-2xl font-bold tracking-tight">{plan.name}</h3>
+              <p className="mt-2 text-sm text-white/60 min-h-[40px]">{plan.description}</p>
               <div className="mt-6">
-                <span className="text-5xl font-bold">{plan.price}</span>
-                <span className="text-lg text-white/60">/mes</span>
+                <span className="text-5xl font-extrabold tracking-tight">{plan.price}</span>
+                <span className="text-lg text-white/40 font-medium">/mes</span>
               </div>
               <ul className="mt-8 space-y-4 flex-grow">
                 {plan.features.map((feature, index) => (
-                  <li key={index} className="flex items-start">
-                    <Check className="w-5 h-5 text-green-400 mr-3 flex-shrink-0 mt-1" />
+                  <li key={index} className="flex items-start text-sm text-white/80">
+                    <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
               <button
-                className={`mt-10 w-full py-3 rounded-lg font-semibold ${
-                  plan.isPopular
-                    ? 'bg-purple-600 hover:bg-purple-700'
-                    : 'bg-gray-600 hover:bg-gray-500'
-                }`}
+                className={`mt-10 w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 ${plan.isPopular
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
+                    : 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
+                  }`}
               >
                 Empezar con {plan.name}
               </button>

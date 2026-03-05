@@ -1,0 +1,13 @@
+[00:00:00.373] Server  WARN    ⚠ Turbopack's filesystem cache has been deleted because we previously detected an internal error in Turbopack. Builds or page loads may be slower as a result.
+[00:00:00.462] Server  LOG     ✓ Ready in 304ms
+[00:00:03.969] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:04.448] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[00:02:45.980] Server  LOG     ✓ Compiled in 52ms
+[00:03:52.957] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:03:53.201] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[00:04:45.780] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:04:45.929] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[00:06:23.037] Server  LOG     ✓ Compiled in 2ms
