@@ -68,7 +68,7 @@ const Header = () => {
           </div>
 
           {/* Menus (Centrados) */}
-          <div className="hidden md:flex flex-grow justify-center space-x-8">
+          <div className="hidden md:flex flex-grow justify-center items-center space-x-8">
             {menuItems.map((item) => (
               <div key={item.id} className="relative group">
                 <button className="text-gray-300 hover:text-white focus:outline-none">
@@ -89,6 +89,10 @@ const Header = () => {
                 </div>
               </div>
             ))}
+            {/* Enlace de Precios */}
+            <Link href="/pricing" className="text-gray-300 hover:text-white">
+              Precios
+            </Link>
           </div>
 
           {/* Auth Buttons */}
