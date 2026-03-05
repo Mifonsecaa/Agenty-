@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
+import Providers from "@/components/Providers"; // Asegurémonos de que Providers se importe
 
 export const metadata: Metadata = {
     title: "Agenty | IA para tu Negocio",
@@ -14,10 +15,11 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="es">
-        {/* El body renderizará el fondo oscuro y cualquier página que creemos */}
         <body>
-        <Header />
-        {children}
+          <Providers>
+            <Header />
+            {children}
+          </Providers>
         </body>
         </html>
     );
