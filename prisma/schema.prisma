@@ -9,15 +9,64 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-//Esta es la tabla B2B. Representa al dueño de la peluquería, el taller o el gimnasio.
-//La columna config de tipo Json es donde guardaremos el objeto que nuestro Agente de Onboarding generó en el paso anterior.
-//De esta manera, evitamos crear decenas de tablas para horarios de diferentes tipos de negocios.
+// --- Modelos de Next-Auth ---
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // Para el login con credenciales
+
+  accounts Account[]
+  sessions Session[]
+
+  // Relación: Un usuario (dueño) tiene un negocio
+  business Business?
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- Modelos de tu Aplicación ---
 
 model Business {
   id          String   @id @default(cuid())
-  name        String   // Ej: "Peluquería La 70" o "Crossfit Laureles"
-  ownerEmail  String   @unique // Correo del dueño (para login con Google)
-  phone       String?  @unique // El número de WhatsApp oficial del negocio
+  name        String
+  phone       String?  @unique
 
   // El núcleo del MVP universal: Aquí vive la configuración de aforos y horarios
   config      Json
@@ -25,46 +74,37 @@ model Business {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Relación con el Usuario (Dueño)
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Relación: Un negocio tiene muchas reservas
   reservations Reservation[]
 }
 
-// Esta tabla guarda a los usuarios que escriben por WhatsApp para agendar una cita.
-//Solo necesitamos su número de teléfono (que es su identificador único en WhatsApp) y su nombre si el bot logra preguntárselo o si Meta nos lo provee.
-
 model Customer {
   id          String   @id @default(cuid())
-  phone       String   @unique // El número de WhatsApp del cliente final
-  name        String?  // Ej: "Juan Pérez"
+  phone       String   @unique
+  name        String?
 
   createdAt   DateTime @default(now())
-
-  // Relación: Un cliente puede tener muchas reservas a lo largo del tiempo
   reservations Reservation[]
 }
 
-
-//Esta es la tabla más activa del sistema. Aquí el bot insertará un registro cada vez que confirme un turno.
-//Hemos agregado un @@index (índice) compuesto. Como el bot consultará constantemente si hay espacio a una hora específica para un negocio específico,
-// este índice hace que esa búsqueda sea instantánea, incluso si tienes millones de citas en la base de datos.
-
 model Reservation {
   id          String   @id @default(cuid())
-  startTime   DateTime // Cuándo empieza la clase o el corte de pelo
-  endTime     DateTime // Cuándo termina
-  status      String   @default("CONFIRMED") // Puede ser CONFIRMED, CANCELLED o COMPLETED
+  startTime   DateTime
+  endTime     DateTime
+  status      String   @default("CONFIRMED")
 
-  // Relación con el Negocio
   businessId  String
   business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  // Relación con el Cliente
   customerId  String
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Índice para que el bot consulte disponibilidad a la velocidad de la luz
   @@index([businessId, startTime])
 }
