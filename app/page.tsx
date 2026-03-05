@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import MagicBox from "../components/onboarding/MagicBox";
 import ParticleBackground from "../components/ui/ParticleBackground"; // <-- Importamos el nuevo componente
 
 export default function HomePage() {
+    const router = useRouter();
     const [loading, setLoading] = useState(false);
-    const [step, setStep] = useState(1);
 
     const handleMagicSubmit = async (description: string) => {
         setLoading(true);
@@ -25,8 +27,15 @@ export default function HomePage() {
             }
 
             console.log("Configuración generada:", data.data);
+
+            // Guardamos localmente para que el dashboard lo pueda leer
+            localStorage.setItem("agenty_config", JSON.stringify(data.data));
+
             setLoading(false);
-            setStep(2);
+
+            // Redirigir al Agent Builder
+            router.push("/dashboard/builder");
+
         } catch (error) {
             console.error("Error:", error);
             alert(error instanceof Error ? error.message : "Hubo un error al procesar tu descripción.");

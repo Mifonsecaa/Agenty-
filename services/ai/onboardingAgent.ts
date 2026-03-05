@@ -2,8 +2,8 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { BusinessConfigSchema, BusinessConfig } from "../../types/ai";
 
-// Inicializamos el cliente de OpenAI (Requiere que OPENAI_API_KEY esté en el archivo .env)
-const openai = new OpenAI();
+// MOCK: Comentado el cliente de OpenAI temporalmente para desarrollo visual
+// const openai = new OpenAI();
 
 export async function generateBusinessConfig(userInput: string): Promise<BusinessConfig> {
     const systemPrompt = `
@@ -18,27 +18,50 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
   `;
 
     try {
-        const response = await openai.beta.chat.completions.parse({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userInput }
+        // MOCK LOGIC: Generamos una configuración simulada (dummy data) basada levemente en el texto de entrada.
+        // En un entorno de producción, esto sería reemplazado por la llamada real a openai.beta.chat.completions.parse
+
+        const isPizzeria = userInput.toLowerCase().includes("pizza");
+        const nameMatch = userInput.match(/['"]([^'"]+)['"]/); // Buscar texto entre comillas
+
+        const generatedName = nameMatch ? nameMatch[1] : (isPizzeria ? "PizzaBot" : "Asistente Virtual");
+
+        const mockConfig: any = {
+            name: generatedName,
+            businessType: "INDIVIDUAL_APPOINTMENTS",
+            businessName: generatedName,
+            schedules: [
+                {
+                    activityName: "Atención al Cliente",
+                    daysOfWeek: [1, 2, 3, 4, 5, 6],
+                    startTime: "08:00",
+                    endTime: "20:00",
+                    maxCapacity: 1
+                }
             ],
-            // ¡Aquí está la magia! Obligamos a la IA a responder con la estructura exacta de Zod
-            response_format: zodResponseFormat(BusinessConfigSchema, "business_configuration"),
-            temperature: 0.2, // Baja temperatura para que sea analítico y no creativo
-        });
+            agentTone: "Amable, conversacional y muy servicial.",
+            defaultDurationMinutes: 30,
 
-        const parsedData = response.choices[0].message.parsed;
+            // Atributos extra para el Dashboard Visual
+            systemPrompt: `Eres '${generatedName}'. Tu objetivo principal es ayudar a los clientes basados en la siguiente descripción del dueño: "${userInput.substring(0, 100)}...". Eres extremadamente amable y usas emojis acorde al contexto. Nunca hables de temas fuera del negocio.`,
+            greeting: `¡Hola! Soy el asistente virtual de ${generatedName}. ¿En qué te ayudo hoy?`,
 
-        if (!parsedData) {
-            throw new Error("La IA no pudo generar la configuración.");
-        }
+            // Lógica simple para simular recomendaciones de Tools
+            recommendedTools: []
+        };
 
-        return parsedData;
+        if (userInput.toLowerCase().includes("calend")) mockConfig.recommendedTools.push(1); // Calendar
+        if (userInput.toLowerCase().includes("pago") || userInput.toLowerCase().includes("cobrar")) mockConfig.recommendedTools.push(2); // Pago
+        if (userInput.toLowerCase().includes("gmail") || userInput.toLowerCase().includes("correo")) mockConfig.recommendedTools.push(4); // Correo
+        if (userInput.toLowerCase().includes("inventario") || userInput.toLowerCase().includes("stock")) mockConfig.recommendedTools.push(3); // Shopify
+
+        // Simulamos un pequeño retraso de red ("pensando...")
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        return mockConfig;
 
     } catch (error) {
-        console.error("Error en el Onboarding Agent:", error);
-        throw new Error("Fallo al procesar el texto del negocio.");
+        console.error("Error en el Onboarding Agent Mock:", error);
+        throw new Error("Fallo al procesar el texto del negocio (Mock).");
     }
 }

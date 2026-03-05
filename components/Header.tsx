@@ -2,9 +2,20 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import { usePathname } from 'next/navigation';
+import { Bot } from 'lucide-react';
 
 const menuItems = [
+  {
+    title: 'Dashboard',
+    links: [
+      { href: '/dashboard', label: 'Overview' },
+      { href: '/dashboard/builder', label: 'Playground' },
+      { href: '/dashboard/knowledge', label: 'Conocimiento (RAG)' },
+      { href: '/dashboard/tools', label: 'Tienda de Tools' },
+      { href: '/dashboard/inbox', label: 'Inbox en Vivo' },
+    ],
+  },
   {
     title: 'Servicios',
     links: [
@@ -30,21 +41,24 @@ const menuItems = [
 
 const Header = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const pathname = usePathname();
+
+  // No mostrar el footer global en las páginas del dashboard
+  if (pathname?.startsWith('/dashboard')) {
+    return null;
+  }
 
   return (
-    <header className="bg-transparent shadow-md">
+    <header className="fixed top-0 w-full bg-black/50 backdrop-blur-md shadow-md z-50 border-b border-white/10">
       <nav className="container mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
           <div className="flex-shrink-0">
-            <Link href="/">
-              <Image
-                src="/logo.png" // Asegúrate de que tu logo esté en /public/logo.png
-                alt="Agenty Logo"
-                width={100} // Tamaño prudente, puedes ajustarlo
-                height={40}
-                className="h-10 w-auto" // Mantiene la proporción
-              />
+            <Link href="/" className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
+                <Bot className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-lg tracking-tight text-white">Agenty<span className="text-white/50">.ai</span></span>
             </Link>
           </div>
 
