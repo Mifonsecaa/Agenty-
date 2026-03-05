@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Bot } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
 
 const menuItems = [
   {
+    id: 'dashboard',
     title: 'Dashboard',
     links: [
       { href: '/dashboard', label: 'Overview' },
@@ -17,13 +19,15 @@ const menuItems = [
     ],
   },
   {
+    id: 'services',
     title: 'Servicios',
     links: [
-      { href: '/services/service-a', label: 'Servicio A' },
-      { href: '/services/service-b', label: 'Servicio B' },
+      { href: '/services/default-agents', label: 'Agentes predeterminados' },
+      { href: '/?demo=true', label: 'Prueba interactiva' },
     ],
   },
   {
+    id: 'about',
     title: 'Nosotros',
     links: [
       { href: '/about/team', label: 'Equipo' },
@@ -31,6 +35,7 @@ const menuItems = [
     ],
   },
   {
+    id: 'sources',
     title: 'Fuentes',
     links: [
       { href: '/sources/blog', label: 'Blog' },
@@ -40,10 +45,10 @@ const menuItems = [
 ];
 
 const Header = () => {
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const pathname = usePathname();
+  const { data: session, status } = useSession();
 
-  // No mostrar el footer global en las páginas del dashboard
+  // No mostrar el header en las páginas del dashboard
   if (pathname?.startsWith('/dashboard')) {
     return null;
   }
@@ -65,42 +70,53 @@ const Header = () => {
           {/* Menus (Centrados) */}
           <div className="hidden md:flex flex-grow justify-center space-x-8">
             {menuItems.map((item) => (
-              <div
-                key={item.title}
-                className="relative"
-                onMouseEnter={() => setOpenMenu(item.title)}
-                onMouseLeave={() => setOpenMenu(null)}
-              >
+              <div key={item.id} className="relative group">
                 <button className="text-gray-300 hover:text-white focus:outline-none">
                   {item.title}
                 </button>
-                {openMenu === item.title && (
-                  <div className="absolute left-0 mt-2 w-48 bg-black rounded-md shadow-lg z-10">
-                    <div className="py-1">
-                      {item.links.map((link) => (
-                        <Link key={link.href} href={link.href}>
-                          <p className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white">
-                            {link.label}
-                          </p>
-                        </Link>
-                      ))}
-                    </div>
+                <div className="absolute left-0 mt-2 w-56 bg-black rounded-md shadow-lg z-10
+                                opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+                                transition-all duration-300">
+                  <div className="py-1">
+                    {item.links.map((link) => (
+                      <Link key={link.href} href={link.href} className="block px-4 py-2 text-sm text-gray-300 
+                                                                      hover:bg-purple-600 hover:text-white 
+                                                                      hover:scale-105 transform transition-transform transition-colors duration-200">
+                        {link.label}
+                      </Link>
+                    ))}
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
 
           {/* Auth Buttons */}
           <div className="flex items-center space-x-4">
-            <Link href="/login">
-              <p className="text-gray-300 hover:text-white">Iniciar</p>
-            </Link>
-            <Link href="/register">
-              <p className="text-gray-300 border border-gray-500 px-4 py-2 rounded-md hover:text-white hover:border-white">
-                Registrarse
-              </p>
-            </Link>
+            {status === 'loading' ? (
+              <div className="w-24 h-8 bg-gray-700 rounded-md animate-pulse" />
+            ) : session ? (
+              <>
+                <span className="text-gray-300">Hola, {session.user?.name || session.user?.email}</span>
+                <button
+                  onClick={() => signOut({ callbackUrl: '/' })}
+                  className="text-gray-300 border border-gray-500 px-4 py-2 rounded-md hover:text-white hover:border-white"
+                >
+                  Cerrar Sesión
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <p className="text-gray-300 hover:text-white">Iniciar</p>
+                </Link>
+                <Link href="/register">
+                  <p className="text-gray-300 border border-gray-500 px-4 py-2 rounded-md hover:text-white hover:border-white">
+                    Registrarse
+                  </p>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>
