@@ -54,7 +54,7 @@ const Header = () => {
   }
 
   return (
-    <header className="fixed top-0 w-full bg-black/50 backdrop-blur-md shadow-md z-50 border-b border-white/10">
+    <header className="fixed top-0 w-full z-50">
       <nav className="container mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
@@ -74,14 +74,14 @@ const Header = () => {
                 <button className="text-gray-300 hover:text-white focus:outline-none">
                   {item.title}
                 </button>
-                <div className="absolute left-0 mt-2 w-56 bg-black rounded-md shadow-lg z-10
+                <div className="absolute left-0 mt-3 w-64 bg-[#0a0a0a]/90 border border-white/10 rounded-xl shadow-2xl z-50
                                 opacity-0 invisible group-hover:opacity-100 group-hover:visible 
-                                transition-all duration-300">
-                  <div className="py-1">
+                                transition-all duration-300 overflow-hidden backdrop-blur-md">
+                  <div className="p-2 space-y-1">
                     {item.links.map((link) => (
-                      <Link key={link.href} href={link.href} className="block px-4 py-2 text-sm text-gray-300 
-                                                                      hover:bg-purple-600 hover:text-white 
-                                                                      hover:scale-105 transform transition-transform transition-colors duration-200">
+                      <Link key={link.href} href={link.href} className="block px-4 py-3 text-sm text-gray-400 rounded-lg
+                                                                      hover:bg-purple-500/10 hover:text-purple-300 
+                                                                      transition-all duration-200 flex items-center gap-2">
                         {link.label}
                       </Link>
                     ))}

@@ -4,6 +4,17 @@ import { Search, MoreVertical, PauseCircle, Send, Users, CheckCircle } from "luc
 
 export default function Inbox() {
     const [takeover, setTakeover] = useState(false);
+    const [inputValue, setInputValue] = useState("");
+    const [isAiTyping, setIsAiTyping] = useState(false);
+
+    // Lista de mensajes dinámicos
+    const [conversation, setConversation] = useState([
+        { id: 1, role: "user", text: "Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?", time: "10:40 AM" },
+        { id: 2, role: "ai", text: "¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟", time: "10:40 AM" },
+        { id: 3, role: "user", text: "Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.", time: "10:42 AM" },
+        { id: 4, role: "system", text: "⚠️ El cliente solicitó un reembolso. Notificando a un humano.", time: "10:42 AM" }
+    ]);
+
     const [chats, setChats] = useState([
         {
             id: 1,
@@ -26,6 +37,40 @@ export default function Inbox() {
             }
         }
     }, []);
+
+    const handleSendMessage = () => {
+        if (!inputValue.trim()) return;
+
+        const newMessage = {
+            id: Date.now(),
+            role: takeover ? "human" : "user", // Si el humano tiene el control, envía como humano. Si no, simulamos que es el cliente respondiendo.
+            text: inputValue,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setConversation(prev => [...prev, newMessage]);
+        setInputValue("");
+
+        // Si la IA tiene el control y nosotros simulamos mandar un mensaje como usuario, la IA responde sola.
+        if (!takeover && newMessage.role === "user") {
+            setIsAiTyping(true);
+            setTimeout(() => {
+                setConversation(prev => [...prev, {
+                    id: Date.now() + 1,
+                    role: "ai",
+                    text: "Por supuesto, entiendo completamente. Déjame revisar nuestro sistema para procesar tu solicitud inmediatamente.",
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }]);
+                setIsAiTyping(false);
+            }, 2500);
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleSendMessage();
+        }
+    };
 
     return (
         <div className="h-full flex flex-col relative z-10">
@@ -119,61 +164,87 @@ export default function Inbox() {
 
                     {/* Chat Area */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#0a0a0a]">
-                        {/* User message */}
-                        <div className="flex justify-start">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm">
-                                Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?
-                                <p className="text-[10px] text-white/40 text-right mt-1">10:40 AM</p>
-                            </div>
-                        </div>
 
-                        {/* AI message */}
-                        <div className="flex justify-end">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none shadow-sm relative">
-                                <div className="absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase">
-                                    AI Respondió
+                        {conversation.map((msg) => {
+                            if (msg.role === "system") {
+                                return (
+                                    <div key={msg.id} className="flex justify-center my-6">
+                                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium shadow-sm">
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            const isOwnEntity = msg.role === "ai" || msg.role === "human"; // Derecha
+
+                            return (
+                                <div key={msg.id} className={`flex ${isOwnEntity ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm relative ${msg.role === "ai"
+                                        ? "bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none"
+                                        : msg.role === "human"
+                                            ? "bg-orange-600/20 border border-orange-500/30 text-white/90 rounded-br-none"
+                                            : "bg-white/10 text-white/90 rounded-bl-none border border-white/5"
+                                        }`}>
+
+                                        {msg.role === "ai" && (
+                                            <div className="absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase">
+                                                AI Respondió
+                                            </div>
+                                        )}
+                                        {msg.role === "human" && (
+                                            <div className="absolute -top-2.5 -right-2 bg-orange-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase flex items-center gap-1">
+                                                Tú <CheckCircle className="w-2 h-2" />
+                                            </div>
+                                        )}
+
+                                        {msg.text}
+
+                                        <p className={`text-[10px] text-right mt-1 ${isOwnEntity ? 'text-white/40' : 'text-white/40'}`}>
+                                            {msg.time}
+                                        </p>
+                                    </div>
                                 </div>
-                                ¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟
-                                <p className="text-[10px] text-blue-200/50 text-right mt-1">10:40 AM</p>
-                            </div>
-                        </div>
+                            );
+                        })}
 
-                        {/* User message */}
-                        <div className="flex justify-start">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm">
-                                Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.
-                                <p className="text-[10px] text-white/40 text-right mt-1">10:42 AM</p>
+                        {isAiTyping && (
+                            <div className="flex justify-end">
+                                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/10 border border-blue-500/20 text-white/90 rounded-br-none shadow-sm flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
-                        {/* System Notification */}
-                        <div className="flex justify-center my-6">
-                            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium">
-                                ⚠️ El cliente solicitó un reembolso. Notificando a un humano.
-                            </div>
-                        </div>
                     </div>
 
                     {/* Input Area */}
                     <div className={`p-4 border-t transition-colors ${takeover ? 'bg-orange-950/20 border-orange-500/20' : 'bg-[#111111] border-white/10'}`}>
-                        <div className="flex relative">
+                        <div className="flex relative items-center">
                             <input
                                 type="text"
-                                placeholder={takeover ? "Escribe un mensaje como humano..." : "La IA tiene el control. Pausa para intervenir."}
-                                disabled={!takeover}
+                                value={inputValue}
+                                onChange={(e) => setInputValue(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder={takeover ? "Escribe un mensaje como humano..." : "Escribe como cliente para probar la IA (o Pausa IA para tomar control)"}
                                 className={`w-full rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none transition-colors border ${takeover
                                     ? 'bg-[#0a0a0a] border-orange-500/30 text-white placeholder-white/40 focus:border-orange-500'
-                                    : 'bg-black/50 border-white/5 text-white/50 placeholder-white/20 cursor-not-allowed'
+                                    : 'bg-[#0a0a0a] border-white/10 text-white placeholder-white/40 focus:border-blue-500/50'
                                     }`}
                             />
                             <button
-                                disabled={!takeover}
-                                className={`absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${takeover
-                                    ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100'
-                                    : 'bg-white/10 opacity-50 cursor-not-allowed'
+                                onClick={handleSendMessage}
+                                disabled={!inputValue.trim()}
+                                className={`absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${inputValue.trim()
+                                    ? takeover
+                                        ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100 text-black'
+                                        : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 opacity-100 text-white'
+                                    : 'bg-white/10 opacity-50 cursor-not-allowed text-white/40'
                                     }`}
                             >
-                                <Send className={`w-4 h-4 ${takeover ? 'text-black' : 'text-white/40'}`} />
+                                <Send className="w-4 h-4" />
                             </button>
                         </div>
                         {takeover && (

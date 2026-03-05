@@ -1,0 +1,17 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/auth/login/page": "app/api/auth/login/page.js",
+  "/api/auth/nextauth/route": "app/api/auth/nextauth/route.js",
+  "/api/onboarding/route": "app/api/onboarding/route.js",
+  "/api/webhooks/telegram/route": "app/api/webhooks/telegram/route.js",
+  "/api/webhooks/whatsapp/route": "app/api/webhooks/whatsapp/route.js",
+  "/dashboard/builder/page": "app/dashboard/builder/page.js",
+  "/dashboard/inbox/page": "app/dashboard/inbox/page.js",
+  "/dashboard/knowledge/page": "app/dashboard/knowledge/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/dashboard/tools/page": "app/dashboard/tools/page.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/register/page": "app/register/page.js"
+}

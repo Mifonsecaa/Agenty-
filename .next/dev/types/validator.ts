@@ -47,15 +47,6 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 }
 
 
-// Validate ../../../app/api/auth/login/page.tsx
-{
-  type __IsExpected<Specific extends AppPageConfig<"/api/auth/login">> = Specific
-  const handler = {} as typeof import("../../../app/api/auth/login/page.js")
-  type __Check = __IsExpected<typeof handler>
-  // @ts-ignore
-  type __Unused = __Check
-}
-
 // Validate ../../../app/dashboard/builder/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/dashboard/builder">> = Specific

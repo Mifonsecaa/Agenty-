@@ -9,6 +9,28 @@ export default function BuilderPlayground() {
         { role: "assistant", text: "¡Hola! Soy tu asistente de prueba. ¿En qué te ayudo hoy?" }
     ]);
     const [input, setInput] = useState("");
+    const [showQrModal, setShowQrModal] = useState(false);
+    const [qrState, setQrState] = useState<"generating" | "ready" | "connected">("generating");
+
+    const handleDeploy = () => {
+        setShowQrModal(true);
+        setQrState("generating");
+
+        // Simular tiempo de generación del QR
+        setTimeout(() => {
+            setQrState("ready");
+
+            // Simular escaneo exitoso después de unos segundos
+            setTimeout(() => {
+                setQrState("connected");
+
+                // Cerrar modal automáticamente
+                setTimeout(() => {
+                    setShowQrModal(false);
+                }, 2000);
+            }, 6000); // 6 segundos para que el usuario "escanee"
+        }, 1500);
+    };
 
     // Cargar la configuración mágica generada desde la Home
     useEffect(() => {
@@ -40,8 +62,11 @@ export default function BuilderPlayground() {
                     <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all">
                         <Save className="w-4 h-4" /> Save Draft
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-lg shadow-blue-500/20 transition-all">
-                        <Play className="w-4 h-4" /> Deploy to WhatsApp
+                    <button
+                        onClick={handleDeploy}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-lg shadow-emerald-500/20 transition-all"
+                    >
+                        <Play className="w-4 h-4" /> Conectar WhatsApp
                     </button>
                 </div>
             </div>
@@ -144,6 +169,87 @@ export default function BuilderPlayground() {
                 </div>
 
             </div>
+
+            {/* WhatsApp QR Modal Overlay */}
+            {showQrModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowQrModal(false)} />
+
+                    <div className="relative bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-6">
+                            <Bot className="w-8 h-8 text-emerald-400" />
+                        </div>
+
+                        <h2 className="text-2xl font-bold mb-2">Conecta tu Número</h2>
+                        <p className="text-sm text-white/50 mb-8">
+                            Abre WhatsApp en tu teléfono, ve a Dispositivos Vinculados y escanea el código para desplegar a <strong className="text-white">'{agentName}'</strong>.
+                        </p>
+
+                        {/* QR Box */}
+                        <div className="w-48 h-48 bg-white rounded-2xl mb-8 relative flex items-center justify-center overflow-hidden">
+                            {qrState === "generating" && (
+                                <div className="absolute inset-0 bg-[#0a0a0a] flex flex-col items-center justify-center border border-white/10 rounded-2xl">
+                                    <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3" />
+                                    <p className="text-xs text-white/50 font-mono">Generando sesión...</p>
+                                </div>
+                            )}
+
+                            {qrState === "ready" && (
+                                <>
+                                    {/* Un QR simulado usando caracteres de bloque para no depender de imágenes reales */}
+                                    <pre className="text-black text-[6px] leading-[6px] tracking-tighter opacity-80 pointer-events-none select-none overflow-hidden h-full flex flex-col justify-center">
+                                        {"██████████████  ████  ██████████████\n" +
+                                            "██          ██  ██    ██          ██\n" +
+                                            "██  ██████  ██      ████  ██████  ██\n" +
+                                            "██  ██████  ██  ████  ██  ██████  ██\n" +
+                                            "██  ██████  ██  ██  ████  ██████  ██\n" +
+                                            "██          ██  ██    ██          ██\n" +
+                                            "██████████████  ██  ████████████████\n" +
+                                            "                ██████              \n" +
+                                            "████  ████  ████████    ██  ████  ██\n" +
+                                            "  ████    ████████  ████████    ████\n" +
+                                            "██  ████████  ████  ██    ██████  ██\n" +
+                                            "                ██████              \n" +
+                                            "██████████████  ████████  ████  ████\n" +
+                                            "██          ██  ██████  ██      ████\n" +
+                                            "██  ██████  ██      ████████  ██  ██\n" +
+                                            "██  ██████  ██  ██████  ████    ████\n" +
+                                            "██  ██████  ██  ████  ██      ██  ██\n" +
+                                            "██          ██    ██████      ██  ██\n" +
+                                            "██████████████  ████████████████████"}
+                                    </pre>
+
+                                    {/* Efecto láser escaneando */}
+                                    <div className="absolute top-0 left-0 w-full h-1 bg-emerald-400 shadow-[0_0_15px_#34d399] animate-[scan_2s_ease-in-out_infinite]" />
+                                </>
+                            )}
+
+                            {qrState === "connected" && (
+                                <div className="absolute inset-0 bg-emerald-500 flex flex-col items-center justify-center text-white">
+                                    <Sparkles className="w-12 h-12 mb-2 animate-bounce" />
+                                    <p className="font-bold">¡Conectado!</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={() => setShowQrModal(false)}
+                            className="text-sm text-white/40 hover:text-white transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Animación del láser QR (se podría mover a un CSS global para limpieza) */}
+            <style jsx>{`
+                @keyframes scan {
+                    0%, 100% { top: 0; }
+                    50% { top: 100%; }
+                }
+            `}</style>
+
         </div>
     );
 }

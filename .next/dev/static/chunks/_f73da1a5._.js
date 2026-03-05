@@ -22,6 +22,35 @@ var _s = __turbopack_context__.k.signature();
 function Inbox() {
     _s();
     const [takeover, setTakeover] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [inputValue, setInputValue] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])("");
+    const [isAiTyping, setIsAiTyping] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    // Lista de mensajes dinámicos
+    const [conversation, setConversation] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([
+        {
+            id: 1,
+            role: "user",
+            text: "Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?",
+            time: "10:40 AM"
+        },
+        {
+            id: 2,
+            role: "ai",
+            text: "¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟",
+            time: "10:40 AM"
+        },
+        {
+            id: 3,
+            role: "user",
+            text: "Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.",
+            time: "10:42 AM"
+        },
+        {
+            id: 4,
+            role: "system",
+            text: "⚠️ El cliente solicitó un reembolso. Notificando a un humano.",
+            time: "10:42 AM"
+        }
+    ]);
     const [chats, setChats] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([
         {
             id: 1,
@@ -45,6 +74,47 @@ function Inbox() {
             }
         }
     }["Inbox.useEffect"], []);
+    const handleSendMessage = ()=>{
+        if (!inputValue.trim()) return;
+        const newMessage = {
+            id: Date.now(),
+            role: takeover ? "human" : "user",
+            text: inputValue,
+            time: new Date().toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+            })
+        };
+        setConversation((prev)=>[
+                ...prev,
+                newMessage
+            ]);
+        setInputValue("");
+        // Si la IA tiene el control y nosotros simulamos mandar un mensaje como usuario, la IA responde sola.
+        if (!takeover && newMessage.role === "user") {
+            setIsAiTyping(true);
+            setTimeout(()=>{
+                setConversation((prev)=>[
+                        ...prev,
+                        {
+                            id: Date.now() + 1,
+                            role: "ai",
+                            text: "Por supuesto, entiendo completamente. Déjame revisar nuestro sistema para procesar tu solicitud inmediatamente.",
+                            time: new Date().toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })
+                        }
+                    ]);
+                setIsAiTyping(false);
+            }, 2500);
+        }
+    };
+    const handleKeyDown = (e)=>{
+        if (e.key === 'Enter') {
+            handleSendMessage();
+        }
+    };
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "h-full flex flex-col relative z-10",
         children: [
@@ -60,13 +130,13 @@ function Inbox() {
                                     className: "w-6 h-6 text-emerald-400"
                                 }, void 0, false, {
                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                    lineNumber: 35,
+                                    lineNumber: 80,
                                     columnNumber: 36
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                            lineNumber: 34,
+                            lineNumber: 79,
                             columnNumber: 21
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -74,18 +144,18 @@ function Inbox() {
                             children: "Supervisa las conversaciones de tu agente y toma el control si es necesario."
                         }, void 0, false, {
                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                            lineNumber: 37,
+                            lineNumber: 82,
                             columnNumber: 21
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                    lineNumber: 33,
+                    lineNumber: 78,
                     columnNumber: 17
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                lineNumber: 32,
+                lineNumber: 77,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -103,7 +173,7 @@ function Inbox() {
                                             className: "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 47,
+                                            lineNumber: 92,
                                             columnNumber: 29
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -112,18 +182,18 @@ function Inbox() {
                                             className: "w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 48,
+                                            lineNumber: 93,
                                             columnNumber: 29
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                    lineNumber: 46,
+                                    lineNumber: 91,
                                     columnNumber: 25
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                lineNumber: 45,
+                                lineNumber: 90,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -139,7 +209,7 @@ function Inbox() {
                                                         children: chat.clientMatch
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 61,
+                                                        lineNumber: 106,
                                                         columnNumber: 37
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -147,13 +217,13 @@ function Inbox() {
                                                         children: chat.time
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 62,
+                                                        lineNumber: 107,
                                                         columnNumber: 37
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 60,
+                                                lineNumber: 105,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -161,7 +231,7 @@ function Inbox() {
                                                 children: chat.lastMessage
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 64,
+                                                lineNumber: 109,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -171,7 +241,7 @@ function Inbox() {
                                                     children: "Urgente"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 67,
+                                                    lineNumber: 112,
                                                     columnNumber: 41
                                                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                     className: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 uppercase",
@@ -180,36 +250,36 @@ function Inbox() {
                                                             className: "w-3 h-3"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                            lineNumber: 70,
+                                                            lineNumber: 115,
                                                             columnNumber: 45
                                                         }, this),
                                                         " Resuelto"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 69,
+                                                    lineNumber: 114,
                                                     columnNumber: 41
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 65,
+                                                lineNumber: 110,
                                                 columnNumber: 33
                                             }, this)
                                         ]
                                     }, chat.id, true, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 59,
+                                        lineNumber: 104,
                                         columnNumber: 29
                                     }, this))
                             }, void 0, false, {
                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                lineNumber: 56,
+                                lineNumber: 101,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                        lineNumber: 44,
+                        lineNumber: 89,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -226,7 +296,7 @@ function Inbox() {
                                                 children: "J"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 85,
+                                                lineNumber: 130,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -236,7 +306,7 @@ function Inbox() {
                                                         children: "Juan Pérez (+57 300 123 4567)"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 89,
+                                                        lineNumber: 134,
                                                         columnNumber: 33
                                                     }, this),
                                                     takeover ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -246,7 +316,7 @@ function Inbox() {
                                                                 className: "w-3 h-3"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                                lineNumber: 92,
+                                                                lineNumber: 137,
                                                                 columnNumber: 41
                                                             }, this),
                                                             " ",
@@ -254,13 +324,13 @@ function Inbox() {
                                                                 children: "Agente Pausado. Estás respondiendo tú."
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                                lineNumber: 92,
+                                                                lineNumber: 137,
                                                                 columnNumber: 77
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 91,
+                                                        lineNumber: 136,
                                                         columnNumber: 37
                                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                         className: "text-xs text-emerald-400 flex items-center gap-1",
@@ -269,32 +339,32 @@ function Inbox() {
                                                                 className: "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                                lineNumber: 96,
+                                                                lineNumber: 141,
                                                                 columnNumber: 41
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                 children: "Agente AI manejando la conversación"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                                lineNumber: 97,
+                                                                lineNumber: 142,
                                                                 columnNumber: 41
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 95,
+                                                        lineNumber: 140,
                                                         columnNumber: 37
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 88,
+                                                lineNumber: 133,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 84,
+                                        lineNumber: 129,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -308,14 +378,14 @@ function Inbox() {
                                                         className: "w-4 h-4"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                        lineNumber: 111,
+                                                        lineNumber: 156,
                                                         columnNumber: 33
                                                     }, this),
                                                     takeover ? "Reactivar IA" : "Pausar IA (Takeover)"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 104,
+                                                lineNumber: 149,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -324,168 +394,189 @@ function Inbox() {
                                                     className: "w-5 h-5"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 115,
+                                                    lineNumber: 160,
                                                     columnNumber: 33
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 114,
+                                                lineNumber: 159,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 103,
+                                        lineNumber: 148,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                lineNumber: 83,
+                                lineNumber: 128,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "flex-1 overflow-y-auto p-6 space-y-6 bg-[#0a0a0a]",
                                 children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex justify-start",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm",
-                                            children: [
-                                                "Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?",
-                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                    className: "text-[10px] text-white/40 text-right mt-1",
-                                                    children: "10:40 AM"
+                                    conversation.map((msg)=>{
+                                        if (msg.role === "system") {
+                                            return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: "flex justify-center my-6",
+                                                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium shadow-sm",
+                                                    children: msg.text
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 126,
-                                                    columnNumber: 33
+                                                    lineNumber: 172,
+                                                    columnNumber: 41
                                                 }, this)
-                                            ]
-                                        }, void 0, true, {
+                                            }, msg.id, false, {
+                                                fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                lineNumber: 171,
+                                                columnNumber: 37
+                                            }, this);
+                                        }
+                                        const isOwnEntity = msg.role === "ai" || msg.role === "human"; // Derecha
+                                        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: `flex ${isOwnEntity ? 'justify-end' : 'justify-start'}`,
+                                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: `max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm relative ${msg.role === "ai" ? "bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none" : msg.role === "human" ? "bg-orange-600/20 border border-orange-500/30 text-white/90 rounded-br-none" : "bg-white/10 text-white/90 rounded-bl-none border border-white/5"}`,
+                                                children: [
+                                                    msg.role === "ai" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                        className: "absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase",
+                                                        children: "AI Respondió"
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                        lineNumber: 191,
+                                                        columnNumber: 45
+                                                    }, this),
+                                                    msg.role === "human" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                        className: "absolute -top-2.5 -right-2 bg-orange-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase flex items-center gap-1",
+                                                        children: [
+                                                            "Tú ",
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$circle$2d$check$2d$big$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__CheckCircle$3e$__["CheckCircle"], {
+                                                                className: "w-2 h-2"
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                                lineNumber: 197,
+                                                                columnNumber: 52
+                                                            }, this)
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                        lineNumber: 196,
+                                                        columnNumber: 45
+                                                    }, this),
+                                                    msg.text,
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                        className: `text-[10px] text-right mt-1 ${isOwnEntity ? 'text-white/40' : 'text-white/40'}`,
+                                                        children: msg.time
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                        lineNumber: 203,
+                                                        columnNumber: 41
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                lineNumber: 183,
+                                                columnNumber: 37
+                                            }, this)
+                                        }, msg.id, false, {
                                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 124,
-                                            columnNumber: 29
-                                        }, this)
-                                    }, void 0, false, {
-                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 123,
-                                        columnNumber: 25
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            lineNumber: 182,
+                                            columnNumber: 33
+                                        }, this);
+                                    }),
+                                    isAiTyping && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                         className: "flex justify-end",
                                         children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none shadow-sm relative",
+                                            className: "max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/10 border border-blue-500/20 text-white/90 rounded-br-none shadow-sm flex items-center gap-2",
                                             children: [
-                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                    className: "absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase",
-                                                    children: "AI Respondió"
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce",
+                                                    style: {
+                                                        animationDelay: '0ms'
+                                                    }
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 133,
-                                                    columnNumber: 33
+                                                    lineNumber: 214,
+                                                    columnNumber: 37
                                                 }, this),
-                                                "¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟",
-                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                    className: "text-[10px] text-blue-200/50 text-right mt-1",
-                                                    children: "10:40 AM"
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce",
+                                                    style: {
+                                                        animationDelay: '150ms'
+                                                    }
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 137,
-                                                    columnNumber: 33
+                                                    lineNumber: 215,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce",
+                                                    style: {
+                                                        animationDelay: '300ms'
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/dashboard/inbox/page.tsx",
+                                                    lineNumber: 216,
+                                                    columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 132,
-                                            columnNumber: 29
+                                            lineNumber: 213,
+                                            columnNumber: 33
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 131,
-                                        columnNumber: 25
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex justify-start",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm",
-                                            children: [
-                                                "Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.",
-                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                    className: "text-[10px] text-white/40 text-right mt-1",
-                                                    children: "10:42 AM"
-                                                }, void 0, false, {
-                                                    fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 145,
-                                                    columnNumber: 33
-                                                }, this)
-                                            ]
-                                        }, void 0, true, {
-                                            fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 143,
-                                            columnNumber: 29
-                                        }, this)
-                                    }, void 0, false, {
-                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 142,
-                                        columnNumber: 25
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex justify-center my-6",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium",
-                                            children: "⚠️ El cliente solicitó un reembolso. Notificando a un humano."
-                                        }, void 0, false, {
-                                            fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                            lineNumber: 151,
-                                            columnNumber: 29
-                                        }, this)
-                                    }, void 0, false, {
-                                        fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 150,
-                                        columnNumber: 25
+                                        lineNumber: 212,
+                                        columnNumber: 29
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                lineNumber: 121,
+                                lineNumber: 166,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: `p-4 border-t transition-colors ${takeover ? 'bg-orange-950/20 border-orange-500/20' : 'bg-[#111111] border-white/10'}`,
                                 children: [
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex relative",
+                                        className: "flex relative items-center",
                                         children: [
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
                                                 type: "text",
-                                                placeholder: takeover ? "Escribe un mensaje como humano..." : "La IA tiene el control. Pausa para intervenir.",
-                                                disabled: !takeover,
-                                                className: `w-full rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none transition-colors border ${takeover ? 'bg-[#0a0a0a] border-orange-500/30 text-white placeholder-white/40 focus:border-orange-500' : 'bg-black/50 border-white/5 text-white/50 placeholder-white/20 cursor-not-allowed'}`
+                                                value: inputValue,
+                                                onChange: (e)=>setInputValue(e.target.value),
+                                                onKeyDown: handleKeyDown,
+                                                placeholder: takeover ? "Escribe un mensaje como humano..." : "Escribe como cliente para probar la IA (o Pausa IA para tomar control)",
+                                                className: `w-full rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none transition-colors border ${takeover ? 'bg-[#0a0a0a] border-orange-500/30 text-white placeholder-white/40 focus:border-orange-500' : 'bg-[#0a0a0a] border-white/10 text-white placeholder-white/40 focus:border-blue-500/50'}`
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 160,
+                                                lineNumber: 226,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                                disabled: !takeover,
-                                                className: `absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${takeover ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100' : 'bg-white/10 opacity-50 cursor-not-allowed'}`,
+                                                onClick: handleSendMessage,
+                                                disabled: !inputValue.trim(),
+                                                className: `absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${inputValue.trim() ? takeover ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100 text-black' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 opacity-100 text-white' : 'bg-white/10 opacity-50 cursor-not-allowed text-white/40'}`,
                                                 children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$send$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Send$3e$__["Send"], {
-                                                    className: `w-4 h-4 ${takeover ? 'text-black' : 'text-white/40'}`
+                                                    className: "w-4 h-4"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                    lineNumber: 176,
+                                                    lineNumber: 247,
                                                     columnNumber: 33
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                                lineNumber: 169,
+                                                lineNumber: 237,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 159,
+                                        lineNumber: 225,
                                         columnNumber: 25
                                     }, this),
                                     takeover && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -493,35 +584,35 @@ function Inbox() {
                                         children: "Envía este mensaje por WhatsApp a nombre de tu negocio."
                                     }, void 0, false, {
                                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                        lineNumber: 180,
+                                        lineNumber: 251,
                                         columnNumber: 29
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                                lineNumber: 158,
+                                lineNumber: 224,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/dashboard/inbox/page.tsx",
-                        lineNumber: 80,
+                        lineNumber: 125,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/dashboard/inbox/page.tsx",
-                lineNumber: 41,
+                lineNumber: 86,
                 columnNumber: 13
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/app/dashboard/inbox/page.tsx",
-        lineNumber: 31,
+        lineNumber: 76,
         columnNumber: 9
     }, this);
 }
-_s(Inbox, "zEGqxiWW+B/RkCaGRcZodjgm+5I=");
+_s(Inbox, "6EKt9oa47fjrzY5qu5cNCqNDjr0=");
 _c = Inbox;
 var _c;
 __turbopack_context__.k.register(_c, "Inbox");
