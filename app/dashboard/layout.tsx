@@ -10,8 +10,7 @@ import {
     LogOut,
     Bell,
     ChevronDown,
-    Home,
-    CreditCard
+    Home
 } from 'lucide-react';
 
 import { useState, useEffect } from "react";
@@ -97,11 +96,6 @@ export default function DashboardLayout({
                             Live Inbox
                         </div>
                         <span className="bg-blue-500/20 text-blue-400 border border-blue-500/20 group-hover:bg-blue-500 group-hover:text-white group-hover:border-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded transition-all">3</span>
-                    </Link>
-
-                    <Link href="/pricing" className="flex items-center gap-3 px-3 py-2 mt-4 rounded-md text-white/60 hover:text-purple-400 hover:bg-purple-500/10 transition-colors text-sm font-medium">
-                        <CreditCard className="w-4 h-4" />
-                        Precios
                     </Link>
                 </nav>
 

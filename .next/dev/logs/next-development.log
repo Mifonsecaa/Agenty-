@@ -11,3 +11,22 @@ https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected charac
 [00:04:45.929] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
 https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
 [00:06:23.037] Server  LOG     ✓ Compiled in 2ms
+[00:15:53.810] Server  WARN    ⚠ Cross origin request detected from 192.168.20.197 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+[00:15:54.807] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error The string did not match the expected pattern. {"error":{"message":"The string did not match the expected pattern.","name":"SyntaxError","stack":""},"message":"The string did not match the expected pattern.","url":"/api/auth/session"}
+[00:16:00.240] Browser ERROR   Failed to fetch RSC payload for http://192.168.20.197:3000/pricing. Falling back to browser navigation. {}
+[00:16:03.989] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error The string did not match the expected pattern. {"error":{"message":"The string did not match the expected pattern.","name":"SyntaxError","stack":"json@[native code]\n@http://192.168.20.197:3000/_next/static/chunks/node_modules_c9950e67._.js:1708:30\n@http://192.168.20.197:3000/_next/static/chunks/node_modules_c9950e67._.js:1532:67\n@http://192.168.20.197:3000/_next/static/chunks/node_modules_c9950e67._.js:1481:36\nasyncGeneratorStep@http://192.168.20.197:3000/_next/static/chunks/node_modules_c9950e67._.js:1793:21\n_next@http://192.168.20.197:3000/_next/static/chunks/node_modules_c9950e67._.js:1805:35"},"message":"The string did not match the expected pattern.","url":"/api/auth/session"}
+[00:16:12.138] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error The string did not match the expected pattern. {"error":{"message":"The string did not match the expected pattern.","name":"SyntaxError","stack":""},"message":"The string did not match the expected pattern.","url":"/api/auth/session"}
+[01:27:56.635] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:27:56.794] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[01:27:57.876] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:27:58.030] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[01:29:15.752] Server  LOG     ✓ Compiled in 37ms
+[01:29:15.949] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[01:29:16.115] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
+https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
