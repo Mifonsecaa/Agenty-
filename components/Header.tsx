@@ -22,7 +22,7 @@ const menuItems = [
     id: 'services',
     title: 'Servicios',
     links: [
-      { href: '/services/default-agents', label: 'Agentes predeterminados' },
+      { href: '/agents/default', label: 'Agentes predeterminados' },
       { href: '/?demo=true', label: 'Prueba interactiva' },
     ],
   },
@@ -48,7 +48,6 @@ const Header = () => {
   const pathname = usePathname();
   const { data: session, status } = useSession();
 
-  // No mostrar el header en las páginas del dashboard
   if (pathname?.startsWith('/dashboard')) {
     return null;
   }
@@ -57,7 +56,6 @@ const Header = () => {
     <header className="fixed top-0 w-full z-50">
       <nav className="container mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
-          {/* Logo */}
           <div className="flex-shrink-0">
             <Link href="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
@@ -67,38 +65,32 @@ const Header = () => {
             </Link>
           </div>
 
-          {/* Menus (Centrados) */}
           <div className="hidden md:flex flex-grow justify-center items-center space-x-8">
             {menuItems.map((item) => (
-              <React.Fragment key={item.id}>
-                <div className="relative group">
-                  <button className="text-gray-300 hover:text-white focus:outline-none">
-                    {item.title}
-                  </button>
-                  <div className="absolute left-0 mt-3 w-64 bg-[#0a0a0a]/90 border border-white/10 rounded-xl shadow-2xl z-50
-                                  opacity-0 invisible group-hover:opacity-100 group-hover:visible 
-                                  transition-all duration-300 overflow-hidden backdrop-blur-md">
-                    <div className="p-2 space-y-1">
-                      {item.links.map((link) => (
-                        <Link key={link.href} href={link.href} className="block px-4 py-3 text-sm text-gray-400 rounded-lg
-                                                                        hover:bg-purple-500/10 hover:text-purple-300 
-                                                                        transition-all duration-200 flex items-center gap-2">
-                          {link.label}
-                        </Link>
-                      ))}
-                    </div>
+              <div key={item.id} className="relative group">
+                <button className="text-gray-300 hover:text-white focus:outline-none transition-colors">
+                  {item.title}
+                </button>
+                <div className="absolute left-0 mt-3 w-64 bg-[#0a0a0a]/90 border border-white/10 rounded-xl shadow-2xl z-50
+                                opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+                                transition-all duration-300 overflow-hidden backdrop-blur-md">
+                  <div className="p-2 space-y-1">
+                    {item.links.map((link, index) => (
+                      <Link key={index} href={link.href || '#'} className="block px-4 py-3 text-sm text-gray-400 rounded-lg
+                                                                    hover:bg-purple-500/10 hover:text-purple-300 
+                                                                    transition-all duration-200 flex items-center gap-2">
+                        {link.label}
+                      </Link>
+                    ))}
                   </div>
                 </div>
-                {item.id === 'services' && (
-                  <Link href="/pricing" className="text-gray-300 hover:text-white transition-colors">
-                    Precios
-                  </Link>
-                )}
-              </React.Fragment>
+              </div>
             ))}
+            <Link href="/pricing" className="text-gray-300 hover:text-white transition-colors">
+              Precios
+            </Link>
           </div>
 
-          {/* Auth Buttons */}
           <div className="flex items-center space-x-4">
             {status === 'loading' ? (
               <div className="w-24 h-8 bg-gray-700 rounded-md animate-pulse" />
@@ -114,13 +106,9 @@ const Header = () => {
               </>
             ) : (
               <>
-                <Link href="/login">
-                  <p className="text-gray-300 hover:text-white">Iniciar</p>
-                </Link>
-                <Link href="/register">
-                  <p className="text-gray-300 border border-gray-500 px-4 py-2 rounded-md hover:text-white hover:border-white">
-                    Registrarse
-                  </p>
+                <Link href="/login" className="text-gray-300 hover:text-white">Iniciar</Link>
+                <Link href="/register" className="text-gray-300 border border-gray-500 px-4 py-2 rounded-md hover:text-white hover:border-white">
+                  Registrarse
                 </Link>
               </>
             )}
