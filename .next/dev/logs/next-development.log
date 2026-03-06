@@ -30,3 +30,4 @@ https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected charac
 [01:29:15.949] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
 [01:29:16.115] Browser ERROR   [next-auth][error][CLIENT_FETCH_ERROR] 
 https://next-auth.js.org/errors#client_fetch_error JSON.parse: unexpected character at line 1 column 1 of the JSON data {"error":{"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","name":"SyntaxError","stack":""},"message":"JSON.parse: unexpected character at line 1 column 1 of the JSON data","url":"/api/auth/session"}
+[01:03:53.013] Server  LOG       Reload env: .env.local

@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles, User } from "lucide-react";
 
 export default function BuilderPlayground() {
     const [agentName, setAgentName] = useState("AgentBot");
@@ -9,6 +9,9 @@ export default function BuilderPlayground() {
         { role: "assistant", text: "¡Hola! Soy tu asistente de prueba. ¿En qué te ayudo hoy?" }
     ]);
     const [input, setInput] = useState("");
+    const [isTyping, setIsTyping] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
     const [showQrModal, setShowQrModal] = useState(false);
     const [qrState, setQrState] = useState<"generating" | "ready" | "connected">("generating");
 
@@ -34,20 +37,67 @@ export default function BuilderPlayground() {
 
     // Cargar la configuración mágica generada desde la Home
     useEffect(() => {
-        const savedConfig = localStorage.getItem("agenty_config");
-        if (savedConfig) {
-            try {
-                const config = JSON.parse(savedConfig);
-                if (config.name) setAgentName(config.name);
-                if (config.systemPrompt) setSystemPrompt(config.systemPrompt);
-                if (config.greeting) {
-                    setMessages([{ role: "assistant", text: config.greeting }]);
+        const loadActiveAgent = () => {
+            const savedAgentsStr = localStorage.getItem("agenty_agents");
+            const activeId = localStorage.getItem("agenty_active_agent_id");
+
+            if (savedAgentsStr) {
+                try {
+                    const parsedAgents = JSON.parse(savedAgentsStr);
+                    const active = parsedAgents.find((a: any) => a.id === activeId) || parsedAgents[0];
+
+                    if (active) {
+                        setAgentName(active.name || "AgentBot");
+                        setSystemPrompt(active.systemPrompt || "Cargando personalidad...");
+                        if (active.greeting) {
+                            setMessages([{ role: "assistant", text: active.greeting }]);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing agents", e);
                 }
-            } catch (e) {
-                console.error("Error parsing config", e);
             }
-        }
+        };
+
+        loadActiveAgent();
+        window.addEventListener('agentSwitched', loadActiveAgent);
+        return () => window.removeEventListener('agentSwitched', loadActiveAgent);
     }, []);
+
+    // Auto-scroll al final del chat
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages, isTyping]);
+
+    const handleSendMessage = (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!input.trim()) return;
+
+        const userMsg = input.trim();
+        setMessages(prev => [...prev, { role: "user", text: userMsg }]);
+        setInput("");
+        setIsTyping(true);
+
+        // Simulador de respuesta "con IA"
+        setTimeout(() => {
+            const mockResponses = [
+                `Como ${agentName}, estoy configurado para ayudarte con eso. ¿Necesitas más detalles?`,
+                "Entiendo. Según mis reglas de negocio, podemos proceder con esa solicitud.",
+                "¡Claro que sí! Estoy procesando esa información justo ahora.",
+                "Esa es una excelente pregunta. En este modo de prueba, te confirmo que puedo manejar ese flujo.",
+                "Revisando mi base de conocimiento... ¡Listo! Te puedo confirmar que sí es posible."
+            ];
+
+            // Respuesta basada vagamente en la longitud o palabras (muy simple mockup)
+            let responseText = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+
+            if (userMsg.toLowerCase().includes("hola")) responseText = "¡Hola nuevamente! ¿Cómo van las pruebas?";
+            if (userMsg.toLowerCase().includes("precio")) responseText = "Nuestros precios dependen de tus necesidades. ¿Te gustaría agendar una llamada?";
+
+            setMessages(prev => [...prev, { role: "assistant", text: responseText }]);
+            setIsTyping(false);
+        }, 1500 + Math.random() * 1000); // Retraso aleatorio para parecer humano/IA pensando
+    };
 
     return (
         <div className="h-full flex flex-col relative z-10">
@@ -125,47 +175,61 @@ export default function BuilderPlayground() {
                         </div>
 
                         {/* Chat History */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0a0a0a]">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                             {messages.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${m.role === 'user'
-                                        ? 'bg-blue-600 text-white rounded-br-none'
-                                        : 'bg-white/10 text-white/90 rounded-bl-none border border-white/5'
-                                        }`}>
-                                        {m.text}
+                                    <div className={`flex items-end gap-2 max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${m.role === 'user' ? 'bg-blue-600' : 'bg-gradient-to-tr from-blue-500 to-purple-500'}`}>
+                                            {m.role === 'user' ? <User className="w-3 h-3 text-white" /> : <Bot className="w-3 h-3 text-white" />}
+                                        </div>
+                                        <div className={`rounded-2xl px-4 py-2 text-sm shadow-sm ${m.role === 'user'
+                                            ? 'bg-blue-600 text-white rounded-br-none'
+                                            : 'bg-[#1a1a1a] text-white/90 rounded-bl-none border border-white/5'
+                                            }`}>
+                                            {m.text}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
+
+                            {/* Typing Indicator */}
+                            {isTyping && (
+                                <div className="flex justify-start">
+                                    <div className="flex items-end gap-2 max-w-[85%] flex-row">
+                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                                            <Bot className="w-3 h-3 text-white" />
+                                        </div>
+                                        <div className="bg-[#1a1a1a] border border-white/5 text-white/90 rounded-2xl rounded-bl-none px-4 py-3 flex gap-1">
+                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
                         </div>
 
                         {/* Input Chat */}
-                        <div className="p-3 bg-[#111111] border-t border-white/10">
+                        <form onSubmit={handleSendMessage} className="p-3 bg-[#111111] border-t border-white/10">
                             <div className="flex relative">
                                 <input
                                     type="text"
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     placeholder="Type a test message..."
-                                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white focus:outline-none focus:border-white/20"
+                                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
                                 />
-                                <button className="absolute right-1 top-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center hover:bg-blue-500 transition-colors">
+                                <button
+                                    type="submit"
+                                    disabled={!input.trim()}
+                                    className="absolute right-1 top-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+                                >
                                     <Send className="w-4 h-4 text-white -ml-0.5" />
                                 </button>
                             </div>
-                        </div>
+                        </form>
                     </div>
-
-                    {/* Magic Terminal feedback */}
-                    <div className="h-32 bg-black border border-white/10 rounded-2xl p-4 font-mono text-xs overflow-hidden relative">
-                        <div className="absolute top-0 right-0 p-3">
-                            <TerminalSquare className="w-4 h-4 text-white/30" />
-                        </div>
-                        <p className="text-blue-400 mb-2">▶ SYSTEM LOGS</p>
-                        <p className="text-emerald-400 opacity-80">&gt; System Prompt loaded successfully.</p>
-                        <p className="text-white/40">&gt; Waiting for incoming messages...</p>
-                        <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent pointer-events-none" />
-                    </div>
-
                 </div>
 
             </div>

@@ -1,5 +1,7 @@
+"use client";
 import React from 'react';
 import { Check } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const plans = [
   {
@@ -47,26 +49,53 @@ const plans = [
 ];
 
 const PricingPage = () => {
+  // Configuración de animación para los hijos (tarjetas)
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.2
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 30 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.6 } }
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 sm:pt-32 relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="container mx-auto px-6 py-12 relative z-10">
-        <div className="text-center max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7 }}
+          className="text-center max-w-4xl mx-auto"
+        >
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-white mb-4">
             Planes diseñados para tu negocio
           </h1>
           <p className="text-lg text-white/60">
             Elige el plan que mejor se adapte a tus necesidades y empieza a automatizar hoy mismo.
           </p>
-        </div>
+        </motion.div>
 
-        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8"
+        >
           {plans.map((plan) => (
-            <div
+            <motion.div
+              variants={itemVariants}
               key={plan.name}
               className={`relative flex flex-col p-8 rounded-3xl transition-all duration-300 hover:-translate-y-2 ${plan.isPopular
-                  ? 'border border-purple-500/30 bg-[#111111] shadow-2xl shadow-purple-500/10'
-                  : 'border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md'
+                ? 'border border-purple-500/30 bg-[#111111] shadow-2xl shadow-purple-500/10'
+                : 'border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md'
                 }`}
             >
               {plan.isPopular && (
@@ -94,18 +123,23 @@ const PricingPage = () => {
               </ul>
               <button
                 className={`mt-10 w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 ${plan.isPopular
-                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
-                    : 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
+                  ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
+                  : 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
                   }`}
               >
                 Empezar con {plan.name}
               </button>
-            </div>
+            </motion.div>
           ))}
-        </div>
-        <div className="text-center mt-16 text-white/50 text-sm">
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 0.8 }}
+          className="text-center mt-16 text-white/50 text-sm"
+        >
           <p>El costo de los tokens para el plan Business es de aproximadamente $0.15 por millón de tokens de entrada y $0.60 por millón de tokens de salida, asegurando una alta rentabilidad.</p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

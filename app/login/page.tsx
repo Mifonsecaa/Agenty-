@@ -41,7 +41,7 @@ export default function LoginPage() {
     };
 
     return (
-        <main className="min-h-screen flex items-center justify-center px-6 relative">
+        <main className="min-h-screen flex items-center justify-center px-6 pt-24 pb-12 relative">
             {/* Fondo Aurora */}
             <div className="aurora-bg" />
 

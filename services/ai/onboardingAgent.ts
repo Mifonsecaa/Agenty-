@@ -21,10 +21,27 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
         // MOCK LOGIC: Generamos una configuración simulada (dummy data) basada levemente en el texto de entrada.
         // En un entorno de producción, esto sería reemplazado por la llamada real a openai.beta.chat.completions.parse
 
-        const isPizzeria = userInput.toLowerCase().includes("pizza");
-        const nameMatch = userInput.match(/['"]([^'"]+)['"]/); // Buscar texto entre comillas
+        const lowerInput = userInput.toLowerCase();
+        let generatedName = "Asistente Virtual";
 
-        const generatedName = nameMatch ? nameMatch[1] : (isPizzeria ? "PizzaBot" : "Asistente Virtual");
+        // Smarter heuristic for generating a name on the fly without an LLM
+        if (lowerInput.includes("pizza") || lowerInput.includes("restaurante")) {
+            generatedName = "Agente de Restaurante";
+        } else if (lowerInput.includes("clinic") || lowerInput.includes("dental") || lowerInput.includes("salud")) {
+            generatedName = "Recepcionista Médica";
+        } else if (lowerInput.includes("ferreter") || lowerInput.includes("repuesto") || lowerInput.includes("auto")) {
+            generatedName = "Especialista Automotriz";
+        } else if (lowerInput.includes("abogad") || lowerInput.includes("legal")) {
+            generatedName = "Agente Legal AI";
+        } else if (lowerInput.includes("ropa") || lowerInput.includes("zapatos") || lowerInput.includes("tienda")) {
+            generatedName = "Asesor de Ventas";
+        } else {
+            // Attempt to extract capitalized words for a proper name
+            const capitalizedWords = userInput.match(/[A-Z][a-z]+/g);
+            if (capitalizedWords && capitalizedWords.length > 0) {
+                generatedName = `Agente de ${capitalizedWords[0]}`;
+            }
+        }
 
         const mockConfig: any = {
             name: generatedName,

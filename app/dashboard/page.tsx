@@ -1,40 +1,82 @@
 "use client";
 import { useState, useEffect } from "react";
 import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+// Function to generate random chart data to simulate different agent performance
+const generateMockChartData = () => [
+    { name: 'Mon', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Tue', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Wed', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Thu', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Fri', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Sat', tokens: Math.floor(Math.random() * 5000) + 1000 },
+    { name: 'Sun', tokens: Math.floor(Math.random() * 5000) + 1000 },
+];
 
 export default function DashboardOverview() {
     const [agentName, setAgentName] = useState("Asistente Virtual");
+    const [chartData, setChartData] = useState<any[]>([]);
     const [metrics, setMetrics] = useState({
         conversations: 1245,
         tasksAutomated: 840,
         savedTime: 125 // Reutilizando esto para human handoffs visualmente o tiempo
     });
 
-    useEffect(() => {
+    const loadDashboardData = () => {
         const savedConfig = localStorage.getItem("agenty_config");
         if (savedConfig) {
             try {
                 const config = JSON.parse(savedConfig);
                 if (config.name) setAgentName(config.name);
                 if (config.metrics) setMetrics(config.metrics);
+                setChartData(generateMockChartData());
             } catch (e) {
                 console.error("Error parsing config", e);
             }
+        } else {
+            // Fallback if no config
+            setChartData(generateMockChartData());
         }
+    };
+
+    useEffect(() => {
+        loadDashboardData();
+        window.addEventListener('agentSwitched', loadDashboardData);
+        return () => window.removeEventListener('agentSwitched', loadDashboardData);
     }, []);
     return (
         <div className="max-w-6xl mx-auto space-y-8 relative z-10">
 
             {/* Header */}
-            <div>
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+            >
                 <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome back, {agentName}👋</h1>
                 <p className="text-white/60">Here is what happening with your AI Agent today.</p>
-            </div>
+            </motion.div>
 
             {/* Metrics Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <motion.div
+                initial="hidden"
+                animate="show"
+                variants={{
+                    hidden: { opacity: 0 },
+                    show: {
+                        opacity: 1,
+                        transition: { staggerChildren: 0.1 }
+                    }
+                }}
+                className="grid grid-cols-1 md:grid-cols-3 gap-6"
+            >
                 {/* Metric Card 1 */}
-                <div className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group">
+                <motion.div
+                    variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}
+                    className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group"
+                >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors" />
                     <div className="flex justify-between items-start mb-4">
                         <div className="p-3 rounded-lg bg-blue-500/20 text-blue-400">
@@ -46,10 +88,13 @@ export default function DashboardOverview() {
                     </div>
                     <h3 className="text-4xl font-bold mb-1">{metrics.conversations}</h3>
                     <p className="text-sm text-white/50 font-medium tracking-wide">TOTAL CONVERSATIONS</p>
-                </div>
+                </motion.div>
 
                 {/* Metric Card 2 */}
-                <div className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group">
+                <motion.div
+                    variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}
+                    className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group"
+                >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-colors" />
                     <div className="flex justify-between items-start mb-4">
                         <div className="p-3 rounded-lg bg-purple-500/20 text-purple-400">
@@ -61,10 +106,13 @@ export default function DashboardOverview() {
                     </div>
                     <h3 className="text-4xl font-bold mb-1">{metrics.tasksAutomated}</h3>
                     <p className="text-sm text-white/50 font-medium tracking-wide">TASKS AUTOMATED</p>
-                </div>
+                </motion.div>
 
                 {/* Metric Card 3 */}
-                <div className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group">
+                <motion.div
+                    variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}
+                    className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden group"
+                >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-colors" />
                     <div className="flex justify-between items-start mb-4">
                         <div className="p-3 rounded-lg bg-emerald-500/20 text-emerald-400">
@@ -76,11 +124,16 @@ export default function DashboardOverview() {
                     </div>
                     <h3 className="text-4xl font-bold mb-1">{metrics.savedTime} hrs</h3>
                     <p className="text-sm text-white/50 font-medium tracking-wide">SAVED TIME</p>
-                </div>
-            </div>
+                </motion.div>
+            </motion.div>
 
             {/* Main Content Area - Split */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.4 }}
+                className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+            >
 
                 {/* Token Usage Graph Placeholder */}
                 <div className="col-span-1 lg:col-span-2 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
@@ -91,53 +144,74 @@ export default function DashboardOverview() {
                             <option>Last 30 days</option>
                         </select>
                     </div>
-                    <div className="flex-1 min-h-[250px] border border-dashed border-white/10 rounded-xl flex items-center justify-center text-white/30 text-sm font-medium bg-white/[0.02]">
-                        [ Chart Graphic Placeholder ]
+                    <div className="flex-1 min-h-[300px] mt-4 w-full relative">
+                        {/* Custom Gradient for Area Chart */}
+                        <svg style={{ height: 0, width: 0, position: 'absolute' }}>
+                            <defs>
+                                <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart
+                                data={chartData}
+                                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 12 }}
+                                    dy={10}
+                                />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 12 }}
+                                />
+                                <Tooltip
+                                    contentStyle={{
+                                        backgroundColor: 'rgba(10,10,10,0.9)',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                                    }}
+                                    itemStyle={{ color: '#fff' }}
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="tokens"
+                                    stroke="#8b5cf6"
+                                    strokeWidth={3}
+                                    fillOpacity={1}
+                                    fill="url(#colorTokens)"
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
 
                 {/* Recent Activity */}
-                <div className="col-span-1 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm">
+                <div className="col-span-1 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
                     <h2 className="text-lg font-bold mb-6">Recent Activity</h2>
 
-                    <div className="space-y-6">
-
-                        <div className="flex gap-4">
-                            <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0">
-                                <CheckCircle2 className="w-4 h-4" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-white/90 font-medium">Agent scheduled an appointment</p>
-                                <p className="text-xs text-white/50 mt-1">with Carlos for Tomorrow 10:00 AM</p>
-                                <p className="text-xs text-white/30 mt-2">Just now</p>
-                            </div>
+                    {/* Empty State */}
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
+                        <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
+                            <MessageSquare className="w-5 h-5 text-blue-400" />
                         </div>
-
-                        <div className="flex gap-4">
-                            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                                <CheckCircle2 className="w-4 h-4" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-white/90 font-medium">Sale closed automatically </p>
-                                <p className="text-xs text-white/50 mt-1">Order #892 - 'Air Max Size 40'</p>
-                                <p className="text-xs text-white/30 mt-2">15 mins ago</p>
-                            </div>
-                        </div>
-
-                        <div className="flex gap-4 opacity-60">
-                            <div className="w-8 h-8 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center flex-shrink-0">
-                                <Users className="w-4 h-4" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-white/90 font-medium">Human Takeover Requested</p>
-                                <p className="text-xs text-white/50 mt-1">Client asked for wholesale discount</p>
-                                <p className="text-xs text-white/30 mt-2">1 hour ago</p>
-                            </div>
-                        </div>
-
+                        <h3 className="text-sm font-semibold text-white/90 mb-1">Esperando datos...</h3>
+                        <p className="text-xs text-white/50 mb-6 max-w-[200px]">Tu agente está en vivo y esperando su primera conversación.</p>
+                        <button className="text-xs font-semibold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-4 py-2 rounded-lg transition-colors border border-blue-500/20">
+                            Probar Agente
+                        </button>
                     </div>
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 }

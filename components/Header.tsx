@@ -47,6 +47,26 @@ const menuItems = [
 const Header = () => {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const [isVisible, setIsVisible] = React.useState(true);
+  const [lastScrollY, setLastScrollY] = React.useState(0);
+
+  React.useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      // Hides the header if we scroll down, shows it if we scroll up or we are at the top
+      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+        setIsVisible(false);
+      } else {
+        setIsVisible(true);
+      }
+
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
 
   // No mostrar el header en las páginas del dashboard
   if (pathname?.startsWith('/dashboard')) {
@@ -54,8 +74,8 @@ const Header = () => {
   }
 
   return (
-    <header className="fixed top-0 w-full z-50">
-      <nav className="container mx-auto px-6 py-4">
+    <header className={`fixed top-0 w-full z-50 transition-transform duration-300 ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+      <nav className="w-full max-w-5xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
           <div className="flex-shrink-0">
