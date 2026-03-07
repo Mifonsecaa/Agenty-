@@ -1,5 +1,0 @@
-[00:00:03.297] Server  LOG     ✓ Ready in 2.7s
-[00:00:07.700] Server  LOG     ○ Compiling / ...
-[00:00:08.925] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[00:03:37.609] Server  LOG       Reload env: .env
-[00:04:03.159] Server  ERROR   Error en la API de chat: "429 You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors."

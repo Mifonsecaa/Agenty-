@@ -11,46 +11,31 @@ type Provider = 'openai' | 'gemini';
 type TaskStatus = 'pending' | 'in_progress' | 'completed';
 
 const TASKS = [
-  { id: 'saludo', text: 'Saludo informativo' },
-  { id: 'buscando_reserva', text: 'Buscando disponibilidad' },
-  { id: 'registro_db', text: 'Registro de reserva en BD' },
-  { id: 'reserva_realizada', text: 'Reserva confirmada' },
-  { id: 'confirmacion_enviada', text: 'Mensaje de confirmación enviado' },
+  { id: 'start', text: 'Inicio de la conversación' },
+  { id: 'context', text: 'Análisis del contexto del negocio' },
+  { id: 'understanding', text: 'Comprensión de la petición del usuario' },
+  { id: 'generation', text: 'Generación de respuesta de IA' },
+  { id: 'response', text: 'Respuesta enviada' },
 ];
 
 export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: '¡Hola! Bienvenido al asistente de reservas de Agenty. ¿Para cuántas personas te gustaría reservar?' }
+    { role: 'assistant', content: '¡Hola! Bienvenido al asistente de Agenty. La IA se adaptará al primer negocio que encuentre en tu base de datos. ¿En qué puedo ayudarte hoy?' }
   ]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<Provider>('openai'); // Estado para el proveedor
+  const [provider, setProvider] = useState<Provider>('gemini');
   const [taskState, setTaskState] = useState<Record<string, TaskStatus>>({
-    saludo: 'completed',
-    buscando_reserva: 'pending',
-    registro_db: 'pending',
-    reserva_realizada: 'pending',
-    confirmacion_enviada: 'pending',
+    start: 'completed',
+    context: 'pending',
+    understanding: 'pending',
+    generation: 'pending',
+    response: 'pending',
   });
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const updateTaskStatus = (updates: Record<string, TaskStatus>) => {
-    setTaskState(prev => ({ ...prev, ...updates }));
-  };
-
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === 'assistant') {
-      const text = lastMessage.content.toLowerCase();
-      if (text.includes('buscando')) updateTaskStatus({ buscando_reserva: 'in_progress' });
-      if (text.includes('tenemos una mesa')) updateTaskStatus({ buscando_reserva: 'completed' });
-      if (text.includes('nombre')) updateTaskStatus({ registro_db: 'in_progress' });
-      if (text.includes('confirmada')) updateTaskStatus({ registro_db: 'completed', reserva_realizada: 'completed', confirmacion_enviada: 'completed' });
-    }
   }, [messages]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -62,22 +47,30 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
     setMessages(newMessages);
     setUserInput('');
     setIsLoading(true);
+    setTaskState(prev => ({ ...prev, context: 'in_progress', understanding: 'in_progress' }));
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, provider }), // Enviamos el proveedor
+        body: JSON.stringify({ messages: newMessages, provider }), // Ya no enviamos el contexto
       });
+      
+      setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'in_progress' }));
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'La respuesta de la API no fue exitosa');
+      
       setMessages(prev => [...prev, data]);
+      setTaskState(prev => ({ ...prev, generation: 'completed', response: 'completed' }));
+
     } catch (error: any) {
       const errorMessage: Message = { role: 'assistant', content: `Error: ${error.message}` };
       setMessages(prev => [...prev, errorMessage]);
+      setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'completed', response: 'pending' }));
     } finally {
       setIsLoading(false);
+      setTimeout(() => setTaskState(prev => ({ ...prev, understanding: 'pending', generation: 'pending', response: 'pending' })), 2000);
     }
   };
 
@@ -89,7 +82,6 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
           <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
             Prueba Interactiva <span className="text-emerald-400 text-sm font-medium px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">Live</span>
           </h2>
-          {/* Selector de IA */}
           <div className="flex items-center gap-2 bg-white/5 p-1 rounded-lg border border-white/10">
             <button onClick={() => setProvider('openai')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'openai' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>OpenAI</button>
             <button onClick={() => setProvider('gemini')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'gemini' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>Gemini</button>

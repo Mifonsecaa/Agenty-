@@ -25,6 +25,10 @@ export default function HomePage() {
     const handleMagicSubmit = async (description: string) => {
         setLoading(true);
         try {
+            // --- ¡CAMBIO AQUÍ! ---
+            // Guardamos el contexto del negocio para que la demo lo pueda usar.
+            localStorage.setItem("business_context", description);
+
             const response = await fetch("/api/onboarding", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
