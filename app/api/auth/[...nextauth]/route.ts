@@ -3,8 +3,11 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "../../../../prisma/client";
 import bcrypt from "bcryptjs";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+
 
 const handler = NextAuth({
+    adapter: PrismaAdapter(prisma),
     session: { strategy: "jwt" },
     pages: {
         signIn: "/login",
