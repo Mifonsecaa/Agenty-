@@ -11,6 +11,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.15.0",
     "@auth/prisma-adapter": "^1.0.12",
+    "@google/genai": "^1.44.0",
     "@next-auth/prisma-adapter": "^1.0.7",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
