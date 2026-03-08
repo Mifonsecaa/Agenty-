@@ -34,3 +34,46 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: "Error interno del servidor al obtener los datos." }, { status: 500 });
     }
 }
+
+export async function DELETE(req: Request) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) {
+            return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
+        }
+
+        const url = new URL(req.url);
+        const businessId = url.searchParams.get("id");
+
+        if (!businessId) {
+            return NextResponse.json({ error: "Se requiere un ID de negocio." }, { status: 400 });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email }
+        });
+
+        if (!user) {
+            return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
+        }
+
+        // Check ownership before deleting
+        const business = await prisma.business.findUnique({
+            where: { id: businessId }
+        });
+
+        if (!business || business.userId !== user.id) {
+            return NextResponse.json({ error: "Negocio no encontrado o sin permisos." }, { status: 403 });
+        }
+
+        await prisma.business.delete({
+            where: { id: businessId }
+        });
+
+        return NextResponse.json({ success: true });
+
+    } catch (error) {
+        console.error("Error al eliminar el negocio:", error);
+        return NextResponse.json({ error: "Error interno del servidor al eliminar." }, { status: 500 });
+    }
+}

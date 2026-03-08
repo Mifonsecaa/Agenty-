@@ -50,13 +50,27 @@ export default function DashboardLayout({
                     localStorage.setItem("agenty_active_agent_id", active.id);
                 }
 
-                if (active && active.name) {
-                    setAgentName(active.name);
-                    setInitial(active.name.charAt(0).toUpperCase());
-                    localStorage.setItem("agenty_config", JSON.stringify(active));
+                if (active) {
+                    const activeName = active.name || (active.config && active.config.businessName) || "Mi Negocio";
+                    setAgentName(activeName);
+                    setInitial(activeName.charAt(0).toUpperCase());
+
+                    // Asegurar que el config real se guarde para que el resto del dashboard (Playground/Overview) lo lea bien
+                    const fullConfigToSave = {
+                        ...active,
+                        name: activeName
+                    };
+                    localStorage.setItem("agenty_config", JSON.stringify(fullConfigToSave));
+
+                    // Si el usuario eliminó un agente y este loadActive resolvió a un fallback, actualizamos el ID activo ref
+                    localStorage.setItem("agenty_active_agent_id", active.id);
                 }
             } else {
                 setAgents([]);
+                setAgentName("Sin Agentes");
+                setInitial("-");
+                localStorage.removeItem("agenty_active_agent_id");
+                localStorage.removeItem("agenty_config");
             }
         } catch (e) {
             console.error("Error loading agents from database", e);
@@ -76,31 +90,44 @@ export default function DashboardLayout({
         window.dispatchEvent(new Event('agentSwitched'));
     };
 
-    const handleDeleteAgent = (e: React.MouseEvent, agentId: string) => {
+    const handleDeleteAgent = async (e: React.MouseEvent, agentId: string) => {
         e.stopPropagation(); // Prevent switching to the agent before deleting
 
-        // Find current agents
-        const updatedAgents = agents.filter(a => a.id !== agentId);
+        try {
+            // Delete from database first
+            const res = await fetch(`/api/business?id=${agentId}`, {
+                method: "DELETE"
+            });
 
-        // Update local state
-        setAgents(updatedAgents);
+            if (!res.ok) throw new Error("Failed to delete from database");
 
-        // Update localStorage
-        localStorage.setItem("agenty_agents", JSON.stringify(updatedAgents));
+            // Find current agents
+            const updatedAgents = agents.filter(a => a.id !== agentId);
 
-        // Handle case where we delete the active agent
-        const activeId = localStorage.getItem("agenty_active_agent_id");
-        if (activeId === agentId) {
-            if (updatedAgents.length > 0) {
-                localStorage.setItem("agenty_active_agent_id", updatedAgents[0].id);
-            } else {
-                localStorage.removeItem("agenty_active_agent_id");
-                // If no agents left, we could optionally redirect or show a blank state
+            // Update local state
+            setAgents(updatedAgents);
+
+            // Update localStorage
+            localStorage.setItem("agenty_agents", JSON.stringify(updatedAgents));
+
+            // Handle case where we delete the active agent
+            const activeId = localStorage.getItem("agenty_active_agent_id");
+            if (activeId === agentId) {
+                if (updatedAgents.length > 0) {
+                    localStorage.setItem("agenty_active_agent_id", updatedAgents[0].id);
+                } else {
+                    localStorage.removeItem("agenty_active_agent_id");
+                    localStorage.removeItem("agenty_config");
+                }
             }
-        }
 
-        // Notify app
-        window.dispatchEvent(new Event('agentSwitched'));
+            // Notify app to resync active agent globally
+            window.dispatchEvent(new Event('agentSwitched'));
+
+        } catch (error) {
+            console.error("Error deleting agent:", error);
+            alert("No se pudo eliminar el agente. Por favor intenta de nuevo.");
+        }
     };
 
     return (
