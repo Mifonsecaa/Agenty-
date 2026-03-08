@@ -35,6 +35,14 @@ export default function BuilderPlayground() {
         }, 1500);
     };
 
+    const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+    const [fullAgentConfig, setFullAgentConfig] = useState<any>(null); // To store all fields to pass to the magic prompt generator
+
+    // Auto-scroll al final del chat
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages, isTyping]);
+
     // Cargar la configuración mágica generada desde la Home
     useEffect(() => {
         const loadActiveAgent = () => {
@@ -44,6 +52,9 @@ export default function BuilderPlayground() {
                 try {
                     const active = JSON.parse(configStr);
                     const config = active.config || active;
+
+                    // Guardar para el Auto-generate prompt
+                    setFullAgentConfig(config);
 
                     setAgentName(config.businessName || active.name || "AgentBot");
 
@@ -86,10 +97,34 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
         return () => window.removeEventListener('agentSwitched', loadActiveAgent);
     }, []);
 
-    // Auto-scroll al final del chat
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages, isTyping]);
+    const handleAutoGeneratePrompt = async () => {
+        if (!fullAgentConfig) return;
+        setIsGeneratingPrompt(true);
+
+        try {
+            const res = await fetch('/api/generate-prompt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fullAgentConfig)
+            });
+
+            if (!res.ok) throw new Error("Error generating expert prompt");
+
+            const data = await res.json();
+            if (data.success && data.prompt) {
+                setSystemPrompt(data.prompt);
+
+                // TODO: Here you could also optionally trigger a PUT /api/business to save the new generated prompt permanently
+            } else {
+                alert(data.error || "No se pudo generar el prompt estricto");
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Hubo un error al contactar al motor de magia de prompts.");
+        } finally {
+            setIsGeneratingPrompt(false);
+        }
+    };
 
     const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
@@ -187,10 +222,15 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                         </div>
 
                         <div className="flex-1 flex flex-col">
-                            <label className="block text-sm font-medium text-white/70 mb-2 flex justify-between">
+                            <label className="block text-sm font-medium text-white/70 mb-2 flex justify-between items-center">
                                 <span>System Prompt (Instructions)</span>
-                                <button className="text-blue-400 text-xs hover:underline flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3" /> Auto-generate
+                                <button
+                                    onClick={handleAutoGeneratePrompt}
+                                    disabled={isGeneratingPrompt || !fullAgentConfig}
+                                    className="text-purple-400 text-xs hover:text-purple-300 flex items-center gap-1 transition-colors disabled:opacity-50"
+                                >
+                                    <Sparkles className={`w-3 h-3 ${isGeneratingPrompt ? 'animate-spin' : ''}`} />
+                                    {isGeneratingPrompt ? 'Mejorando...' : 'Auto-generate'}
                                 </button>
                             </label>
                             <textarea
