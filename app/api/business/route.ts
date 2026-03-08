@@ -77,3 +77,49 @@ export async function DELETE(req: Request) {
         return NextResponse.json({ error: "Error interno del servidor al eliminar." }, { status: 500 });
     }
 }
+
+export async function PUT(req: Request) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) {
+            return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
+        }
+
+        const body = await req.json();
+        const { id, name, config } = body;
+
+        if (!id || !name || !config) {
+            return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email }
+        });
+
+        if (!user) {
+            return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
+        }
+
+        const business = await prisma.business.findUnique({
+            where: { id }
+        });
+
+        if (!business || business.userId !== user.id) {
+            return NextResponse.json({ error: "Negocio no encontrado o sin permisos." }, { status: 403 });
+        }
+
+        const updatedBusiness = await prisma.business.update({
+            where: { id },
+            data: {
+                name,
+                config
+            }
+        });
+
+        return NextResponse.json({ success: true, business: updatedBusiness });
+
+    } catch (error) {
+        console.error("Error al actualizar el negocio:", error);
+        return NextResponse.json({ error: "Error interno del servidor al actualizar." }, { status: 500 });
+    }
+}

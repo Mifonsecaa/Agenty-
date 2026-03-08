@@ -85,6 +85,15 @@ export default function DashboardLayout({
 
     const handleSwitchAgent = (agent: any) => {
         localStorage.setItem("agenty_active_agent_id", agent.id);
+
+        // Push the full agent config so child pages immediately read the new data
+        const activeName = agent.name || (agent.config && agent.config.businessName) || "Mi Negocio";
+        const fullConfigToSave = {
+            ...agent,
+            name: activeName
+        };
+        localStorage.setItem("agenty_config", JSON.stringify(fullConfigToSave));
+
         setIsDropdownOpen(false);
         // Let the rest of the application know the active profile changed
         window.dispatchEvent(new Event('agentSwitched'));
@@ -249,10 +258,10 @@ export default function DashboardLayout({
                 </nav>
 
                 <div className="p-3 border-t border-white/10">
-                    <button className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-white/60 hover:text-white hover:bg-white/5 transition-all text-sm font-medium group">
+                    <Link href="/dashboard/settings" className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-white/60 hover:text-white hover:bg-white/5 transition-all text-sm font-medium group">
                         <Settings className="w-4 h-4 group-hover:rotate-45 transition-transform duration-500" />
                         <span className="group-hover:translate-x-1 transition-transform">Settings</span>
-                    </button>
+                    </Link>
                     <button className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all mt-0.5 text-sm font-medium group">
                         <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform duration-300" />
                         <span>Sign Out</span>
