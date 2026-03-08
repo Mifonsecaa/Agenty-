@@ -20,7 +20,7 @@ const formatHistoryForGemini = (messages: { role: string, content: string }[]): 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { messages, provider, isDemo } = body;
+    const { messages, provider, isDemo, demoContext } = body;
 
     if (!messages || !provider) {
       return new NextResponse('Faltan mensajes o el proveedor', { status: 400 });
@@ -30,7 +30,19 @@ export async function POST(request: Request) {
 
     // Lógica para la Demo Pública vs. Agentes Privados
     if (isDemo) {
-      systemPrompt = `
+      if (demoContext && demoContext.trim().length > 0) {
+        systemPrompt = `
+        Eres un asistente virtual experto en ventas y atención al cliente. 
+        El usuario te está poniendo a prueba simulando el siguiente negocio:
+        "${demoContext}"
+        
+        REGLAS DE LA PRUEBA VIRTUAL:
+        - Asume ESTA personalidad inmediatamente.
+        - Responde natural, súper amable y MUY corto (máximo 2-3 oraciones breves).
+        - Nunca digas que eres AgentyBot, ahora eres el negocio.
+        `;
+      } else {
+        systemPrompt = `
         Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai.
         Tu misión es convencer a emprendedores y dueños de negocio de que Agenty es la solución definitiva para automatizar sus reservas y atención al cliente en WhatsApp.
         
@@ -41,6 +53,7 @@ export async function POST(request: Request) {
         - Muéstrales cómo tú mismo (AgentyBot) eres prueba de que funciona, conversando de forma natural.
         - Termina los mensajes invitándolos a registrarse y "crear su primer agente".
         `;
+      }
     } else {
       // Find the specific config instead of blindly grabbing the first business 
       // Note: For the builder, we pass the custom prompt directly in the messages payload via the Builder context,
@@ -53,15 +66,22 @@ export async function POST(request: Request) {
     }
 
     let aiResponse;
+    let finalMessages = messages;
+
+    // Si inyectamos contexto, debemos borrar del historial el primer mensaje del bot 
+    // ("Soy AgentyBot...") para que la IA no entre en conflicto de personalidad.
+    if (isDemo && demoContext && demoContext.trim().length > 0) {
+      finalMessages = messages.filter((m: any) => !(m.role === 'assistant' && m.content.includes('AgentyBot')));
+    }
 
     if (provider === 'openai') {
       if (!process.env.OPENAI_API_KEY) throw new Error("Falta la clave de API de OpenAI.");
 
       const payloadMessages = isDemo
-        ? [{ role: 'system', content: systemPrompt }, ...messages]
+        ? [{ role: 'system', content: systemPrompt }, ...finalMessages]
         // If NOT demo (e.g. Builder), the Builder ALREADY injects {role: 'system', content: ...} as the first message
         // To avoid duplicating system prompts and confusing OpenAI, we just pass the messages as-is if the first is 'system'.
-        : (messages[0]?.role === 'system' ? messages : [{ role: 'system', content: systemPrompt }, ...messages]);
+        : (finalMessages[0]?.role === 'system' ? finalMessages : [{ role: 'system', content: systemPrompt }, ...finalMessages]);
 
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -74,7 +94,7 @@ export async function POST(request: Request) {
     else if (provider === 'gemini') {
       if (!process.env.GEMINI_API_KEY) throw new Error("Falta la clave de API de Gemini.");
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const history = formatHistoryForGemini(messages);
+      const history = formatHistoryForGemini(finalMessages);
       const lastMessage = history.pop();
       const chat = model.startChat({
         history: history,
