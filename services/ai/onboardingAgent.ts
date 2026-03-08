@@ -1,8 +1,9 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { BusinessConfig } from "../../types/ai";
+import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { BusinessConfigSchema, BusinessConfig } from "../../types/ai";
 
 export async function generateBusinessConfig(userInput: string): Promise<BusinessConfig> {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const systemPrompt = `
     Eres el arquitecto de datos de 'Agenty', una plataforma de automatización para PyMEs.
@@ -16,63 +17,25 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
   `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: `${systemPrompt}\n\nDescripción del dueño: ${userInput}`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        businessType: {
-                            type: Type.STRING,
-                            description: "Tipo de negocio (GROUP_CLASSES o INDIVIDUAL_APPOINTMENTS)"
-                        },
-                        businessName: {
-                            type: Type.STRING,
-                            description: "El nombre del negocio inferido del texto"
-                        },
-                        schedules: {
-                            type: Type.ARRAY,
-                            description: "Lista de todos los horarios disponibles",
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    activityName: { type: Type.STRING, description: "Nombre del servicio, ej: 'Crossfit'" },
-                                    daysOfWeek: {
-                                        type: Type.ARRAY,
-                                        items: { type: Type.INTEGER },
-                                        description: "Días de la semana, donde 1 es Lunes"
-                                    },
-                                    startTime: { type: Type.STRING, description: "Hora de inicio HH:mm" },
-                                    endTime: { type: Type.STRING, description: "Hora de fin HH:mm" },
-                                    maxCapacity: { type: Type.INTEGER, description: "Capacidad máxima del turno/clase" }
-                                }
-                            }
-                        },
-                        agentTone: {
-                            type: Type.STRING,
-                            description: "El tono que debe usar el bot"
-                        },
-                        defaultDurationMinutes: {
-                            type: Type.INTEGER,
-                            description: "Duración en minutos de un turno estándar"
-                        }
-                    },
-                    required: ["businessType", "businessName", "schedules", "agentTone", "defaultDurationMinutes"]
-                }
-            }
+        const response = await openai.beta.chat.completions.parse({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userInput }
+            ],
+            response_format: zodResponseFormat(BusinessConfigSchema, "business_config"),
         });
 
-        if (!response.text) {
-            throw new Error("No response from Gemini");
+        const config = response.choices[0].message.parsed;
+
+        if (!config) {
+            throw new Error("No parsed response from OpenAI");
         }
 
-        const config = JSON.parse(response.text) as BusinessConfig;
         return config;
 
     } catch (error) {
-        console.error("Error generating business config with Gemini:", error);
+        console.error("Error generating business config with OpenAI:", error);
         throw new Error("Fallo al procesar el texto del negocio con Inteligencia Artificial.");
     }
 }
