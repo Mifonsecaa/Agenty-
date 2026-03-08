@@ -29,8 +29,21 @@ export default function DashboardOverview() {
         if (savedConfig) {
             try {
                 const config = JSON.parse(savedConfig);
-                if (config.name) setAgentName(config.name);
-                if (config.metrics) setMetrics(config.metrics);
+
+                // Set name based on root database object or parsed JSON config
+                if (config.name) {
+                    setAgentName(config.name);
+                } else if (config.config && config.config.businessName) {
+                    setAgentName(config.config.businessName);
+                }
+
+                // Default placeholder metrics since we don't track real ones yet
+                setMetrics({
+                    conversations: 0,
+                    tasksAutomated: 0,
+                    savedTime: 0
+                });
+
                 setChartData(generateMockChartData());
             } catch (e) {
                 console.error("Error parsing config", e);
@@ -44,7 +57,14 @@ export default function DashboardOverview() {
     useEffect(() => {
         loadDashboardData();
         window.addEventListener('agentSwitched', loadDashboardData);
-        return () => window.removeEventListener('agentSwitched', loadDashboardData);
+
+        // Also polling fallback just in case layout fetch takes slightly longer
+        const interval = setInterval(loadDashboardData, 2000);
+
+        return () => {
+            window.removeEventListener('agentSwitched', loadDashboardData);
+            clearInterval(interval);
+        };
     }, []);
     return (
         <div className="max-w-6xl mx-auto space-y-8 relative z-10">

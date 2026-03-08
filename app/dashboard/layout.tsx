@@ -28,31 +28,43 @@ export default function DashboardLayout({
     const [agents, setAgents] = useState<any[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-    const loadAgentsData = () => {
-        const savedAgentsStr = localStorage.getItem("agenty_agents");
-        const activeId = localStorage.getItem("agenty_active_agent_id");
+    const loadAgentsData = async () => {
+        try {
+            const response = await fetch("/api/business");
+            if (!response.ok) {
+                console.error("Error fetching businesses", response.statusText);
+                return;
+            }
+            const data = await response.json();
 
-        if (savedAgentsStr) {
-            try {
-                const parsedAgents = JSON.parse(savedAgentsStr);
-                setAgents(parsedAgents);
+            if (data.success && data.businesses && data.businesses.length > 0) {
+                const fetchedAgents = data.businesses;
+                setAgents(fetchedAgents);
 
-                // Find active agent or fallback to the first one available
-                const active = parsedAgents.find((a: any) => a.id === activeId) || parsedAgents[0];
+                // Preserve active selection from localStorage or default to latest
+                const activeId = localStorage.getItem("agenty_active_agent_id");
+                let active = fetchedAgents.find((a: any) => a.id === activeId);
+
+                if (!active) {
+                    active = fetchedAgents[0];
+                    localStorage.setItem("agenty_active_agent_id", active.id);
+                }
+
                 if (active && active.name) {
                     setAgentName(active.name);
                     setInitial(active.name.charAt(0).toUpperCase());
-                    localStorage.setItem("agenty_config", JSON.stringify(active)); // keeps the rest of the app synced easily
+                    localStorage.setItem("agenty_config", JSON.stringify(active));
                 }
-            } catch (e) {
-                console.error("Error parsing agents", e);
+            } else {
+                setAgents([]);
             }
+        } catch (e) {
+            console.error("Error loading agents from database", e);
         }
     };
 
     useEffect(() => {
         loadAgentsData();
-        // Listen for internal switches
         window.addEventListener('agentSwitched', loadAgentsData);
         return () => window.removeEventListener('agentSwitched', loadAgentsData);
     }, []);
