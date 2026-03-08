@@ -1,40 +1,60 @@
 import { NextResponse } from "next/server";
-import { generateBusinessConfig } from "../../../services/ai/onboardingAgent";
-// import { prisma } from "../../../prisma/client"; // Lo conectaremos luego
+import { getServerSession } from "next-auth";
+import { prisma } from "@/lib/prisma";
+import { generateBusinessConfig } from "@/services/ai/onboardingAgent";
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
     try {
-        // 1. Extraemos el texto que el dueño escribió en la página web
-        const body = await request.json();
-        const { ownerDescription } = body;
-
-        if (!ownerDescription) {
-            return NextResponse.json(
-                { error: "La descripción del negocio es obligatoria." },
-                { status: 400 }
-            );
+        // 1. Verificamos sesión
+        const session = await getServerSession();
+        if (!session?.user?.email) {
+            return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
 
-        // 2. Le pasamos el texto a nuestro Agente de Onboarding
-        console.log("Procesando texto con IA...");
-        const businessConfig = await generateBusinessConfig(ownerDescription);
+        // 2. Recibimos texto
+        const { prompt } = await req.json();
+        if (!prompt) {
+            return NextResponse.json({ error: "El texto está vacío." }, { status: 400 });
+        }
 
-        // 3. Aquí iría el código para guardar en PostgreSQL (Prisma)
-        // const newBusiness = await prisma.business.create({
-        //   data: { config: businessConfig, ownerEmail: "..." }
-        // });
+        // 3. Pasamos texto a la IA
+        const aiConfig = await generateBusinessConfig(prompt);
 
-        // 4. Devolvemos el JSON estructurado al Frontend para mostrar la confirmación
-        return NextResponse.json({
-            success: true,
-            message: "¡Agente configurado exitosamente!",
-            data: businessConfig,
+        // 4. Buscamos al usuario o lo creamos si no existe (El parche inteligente)
+        let user = await prisma.user.findUnique({
+            where: { email: session.user.email }
         });
 
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    email: session.user.email,
+                    name: session.user.name || "Dueño del Negocio",
+                }
+            });
+        }
+
+        // 5. Guardamos el negocio en PostgreSQL
+        const negocio = await prisma.business.upsert({
+            where: {
+                userId: user.id
+            },
+            update: {
+                name: aiConfig.businessName || "Negocio Nuevo",
+                config: aiConfig as any,
+            },
+            create: {
+                name: aiConfig.businessName || "Negocio Nuevo",
+                config: aiConfig as any,
+                userId: user.id
+            }
+        });
+
+        // 6. Respondemos éxito
+        return NextResponse.json({ success: true, business: negocio });
+
     } catch (error) {
-        return NextResponse.json(
-            { error: "Hubo un problema al crear la configuración del agente." },
-            { status: 500 }
-        );
+        console.error("Error en la API de onboarding:", error);
+        return NextResponse.json({ error: "Error interno del servidor al crear el negocio." }, { status: 500 });
     }
 }

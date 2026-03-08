@@ -44,6 +44,10 @@ export default function HomePage() {
         }, 1800);
 
         try {
+            // --- ¡CAMBIO AQUÍ! ---
+            // Guardamos el contexto del negocio para que la demo lo pueda usar.
+            localStorage.setItem("business_context", description);
+
             const response = await fetch("/api/onboarding", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
