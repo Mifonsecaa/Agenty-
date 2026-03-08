@@ -20,9 +20,10 @@ const TASKS = [
 
 export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: '¡Hola! Soy AgentyBot 🤖, el experto en ventas de Agenty.ai. ¿Te gustaría saber cómo podemos automatizar la atención y reservas de tu negocio en WhatsApp?' }
+    { role: 'assistant', content: '¡Hola! Soy AgentyBot 🤖, el experto en ventas de Agenty.ai. ¿Te gustaría saber cómo podemos automatizar la atención y reservas de tu negocio en WhatsApp? (O si prefieres, escribe el contexto de tu negocio a la derecha para probarme en vivo).' }
   ]);
   const [userInput, setUserInput] = useState('');
+  const [demoContext, setDemoContext] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [provider, setProvider] = useState<Provider>('openai');
   const [taskState, setTaskState] = useState<Record<string, TaskStatus>>({
@@ -53,7 +54,7 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, provider, isDemo: true }), // Enviamos flag de Demo para ignorar Base de Datos
+        body: JSON.stringify({ messages: newMessages, provider, isDemo: true, demoContext }),
       });
 
       setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'in_progress' }));
@@ -103,9 +104,9 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
               <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled={isLoading}>Enviar</button>
             </form>
           </div>
-          <div className="w-1/3 p-6 bg-[#050505]">
+          <div className="w-1/3 p-6 bg-[#050505] flex flex-col h-full overflow-y-auto">
             <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider mb-6">Estado del Proceso</h3>
-            <ul className="space-y-4">
+            <ul className="space-y-4 mb-8">
               {TASKS.map(task => (
                 <li key={task.id} className="flex items-center text-sm">
                   {taskState[task.id] === 'completed' && <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 text-emerald-400 mr-3 shadow-sm shadow-emerald-500/10">✓</div>}
@@ -115,6 +116,21 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
                 </li>
               ))}
             </ul>
+
+            <div className="flex-1 min-h-0 flex flex-col pt-6 border-t border-white/10">
+              <h3 className="text-sm font-semibold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                ✨ Inyectar Contexto
+              </h3>
+              <p className="text-xs text-white/50 mb-3">
+                Escribe a qué se dedica tu negocio aquí y envíale un mensaje al bot. ¡Verás cómo asume esa personalidad al instante!
+              </p>
+              <textarea
+                value={demoContext}
+                onChange={(e) => setDemoContext(e.target.value)}
+                placeholder="Ej. Soy una clínica dental..."
+                className="w-full flex-1 bg-[#111111] text-white rounded-xl px-3 py-3 text-sm border border-white/10 focus:outline-none focus:border-purple-500/50 transition-colors placeholder-white/30 resize-none min-h-[100px]"
+              />
+            </div>
           </div>
         </div>
       </div>
