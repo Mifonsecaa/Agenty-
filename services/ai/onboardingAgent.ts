@@ -17,7 +17,7 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
   `;
 
     try {
-        const response = await openai.beta.chat.completions.parse({
+        const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 { role: "system", content: systemPrompt },
@@ -26,12 +26,13 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
             response_format: zodResponseFormat(BusinessConfigSchema, "business_config"),
         });
 
-        const config = response.choices[0].message.parsed;
+        const content = response.choices[0].message.content;
 
-        if (!config) {
+        if (!content) {
             throw new Error("No parsed response from OpenAI");
         }
 
+        const config = JSON.parse(content) as BusinessConfig;
         return config;
 
     } catch (error) {
