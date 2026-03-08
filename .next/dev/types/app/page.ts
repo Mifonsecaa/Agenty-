@@ -1,4 +1,4 @@
-// File: C:\Users\David\PycharmProjects\Agenty-\app\page.tsx
+// File: /mnt/wsl/docker-desktop-bind-mounts/Ubuntu/3700bf7d74fe3d6da5badb13d1f01a761720f2dc88ff101afe44d42fe1a3338f/app/page.tsx
 import * as entry from '../../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

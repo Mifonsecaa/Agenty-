@@ -1,4 +1,4 @@
-// File: C:\Users\David\PycharmProjects\Agenty-\app\api\auth\[...nextauth]\route.ts
+// File: /mnt/wsl/docker-desktop-bind-mounts/Ubuntu/3700bf7d74fe3d6da5badb13d1f01a761720f2dc88ff101afe44d42fe1a3338f/app/api/auth/[...nextauth]/route.ts
 import * as entry from '../../../../../../../app/api/auth/[...nextauth]/route.js'
 import type { NextRequest } from 'next/server.js'
 

@@ -1,9 +1,7 @@
-import { OpenAI } from 'openai';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Content } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // <-- RUTA CORREGIDA
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const formatHistoryForGemini = (messages: { role: string, content: string }[]): Content[] => {
@@ -48,7 +46,7 @@ export async function POST(request: Request) {
     } 
     else if (provider === 'gemini') {
       if (!process.env.GEMINI_API_KEY) throw new Error("Falta la clave de API de Gemini.");
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
       const history = formatHistoryForGemini(messages);
       const lastMessage = history.pop();
       const chat = model.startChat({

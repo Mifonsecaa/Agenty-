@@ -13,7 +13,6 @@ export async function POST(req: Request) {
 
         const chatId = body.message?.chat?.id;
         const text = body.message?.text;
-
         if (!chatId || !text) {
             return NextResponse.json({ ok: true });
         }
