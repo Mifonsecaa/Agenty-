@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Content } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // <-- RUTA CORREGIDA
+import OpenAI from 'openai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
 const formatHistoryForGemini = (messages: { role: string, content: string }[]): Content[] => {
   let processedMessages = [...messages];
@@ -37,13 +39,13 @@ export async function POST(request: Request) {
     if (provider === 'openai') {
       if (!process.env.OPENAI_API_KEY) throw new Error("Falta la clave de API de OpenAI.");
       const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini',
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
         temperature: 0.7,
         max_tokens: 150,
       });
       aiResponse = response.choices[0].message;
-    } 
+    }
     else if (provider === 'gemini') {
       if (!process.env.GEMINI_API_KEY) throw new Error("Falta la clave de API de Gemini.");
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -53,16 +55,16 @@ export async function POST(request: Request) {
         history: history,
         generationConfig: { maxOutputTokens: 150, temperature: 0.7 },
         safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
         ],
         systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
       });
       const result = await chat.sendMessage(lastMessage?.parts[0].text || '');
       aiResponse = { role: 'assistant', content: result.response.text() };
-    } 
+    }
     else {
       throw new Error("Proveedor de IA no válido.");
     }
