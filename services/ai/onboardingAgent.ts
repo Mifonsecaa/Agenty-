@@ -17,7 +17,7 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-pro",
+            model: "gemini-2.5-flash",
             contents: `${systemPrompt}\n\nDescripción del dueño: ${userInput}`,
             config: {
                 responseMimeType: "application/json",
