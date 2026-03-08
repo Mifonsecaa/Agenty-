@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useAgenty } from "@/context/AgentyContext";
 
 // Function to generate random chart data to simulate different agent performance
 const generateMockChartData = () => [
@@ -16,56 +17,20 @@ const generateMockChartData = () => [
 ];
 
 export default function DashboardOverview() {
-    const [agentName, setAgentName] = useState("Asistente Virtual");
+    const { activeAgent } = useAgenty();
     const [chartData, setChartData] = useState<any[]>([]);
     const [metrics, setMetrics] = useState({
-        conversations: 1245,
-        tasksAutomated: 840,
-        savedTime: 125 // Reutilizando esto para human handoffs visualmente o tiempo
+        conversations: 0,
+        tasksAutomated: 0,
+        savedTime: 0
     });
 
-    const loadDashboardData = () => {
-        const savedConfig = localStorage.getItem("agenty_config");
-        if (savedConfig) {
-            try {
-                const config = JSON.parse(savedConfig);
-
-                // Set name based on root database object or parsed JSON config
-                if (config.name) {
-                    setAgentName(config.name);
-                } else if (config.config && config.config.businessName) {
-                    setAgentName(config.config.businessName);
-                }
-
-                // Default placeholder metrics since we don't track real ones yet
-                setMetrics({
-                    conversations: 0,
-                    tasksAutomated: 0,
-                    savedTime: 0
-                });
-
-                setChartData(generateMockChartData());
-            } catch (e) {
-                console.error("Error parsing config", e);
-            }
-        } else {
-            // Fallback if no config
-            setChartData(generateMockChartData());
-        }
-    };
-
     useEffect(() => {
-        loadDashboardData();
-        window.addEventListener('agentSwitched', loadDashboardData);
+        setChartData(generateMockChartData());
+    }, [activeAgent]);
 
-        // Also polling fallback just in case layout fetch takes slightly longer
-        const interval = setInterval(loadDashboardData, 2000);
+    const agentName = activeAgent?.name || "Asistente Virtual";
 
-        return () => {
-            window.removeEventListener('agentSwitched', loadDashboardData);
-            clearInterval(interval);
-        };
-    }, []);
     return (
         <div className="max-w-6xl mx-auto space-y-8 relative z-10">
 

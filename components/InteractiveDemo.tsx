@@ -88,51 +88,57 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
             <button onClick={() => setProvider('gemini')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'gemini' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>Gemini</button>
           </div>
         </div>
-        <div className="flex-grow flex overflow-hidden">
-          <div className="w-2/3 flex flex-col p-6 border-r border-white/10">
-            <div className="flex-grow overflow-y-auto space-y-6 pr-4 custom-scrollbar">
+        <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
+          {/* Chat Section */}
+          <div className="w-full md:w-2/3 flex flex-col p-4 md:p-6 border-b md:border-b-0 md:border-r border-white/10 min-h-0">
+            <div className="flex-grow overflow-y-auto space-y-4 md:space-y-6 pr-2 md:pr-4 custom-scrollbar">
               {messages.map((msg, index) => (
                 <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs lg:max-w-md px-4 py-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-2xl rounded-br-none' : 'bg-white/10 text-white/90 rounded-2xl rounded-bl-none border border-white/5'}`}>{msg.content}</div>
+                  <div className={`max-w-[85%] md:max-w-md px-4 py-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-2xl rounded-br-none' : 'bg-white/10 text-white/90 rounded-2xl rounded-bl-none border border-white/5'}`}>{msg.content}</div>
                 </div>
               ))}
               {isLoading && <div className="flex justify-start"><div className="bg-white/5 border border-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '300ms' }} /></div></div>}
               <div ref={chatEndRef} />
             </div>
-            <form onSubmit={handleSendMessage} className="mt-4 pt-4 border-t border-white/10 flex gap-3 relative">
-              <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Prueba interactuar con el agente..." className="flex-grow bg-[#111111] text-white rounded-xl px-4 py-3 text-sm border border-white/10 focus:outline-none focus:border-blue-500/50 transition-colors placeholder-white/30" disabled={isLoading} />
-              <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled={isLoading}>Enviar</button>
+            <form onSubmit={handleSendMessage} className="mt-4 pt-4 border-t border-white/10 flex gap-2 md:gap-3 relative">
+              <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Prueba interactuar..." className="flex-grow bg-[#111111] text-white rounded-xl px-4 py-3 text-sm border border-white/10 focus:outline-none focus:border-blue-500/50 transition-colors placeholder-white/30" disabled={isLoading} />
+              <button type="submit" className="bg-blue-600 text-white px-4 md:px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled={isLoading}>Enviar</button>
             </form>
           </div>
-          <div className="w-1/3 p-6 bg-[#050505] flex flex-col h-full overflow-y-auto">
-            <h3 className="text-sm font-semibold text-white/80 uppercase tracking-wider mb-6">Estado del Proceso</h3>
-            <ul className="space-y-4 mb-8">
-              {TASKS.map(task => (
-                <li key={task.id} className="flex items-center text-sm">
-                  {taskState[task.id] === 'completed' && <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 text-emerald-400 mr-3 shadow-sm shadow-emerald-500/10">✓</div>}
-                  {taskState[task.id] === 'in_progress' && <div className="w-6 h-6 rounded-full border-2 border-yellow-500/30 border-t-yellow-500 animate-spin mr-3"></div>}
-                  {taskState[task.id] === 'pending' && <div className="w-6 h-6 rounded-full border border-white/20 bg-white/5 mr-3"></div>}
-                  <span className={`${taskState[task.id] === 'completed' ? 'text-white' : taskState[task.id] === 'in_progress' ? 'text-yellow-400 font-medium' : 'text-white/40'}`}>{task.text}</span>
-                </li>
-              ))}
-            </ul>
 
-            <div className="flex-1 min-h-0 flex flex-col pt-6 border-t border-white/10">
-              <h3 className="text-sm font-semibold text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                ✨ Inyectar Contexto
+          {/* Configuration Section */}
+          <div className="w-full md:w-1/3 p-4 md:p-6 bg-[#050505] flex flex-col h-auto md:h-full overflow-y-auto border-t md:border-t-0 border-white/10">
+            <div className="md:block hidden">
+              <h3 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-6">Estado del Proceso</h3>
+              <ul className="space-y-4 mb-8">
+                {TASKS.map(task => (
+                  <li key={task.id} className="flex items-center text-sm">
+                    {taskState[task.id] === 'completed' && <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 text-emerald-400 mr-3 shadow-sm shadow-emerald-500/10 text-[10px]">✓</div>}
+                    {taskState[task.id] === 'in_progress' && <div className="w-5 h-5 rounded-full border-2 border-yellow-500/30 border-t-yellow-500 animate-spin mr-3"></div>}
+                    {taskState[task.id] === 'pending' && <div className="w-5 h-5 rounded-full border border-white/10 bg-white/5 mr-3"></div>}
+                    <span className={`${taskState[task.id] === 'completed' ? 'text-white/80' : taskState[task.id] === 'in_progress' ? 'text-yellow-400 font-medium' : 'text-white/20'}`}>{task.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex-1 min-h-0 flex flex-col md:pt-6 md:border-t border-white/10">
+              <h3 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                ✨ Personalidad IA
               </h3>
-              <p className="text-xs text-white/50 mb-3">
-                Escribe a qué se dedica tu negocio aquí y envíale un mensaje al bot. ¡Verás cómo asume esa personalidad al instante!
+              <p className="text-[11px] text-white/40 mb-3 leading-relaxed">
+                Escribe el contexto de tu negocio para que el bot lo asuma al instante.
               </p>
               <textarea
                 value={demoContext}
                 onChange={(e) => setDemoContext(e.target.value)}
-                placeholder="Ej. Soy una clínica dental..."
-                className="w-full flex-1 bg-[#111111] text-white rounded-xl px-3 py-3 text-sm border border-white/10 focus:outline-none focus:border-purple-500/50 transition-colors placeholder-white/30 resize-none min-h-[100px]"
+                placeholder="Ej. Soy una clínica dental en Bogotá..."
+                className="w-full min-h-[80px] md:flex-1 bg-[#111111] text-white rounded-xl px-3 py-3 text-sm border border-white/10 focus:outline-none focus:border-purple-500/50 transition-colors placeholder-white/20 resize-none"
               />
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );

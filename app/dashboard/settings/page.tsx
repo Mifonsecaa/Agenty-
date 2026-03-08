@@ -1,10 +1,11 @@
-"use client";
 import { useState, useEffect } from "react";
 import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders } from "lucide-react";
 import { motion } from "framer-motion";
+import { useAgenty } from "@/context/AgentyContext";
 
 export default function SettingsPage() {
-    const [isLoading, setIsLoading] = useState(true);
+    const { activeAgent, updateActiveAgentConfig } = useAgenty();
+    const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -19,33 +20,20 @@ export default function SettingsPage() {
     });
 
     useEffect(() => {
-        const loadConfig = () => {
-            const configStr = localStorage.getItem("agenty_config");
-            if (configStr) {
-                try {
-                    const config = JSON.parse(configStr);
-                    const actualConfig = config.config || config; // Handle nested structure just in case
+        if (!activeAgent) return;
 
-                    setAgentData({
-                        id: config.id || "",
-                        name: config.name || actualConfig.businessName || "Mi Agente",
-                        businessType: actualConfig.businessType || "INDIVIDUAL_APPOINTMENTS",
-                        agentTone: actualConfig.agentTone || "Amable",
-                        businessDescription: actualConfig.businessDescription || "",
-                        defaultDurationMinutes: actualConfig.defaultDurationMinutes || 60,
-                        schedules: actualConfig.schedules || []
-                    });
-                } catch (e) {
-                    console.error("Error parsing config", e);
-                }
-            }
-            setIsLoading(false);
-        };
+        const config = activeAgent.config || activeAgent;
+        setAgentData({
+            id: activeAgent.id || "",
+            name: activeAgent.name || config.businessName || "Mi Agente",
+            businessType: config.businessType || "INDIVIDUAL_APPOINTMENTS",
+            agentTone: config.agentTone || "Amable",
+            businessDescription: config.businessDescription || "",
+            defaultDurationMinutes: config.defaultDurationMinutes || 60,
+            schedules: config.schedules || []
+        });
+    }, [activeAgent]);
 
-        loadConfig();
-        window.addEventListener('agentSwitched', loadConfig);
-        return () => window.removeEventListener('agentSwitched', loadConfig);
-    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -87,20 +75,8 @@ export default function SettingsPage() {
             if (data.success) {
                 setMessage({ type: 'success', text: 'Configuración guardada exitosamente.' });
 
-                // Update localStorage so the rest of the app sees the changes immediately
-                const currentFullConfigStr = localStorage.getItem("agenty_config");
-                if (currentFullConfigStr) {
-                    const currentFullConfig = JSON.parse(currentFullConfigStr);
-                    const newLocalConfig = {
-                        ...currentFullConfig,
-                        name: agentData.name,
-                        config: updatedConfig
-                    };
-                    localStorage.setItem("agenty_config", JSON.stringify(newLocalConfig));
-
-                    // Dispatch event for components like Sidebar or Playground
-                    window.dispatchEvent(new Event('agentSwitched'));
-                }
+                // Update central context
+                updateActiveAgentConfig(payload);
             } else {
                 setMessage({ type: 'error', text: data.error || 'Error al guardar.' });
             }
@@ -108,11 +84,10 @@ export default function SettingsPage() {
             setMessage({ type: 'error', text: 'Error de conexión.' });
         } finally {
             setIsSaving(false);
-
-            // Clear message after 3 seconds
             setTimeout(() => setMessage(null), 3000);
         }
     };
+
 
     if (isLoading) {
         return <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>;

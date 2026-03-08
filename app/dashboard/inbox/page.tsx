@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Search, Filter, MoreVertical, CheckCircle2, AlertCircle, Clock, Smartphone, Instagram, Globe, Sparkles } from "lucide-react";
+import { useAgenty } from "@/context/AgentyContext";
 
 export default function LiveInbox() {
-    const [agentName, setAgentName] = useState("Agent");
+    const { activeAgent } = useAgenty();
     const [selectedChat, setSelectedChat] = useState<number | null>(1);
 
     // Mockup data for inbox
@@ -57,24 +58,8 @@ export default function LiveInbox() {
         }
     ];
 
-    useEffect(() => {
-        const loadActiveAgent = () => {
-            const savedAgentsStr = localStorage.getItem("agenty_agents");
-            const activeId = localStorage.getItem("agenty_active_agent_id");
-            if (savedAgentsStr) {
-                try {
-                    const parsedAgents = JSON.parse(savedAgentsStr);
-                    const active = parsedAgents.find((a: any) => a.id === activeId) || parsedAgents[0];
-                    if (active) setAgentName(active.name || "Agent");
-                } catch (e) {
-                    console.error("Error parsing agents", e);
-                }
-            }
-        };
-        loadActiveAgent();
-        window.addEventListener('agentSwitched', loadActiveAgent);
-        return () => window.removeEventListener('agentSwitched', loadActiveAgent);
-    }, []);
+    const agentName = activeAgent?.name || "Agent";
+
 
     const activeChatData = chats.find(c => c.id === selectedChat);
 
@@ -205,8 +190,8 @@ export default function LiveInbox() {
                                                 )}
 
                                                 <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.role === 'user'
-                                                        ? 'bg-[#222222] text-white/90 rounded-bl-none border border-white/5'
-                                                        : 'bg-gradient-to-tr from-blue-600 to-purple-600 text-white rounded-br-none shadow-md shadow-purple-500/10'
+                                                    ? 'bg-[#222222] text-white/90 rounded-bl-none border border-white/5'
+                                                    : 'bg-gradient-to-tr from-blue-600 to-purple-600 text-white rounded-br-none shadow-md shadow-purple-500/10'
                                                     }`}>
                                                     {msg.text}
                                                 </div>

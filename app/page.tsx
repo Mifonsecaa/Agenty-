@@ -149,7 +149,7 @@ export default function HomePage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 1, delay: 1 }}
-                    className="mt-24 w-full max-w-5xl mx-auto relative z-10 border-t border-white/5 pt-10"
+                    className="mt-24 w-full max-w-5xl mx-auto relative z-10 pt-10"
                 >
                     <p className="text-center text-sm text-white/30 mb-8 font-semibold uppercase tracking-widest">
                         Startups que automatizan con nosotros

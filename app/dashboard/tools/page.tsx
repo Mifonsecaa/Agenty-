@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks } from "lucide-react";
+import { useAgenty } from "@/context/AgentyContext";
 
 export default function ToolsStore() {
+    const { activeAgent } = useAgenty();
     const [tools, setTools] = useState([
         {
             id: 1,
@@ -38,24 +40,19 @@ export default function ToolsStore() {
         }
     ]);
 
-    // Leer tools recomendadas desde localStorage
+    // Leer tools recomendadas desde el contexto
     useEffect(() => {
-        const savedConfig = localStorage.getItem("agenty_config");
-        if (savedConfig) {
-            try {
-                const config = JSON.parse(savedConfig);
-                if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
-                    // Actualizar el estado 'connected' si la tool está en la lista recomendada
-                    setTools(prevTools => prevTools.map(tool => ({
-                        ...tool,
-                        status: config.recommendedTools.includes(tool.id) ? "connected" : "disconnected"
-                    })));
-                }
-            } catch (e) {
-                console.error("Error parsing config", e);
-            }
+        if (!activeAgent) return;
+
+        const config = activeAgent.config || activeAgent;
+        if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
+            setTools(prevTools => prevTools.map(tool => ({
+                ...tool,
+                status: config.recommendedTools.includes(tool.id) ? "connected" : "disconnected"
+            })));
         }
-    }, []);
+    }, [activeAgent]);
+
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 relative z-10">
