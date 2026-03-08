@@ -38,24 +38,20 @@ export default function BuilderPlayground() {
     // Cargar la configuración mágica generada desde la Home
     useEffect(() => {
         const loadActiveAgent = () => {
-            const savedAgentsStr = localStorage.getItem("agenty_agents");
-            const activeId = localStorage.getItem("agenty_active_agent_id");
+            const configStr = localStorage.getItem("agenty_config");
 
-            if (savedAgentsStr) {
+            if (configStr) {
                 try {
-                    const parsedAgents = JSON.parse(savedAgentsStr);
-                    const active = parsedAgents.find((a: any) => a.id === activeId) || parsedAgents[0];
+                    const active = JSON.parse(configStr);
+                    const config = active.config || active;
 
-                    if (active) {
-                        const config = active.config || active;
+                    setAgentName(config.businessName || active.name || "AgentBot");
 
-                        setAgentName(config.businessName || active.name || "AgentBot");
-
-                        // Si ya tiene un system prompt guardado, usamos ese. Si no, generamos uno a partir del config
-                        if (active.systemPrompt) {
-                            setSystemPrompt(active.systemPrompt);
-                        } else if (config.schedules) {
-                            const generatedPrompt = `Eres el asistente virtual para: ${config.businessName || active.name}.
+                    // Si ya tiene un system prompt guardado, usamos ese. Si no, generamos uno a partir del config
+                    if (active.systemPrompt) {
+                        setSystemPrompt(active.systemPrompt);
+                    } else if (config.schedules) {
+                        const generatedPrompt = `Eres el asistente virtual para: ${config.businessName || active.name}.
 Tu comportamiento y personalidad debe ser: ${config.agentTone || 'Amable y profesional'}.
 
 REGLAS DE NEGOCIO Y CONOCIMIENTO:
@@ -69,19 +65,18 @@ ${config.schedules.map((s: any) => `- ${s.activityName}: Días de semana (1=Lune
 
 Por favor, actúa estrictamente basándote en esta personalidad, conocimientos de productos/precios y horarios al responder a los clientes.`;
 
-                            setSystemPrompt(generatedPrompt);
-                        } else {
-                            setSystemPrompt("Eres un asistente virtual. Sé amable y conciso.");
-                        }
+                        setSystemPrompt(generatedPrompt);
+                    } else {
+                        setSystemPrompt("Eres un asistente virtual. Sé amable y conciso.");
+                    }
 
-                        if (active.greeting) {
-                            setMessages([{ role: "assistant", text: active.greeting }]);
-                        } else {
-                            setMessages([{ role: "assistant", text: `¡Hola! Soy tu asistente de ${config.businessName || 'este negocio'}. ¿En qué te puedo asesorar?` }]);
-                        }
+                    if (active.greeting) {
+                        setMessages([{ role: "assistant", text: active.greeting }]);
+                    } else {
+                        setMessages([{ role: "assistant", text: `¡Hola! Soy tu asistente de ${config.businessName || 'este negocio'}. ¿En qué te puedo asesorar?` }]);
                     }
                 } catch (e) {
-                    console.error("Error parsing agents", e);
+                    console.error("Error parsing agenty_config", e);
                 }
             }
         };

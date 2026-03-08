@@ -19,27 +19,32 @@ export default function SettingsPage() {
     });
 
     useEffect(() => {
-        // Load the active config from localStorage
-        const configStr = localStorage.getItem("agenty_config");
-        if (configStr) {
-            try {
-                const config = JSON.parse(configStr);
-                const actualConfig = config.config || config; // Handle nested structure just in case
+        const loadConfig = () => {
+            const configStr = localStorage.getItem("agenty_config");
+            if (configStr) {
+                try {
+                    const config = JSON.parse(configStr);
+                    const actualConfig = config.config || config; // Handle nested structure just in case
 
-                setAgentData({
-                    id: config.id || "",
-                    name: config.name || actualConfig.businessName || "Mi Agente",
-                    businessType: actualConfig.businessType || "INDIVIDUAL_APPOINTMENTS",
-                    agentTone: actualConfig.agentTone || "Amable",
-                    businessDescription: actualConfig.businessDescription || "",
-                    defaultDurationMinutes: actualConfig.defaultDurationMinutes || 60,
-                    schedules: actualConfig.schedules || []
-                });
-            } catch (e) {
-                console.error("Error parsing config", e);
+                    setAgentData({
+                        id: config.id || "",
+                        name: config.name || actualConfig.businessName || "Mi Agente",
+                        businessType: actualConfig.businessType || "INDIVIDUAL_APPOINTMENTS",
+                        agentTone: actualConfig.agentTone || "Amable",
+                        businessDescription: actualConfig.businessDescription || "",
+                        defaultDurationMinutes: actualConfig.defaultDurationMinutes || 60,
+                        schedules: actualConfig.schedules || []
+                    });
+                } catch (e) {
+                    console.error("Error parsing config", e);
+                }
             }
-        }
-        setIsLoading(false);
+            setIsLoading(false);
+        };
+
+        loadConfig();
+        window.addEventListener('agentSwitched', loadConfig);
+        return () => window.removeEventListener('agentSwitched', loadConfig);
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
