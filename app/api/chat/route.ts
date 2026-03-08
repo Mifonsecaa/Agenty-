@@ -20,27 +20,52 @@ const formatHistoryForGemini = (messages: { role: string, content: string }[]): 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { messages, provider } = body;
+    const { messages, provider, isDemo } = body;
 
     if (!messages || !provider) {
       return new NextResponse('Faltan mensajes o el proveedor', { status: 400 });
     }
 
-    const business = await prisma.business.findFirst();
     let systemPrompt = "Eres un asistente de IA genérico. Sé amable y servicial.";
 
-    if (business && business.config) {
-      const config = business.config as any;
-      systemPrompt = config.systemPrompt || `Eres un asistente virtual para ${config.name || 'un negocio'}. Sé amable y conciso.`;
+    // Lógica para la Demo Pública vs. Agentes Privados
+    if (isDemo) {
+      systemPrompt = `
+        Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai.
+        Tu misión es convencer a emprendedores y dueños de negocio de que Agenty es la solución definitiva para automatizar sus reservas y atención al cliente en WhatsApp.
+        
+        REGLAS:
+        - Responde corto, máximo 2 o 3 oraciones.
+        - Sé ultra amable, usa emojis modernos (✨, 🚀, 🤖).
+        - Si preguntan precios, diles que empiecen totalmente GRATIS.
+        - Muéstrales cómo tú mismo (AgentyBot) eres prueba de que funciona, conversando de forma natural.
+        - Termina los mensajes invitándolos a registrarse y "crear su primer agente".
+        `;
+    } else {
+      // Find the specific config instead of blindly grabbing the first business 
+      // Note: For the builder, we pass the custom prompt directly in the messages payload via the Builder context,
+      // so we don't strictly *need* to pull Prisma here anymore, but keeping as fallback.
+      const business = await prisma.business.findFirst();
+      if (business && business.config) {
+        const config = business.config as any;
+        systemPrompt = config.systemPrompt || `Eres un asistente virtual para ${config.name || 'un negocio'}. Sé amable y conciso.`;
+      }
     }
 
     let aiResponse;
 
     if (provider === 'openai') {
       if (!process.env.OPENAI_API_KEY) throw new Error("Falta la clave de API de OpenAI.");
+
+      const payloadMessages = isDemo
+        ? [{ role: 'system', content: systemPrompt }, ...messages]
+        // If NOT demo (e.g. Builder), the Builder ALREADY injects {role: 'system', content: ...} as the first message
+        // To avoid duplicating system prompts and confusing OpenAI, we just pass the messages as-is if the first is 'system'.
+        : (messages[0]?.role === 'system' ? messages : [{ role: 'system', content: systemPrompt }, ...messages]);
+
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+        messages: payloadMessages,
         temperature: 0.7,
         max_tokens: 150,
       });

@@ -20,11 +20,11 @@ const TASKS = [
 
 export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: '¡Hola! Bienvenido al asistente de Agenty. La IA se adaptará al primer negocio que encuentre en tu base de datos. ¿En qué puedo ayudarte hoy?' }
+    { role: 'assistant', content: '¡Hola! Soy AgentyBot 🤖, el experto en ventas de Agenty.ai. ¿Te gustaría saber cómo podemos automatizar la atención y reservas de tu negocio en WhatsApp?' }
   ]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<Provider>('gemini');
+  const [provider, setProvider] = useState<Provider>('openai');
   const [taskState, setTaskState] = useState<Record<string, TaskStatus>>({
     start: 'completed',
     context: 'pending',
@@ -53,14 +53,14 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, provider }), // Ya no enviamos el contexto
+        body: JSON.stringify({ messages: newMessages, provider, isDemo: true }), // Enviamos flag de Demo para ignorar Base de Datos
       });
-      
+
       setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'in_progress' }));
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'La respuesta de la API no fue exitosa');
-      
+
       setMessages(prev => [...prev, data]);
       setTaskState(prev => ({ ...prev, generation: 'completed', response: 'completed' }));
 
