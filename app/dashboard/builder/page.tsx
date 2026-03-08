@@ -166,7 +166,7 @@ Por favor, actúa estrictamente basándote en esta personalidad y horarios al re
                 </div>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden">
 
                 {/* Left Column: Configuration */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col overflow-y-auto">
@@ -204,10 +204,10 @@ Por favor, actúa estrictamente basándote en esta personalidad y horarios al re
                 </div>
 
                 {/* Right Column: Simulator */}
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6 min-h-0 overflow-hidden">
 
                     {/* Phone Mockup Window */}
-                    <div className="flex-1 bg-black border border-white/10 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
+                    <div className="flex-1 bg-black border border-white/10 rounded-2xl flex flex-col min-h-0 relative shadow-2xl">
                         {/* Header chat */}
                         <div className="bg-[#111111] px-4 py-3 border-b border-white/10 flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
