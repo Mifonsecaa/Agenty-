@@ -47,10 +47,33 @@ export default function BuilderPlayground() {
                     const active = parsedAgents.find((a: any) => a.id === activeId) || parsedAgents[0];
 
                     if (active) {
-                        setAgentName(active.name || "AgentBot");
-                        setSystemPrompt(active.systemPrompt || "Cargando personalidad...");
+                        const config = active.config || active;
+
+                        setAgentName(config.businessName || active.name || "AgentBot");
+
+                        // Si ya tiene un system prompt guardado, usamos ese. Si no, generamos uno a partir del config
+                        if (active.systemPrompt) {
+                            setSystemPrompt(active.systemPrompt);
+                        } else if (config.schedules) {
+                            const generatedPrompt = `Eres un asistente virtual para el negocio: ${config.businessName || active.name}.
+Tu comportamiento y tono deben ser: ${config.agentTone || 'Amable y profesional'}.
+Tipo de negocio: ${config.businessType === 'GROUP_CLASSES' ? 'Clases Grupales' : 'Citas Individuales'}.
+Duración estándar de la reserva: ${config.defaultDurationMinutes || 60} minutos.
+
+Horarios disponibles:
+${config.schedules.map((s: any) => `- ${s.activityName}: Días de semana (1=Lunes): [${s.daysOfWeek.join(', ')}], de ${s.startTime} a ${s.endTime}. Capacidad máxima: ${s.maxCapacity}`).join('\n')}
+
+Por favor, actúa estrictamente basándote en esta personalidad y horarios al responder a los clientes.`;
+
+                            setSystemPrompt(generatedPrompt);
+                        } else {
+                            setSystemPrompt("Eres un asistente virtual. Sé amable y conciso.");
+                        }
+
                         if (active.greeting) {
                             setMessages([{ role: "assistant", text: active.greeting }]);
+                        } else {
+                            setMessages([{ role: "assistant", text: `¡Hola! Soy tu asistente de ${config.businessName || 'este negocio'}. ¿En qué te puedo asesorar?` }]);
                         }
                     }
                 } catch (e) {
@@ -69,34 +92,56 @@ export default function BuilderPlayground() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isTyping]);
 
-    const handleSendMessage = (e?: React.FormEvent) => {
+    const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
-        if (!input.trim()) return;
+        if (!input.trim() || isTyping) return;
 
         const userMsg = input.trim();
-        setMessages(prev => [...prev, { role: "user", text: userMsg }]);
+        const currentMessages = [...messages, { role: "user", text: userMsg }];
+
+        setMessages(currentMessages);
         setInput("");
         setIsTyping(true);
 
-        // Simulador de respuesta "con IA"
-        setTimeout(() => {
-            const mockResponses = [
-                `Como ${agentName}, estoy configurado para ayudarte con eso. ¿Necesitas más detalles?`,
-                "Entiendo. Según mis reglas de negocio, podemos proceder con esa solicitud.",
-                "¡Claro que sí! Estoy procesando esa información justo ahora.",
-                "Esa es una excelente pregunta. En este modo de prueba, te confirmo que puedo manejar ese flujo.",
-                "Revisando mi base de conocimiento... ¡Listo! Te puedo confirmar que sí es posible."
+        try {
+            // Formatear mensajes para la API
+            const apiMessages = currentMessages.map(m => ({
+                role: m.role,
+                content: m.text
+            }));
+
+            // Agregar el system prompt modificado (si editaron el textarea) como instrucciones inyectadas
+            // La API de /api/chat que arreglamos antes internamente antepone el prompt de Prisma.
+            // Puesto que aquí la UX permite editar el prompt "en vivo" pero no guardarlo todavía, 
+            // enviamos este contexto dinámicamente forzando que la API lo respete. 
+            // NOTA: esto sobreescribirá temporalmente el que saca de Primsma en la api para la DEMO en vivo
+
+            const reqMessages = [
+                { role: 'system', content: systemPrompt },
+                ...apiMessages
             ];
 
-            // Respuesta basada vagamente en la longitud o palabras (muy simple mockup)
-            let responseText = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: reqMessages,
+                    provider: 'openai'
+                })
+            });
 
-            if (userMsg.toLowerCase().includes("hola")) responseText = "¡Hola nuevamente! ¿Cómo van las pruebas?";
-            if (userMsg.toLowerCase().includes("precio")) responseText = "Nuestros precios dependen de tus necesidades. ¿Te gustaría agendar una llamada?";
+            if (!res.ok) throw new Error("Error en la respuesta del servidor");
 
-            setMessages(prev => [...prev, { role: "assistant", text: responseText }]);
+            const data = await res.json();
+
+            setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
+
+        } catch (error) {
+            console.error("Error enviando mensaje al chat:", error);
+            setMessages(prev => [...prev, { role: "assistant", text: "Hubo un error al procesar tu mensaje. Revisa tu consola." }]);
+        } finally {
             setIsTyping(false);
-        }, 1500 + Math.random() * 1000); // Retraso aleatorio para parecer humano/IA pensando
+        }
     };
 
     return (
