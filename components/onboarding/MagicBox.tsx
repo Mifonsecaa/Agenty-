@@ -129,6 +129,34 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
         }
     };
 
+    const [isImproving, setIsImproving] = useState(false);
+
+    const handleImproveWithAI = async () => {
+        if (!text || text.length < 5 || isImproving) return;
+        setIsImproving(true);
+
+        try {
+            const res = await fetch("/api/improve-description", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+            });
+
+            if (!res.ok) throw new Error("Error improving text");
+
+            const data = await res.json();
+            if (data.success && data.improved) {
+                setText(data.improved);
+                toast.success("¡Descripción mejorada por la IA! ✨");
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("No se pudo mejorar el texto en este momento.");
+        } finally {
+            setIsImproving(false);
+        }
+    };
+
     return (
         <div className="relative w-full max-w-3xl mx-auto group z-20">
             {/* Contenedor principal estilo Glassmorphism */}
@@ -268,10 +296,20 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 </div>
             </div>
 
-            {/* Badge de IA flotante estilo Lovable */}
-            <div className="absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/10 pointer-events-none animate-float">
-                <Sparkles size={18} className="text-blue-300" />
-            </div>
+            {/* AI Badge - Now a functional button */}
+            <button
+                onClick={handleImproveWithAI}
+                disabled={isImproving || !text || text.length < 5}
+                className={`absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
+                title="Mejorar con IA"
+            >
+                <Sparkles size={18} className={`text-white transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
+                {isImproving && (
+                    <span className="absolute left-full ml-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap">
+                        Mejorando...
+                    </span>
+                )}
+            </button>
         </div>
     );
 }
