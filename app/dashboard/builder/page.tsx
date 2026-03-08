@@ -55,15 +55,19 @@ export default function BuilderPlayground() {
                         if (active.systemPrompt) {
                             setSystemPrompt(active.systemPrompt);
                         } else if (config.schedules) {
-                            const generatedPrompt = `Eres un asistente virtual para el negocio: ${config.businessName || active.name}.
-Tu comportamiento y tono deben ser: ${config.agentTone || 'Amable y profesional'}.
-Tipo de negocio: ${config.businessType === 'GROUP_CLASSES' ? 'Clases Grupales' : 'Citas Individuales'}.
-Duración estándar de la reserva: ${config.defaultDurationMinutes || 60} minutos.
+                            const generatedPrompt = `Eres el asistente virtual para: ${config.businessName || active.name}.
+Tu comportamiento y personalidad debe ser: ${config.agentTone || 'Amable y profesional'}.
+
+REGLAS DE NEGOCIO Y CONOCIMIENTO:
+${config.businessDescription || 'Aún no hay reglas específicas.'}
+
+Tipo de negocio: ${config.businessType === 'GROUP_CLASSES' ? 'Clases Grupales' : 'Citas/Pedidos Individuales'}.
+Duración estándar de reserva/atención: ${config.defaultDurationMinutes || 60} minutos.
 
 Horarios disponibles:
 ${config.schedules.map((s: any) => `- ${s.activityName}: Días de semana (1=Lunes): [${s.daysOfWeek.join(', ')}], de ${s.startTime} a ${s.endTime}. Capacidad máxima: ${s.maxCapacity}`).join('\n')}
 
-Por favor, actúa estrictamente basándote en esta personalidad y horarios al responder a los clientes.`;
+Por favor, actúa estrictamente basándote en esta personalidad, conocimientos de productos/precios y horarios al responder a los clientes.`;
 
                             setSystemPrompt(generatedPrompt);
                         } else {

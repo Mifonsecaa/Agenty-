@@ -35,16 +35,9 @@ export async function POST(req: Request) {
             });
         }
 
-        // 5. Guardamos el negocio en PostgreSQL
-        const negocio = await prisma.business.upsert({
-            where: {
-                userId: user.id
-            },
-            update: {
-                name: aiConfig.businessName || "Negocio Nuevo",
-                config: aiConfig as any,
-            },
-            create: {
+        // 5. Guardamos el nuevo negocio en PostgreSQL garantizando persistencia múltiple
+        const negocio = await prisma.business.create({
+            data: {
                 name: aiConfig.businessName || "Negocio Nuevo",
                 config: aiConfig as any,
                 userId: user.id
