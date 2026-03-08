@@ -19,14 +19,13 @@ const TASKS = [
 ];
 
 export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: '¡Hola! Bienvenido al asistente de Agenty. La IA se adaptará al primer negocio que encuentre en tu base de datos. ¿En qué puedo ayudarte hoy?' }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isIntroLoading, setIsIntroLoading] = useState(true); // 1. Nuevo estado
   const [provider, setProvider] = useState<Provider>('gemini');
   const [taskState, setTaskState] = useState<Record<string, TaskStatus>>({
-    start: 'completed',
+    start: 'in_progress',
     context: 'pending',
     understanding: 'pending',
     generation: 'pending',
@@ -34,40 +33,58 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   });
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // 2. useEffect para obtener el saludo inicial
+  useEffect(() => {
+    const fetchIntro = async () => {
+      try {
+        setTaskState(prev => ({ ...prev, context: 'in_progress' }));
+        const response = await fetch('/api/chat/intro');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'No se pudo cargar la introducción.');
+        
+        setMessages([{ role: 'assistant', content: data.introMessage }]);
+        setTaskState(prev => ({ ...prev, start: 'completed', context: 'completed' }));
+      } catch (error: any) {
+        setMessages([{ role: 'assistant', content: `Error al cargar: ${error.message}` }]);
+      } finally {
+        setIsIntroLoading(false);
+      }
+    };
+    fetchIntro();
+  }, []);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userInput.trim() || isLoading) return;
+    if (!userInput.trim() || isLoading || isIntroLoading) return;
 
     const userMessage: Message = { role: 'user', content: userInput };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setUserInput('');
     setIsLoading(true);
-    setTaskState(prev => ({ ...prev, context: 'in_progress', understanding: 'in_progress' }));
+    setTaskState(prev => ({ ...prev, understanding: 'in_progress' }));
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, provider }), // Ya no enviamos el contexto
+        body: JSON.stringify({ messages: newMessages, provider }),
       });
       
-      setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'in_progress' }));
-
+      setTaskState(prev => ({ ...prev, understanding: 'completed', generation: 'in_progress' }));
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'La respuesta de la API no fue exitosa');
       
       setMessages(prev => [...prev, data]);
       setTaskState(prev => ({ ...prev, generation: 'completed', response: 'completed' }));
-
     } catch (error: any) {
       const errorMessage: Message = { role: 'assistant', content: `Error: ${error.message}` };
       setMessages(prev => [...prev, errorMessage]);
-      setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'completed', response: 'pending' }));
+      setTaskState(prev => ({ ...prev, understanding: 'completed', generation: 'completed', response: 'pending' }));
     } finally {
       setIsLoading(false);
       setTimeout(() => setTaskState(prev => ({ ...prev, understanding: 'pending', generation: 'pending', response: 'pending' })), 2000);
@@ -90,17 +107,28 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
         <div className="flex-grow flex overflow-hidden">
           <div className="w-2/3 flex flex-col p-6 border-r border-white/10">
             <div className="flex-grow overflow-y-auto space-y-6 pr-4 custom-scrollbar">
-              {messages.map((msg, index) => (
-                <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs lg:max-w-md px-4 py-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-2xl rounded-br-none' : 'bg-white/10 text-white/90 rounded-2xl rounded-bl-none border border-white/5'}`}>{msg.content}</div>
+              {/* 3. Lógica de carga inicial */}
+              {isIntroLoading ? (
+                <div className="flex justify-start">
+                  <div className="bg-white/5 border border-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
                 </div>
-              ))}
-              {isLoading && <div className="flex justify-start"><div className="bg-white/5 border border-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '300ms' }} /></div></div>}
+              ) : (
+                messages.map((msg, index) => (
+                  <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs lg:max-w-md px-4 py-3 text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-2xl rounded-br-none' : 'bg-white/10 text-white/90 rounded-2xl rounded-bl-none border border-white/5'}`}>{msg.content}</div>
+                  </div>
+                ))
+              )}
+              {isLoading && !isIntroLoading && <div className="flex justify-start"><div className="bg-white/5 border border-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: '300ms' }} /></div></div>}
               <div ref={chatEndRef} />
             </div>
             <form onSubmit={handleSendMessage} className="mt-4 pt-4 border-t border-white/10 flex gap-3 relative">
-              <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Prueba interactuar con el agente..." className="flex-grow bg-[#111111] text-white rounded-xl px-4 py-3 text-sm border border-white/10 focus:outline-none focus:border-blue-500/50 transition-colors placeholder-white/30" disabled={isLoading} />
-              <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled={isLoading}>Enviar</button>
+              <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Interactúa con el agente..." className="flex-grow bg-[#111111] text-white rounded-xl px-4 py-3 text-sm border border-white/10 focus:outline-none focus:border-blue-500/50 transition-colors placeholder-white/30" disabled={isLoading || isIntroLoading} />
+              <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all" disabled={isLoading || isIntroLoading}>Enviar</button>
             </form>
           </div>
           <div className="w-1/3 p-6 bg-[#050505]">

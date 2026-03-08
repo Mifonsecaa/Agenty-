@@ -5,10 +5,39 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b21f2c49-2e24-44a8-8453-b374d9817347" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/app/api/telegram/webhook/route.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development-fallback/0.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development-fallback/0.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development-fallback/index.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development-fallback/index.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/1.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/1.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/10.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/10.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/2.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/2.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/3.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/3.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/6.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/6.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/7.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/7.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/8.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/8.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/9.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/9.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/index.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/index.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/index.pack.gz.old" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/client-development/index.pack.gz.old" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/0.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/0.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/1.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/1.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/2.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/2.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/3.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/3.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/7.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/7.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/8.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/8.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/9.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/9.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/index.pack.gz" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/index.pack.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/index.pack.gz.old" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/cache/webpack/server-development/index.pack.gz.old" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/react-loadable-manifest.json" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/react-loadable-manifest.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/app/api/chat/route.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/middleware-react-loadable-manifest.js" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/server/middleware-react-loadable-manifest.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/vendor-chunks/@google.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/vendor-chunks/next.js" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/server/vendor-chunks/next.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/vendor-chunks/openai.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/server/webpack-runtime.js" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/server/webpack-runtime.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/static/chunks/app/layout.js" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/static/chunks/app/layout.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/static/chunks/webpack.js" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/static/chunks/webpack.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/types/app/api/chat/route.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/chat/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/chat/route.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,7 +97,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "Merging David",
+    "git-widget-placeholder": "David",
     "js.debugger.nextJs.config.created.server": "true",
     "junie.onboarding.icon.badge.shown": "true",
     "last_opened_file_path": "C:/Users/migue/WebstormProjects/agenty/agenty",
