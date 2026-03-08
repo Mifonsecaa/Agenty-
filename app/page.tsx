@@ -57,7 +57,7 @@ export default function HomePage() {
             if (!response.ok) {
                 throw new Error(data.error || "Error al procesar la descripción");
             }
-            const newAgent = data.data;
+            const newAgent = data.business;
             newAgent.id = Date.now().toString();
             // Generar métricas aleatorias para simular diferentes consumos
             newAgent.metrics = {
