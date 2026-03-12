@@ -1,43 +1,70 @@
-import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
+import NextAuth, { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { prisma } from "../../../../prisma/client";
-import bcrypt from "bcryptjs";
+import FacebookProvider from "next-auth/providers/facebook";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs";
+import { saveWhatsAppCredentials } from "@/services/database/business"; // 1. Importar nuestro nuevo servicio
 
-
-const handler = NextAuth({
-    adapter: PrismaAdapter(prisma),
-    session: { strategy: "jwt" },
-    pages: {
-        signIn: "/login",
-    },
+export const authOptions: NextAuthOptions = {
+    adapter: PrismaAdapter(prisma) as any,
     providers: [
         GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID as string,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+            clientId: process.env.GOOGLE_CLIENT_ID || "",
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+        }),
+        FacebookProvider({
+            clientId: process.env.FACEBOOK_CLIENT_ID || "",
+            clientSecret: process.env.FACEBOOK_CLIENT_SECRET || "",
+            authorization: {
+                params: {
+                    scope: "email,public_profile,whatsapp_business_management,whatsapp_business_messaging",
+                },
+            },
         }),
         CredentialsProvider({
-            name: "Credentials",
+            name: "credentials",
             credentials: {
-                email: { label: "Email", type: "email" },
+                email: { label: "Email", type: "text" },
                 password: { label: "Password", type: "password" }
             },
             async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) {
-                    throw new Error("Faltan credenciales");
-                }
+                if (!credentials?.email || !credentials?.password) throw new Error("Credenciales inválidas");
                 const user = await prisma.user.findUnique({ where: { email: credentials.email } });
-                if (!user || !user.password) {
-                    throw new Error("Usuario no encontrado o registrado con Google");
-                }
-                const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
-                if (!isPasswordValid) throw new Error("Contraseña incorrecta");
-
-                return { id: user.id, email: user.email, name: user.name };
+                if (!user || !user.password) throw new Error("Usuario no encontrado");
+                const isPasswordCorrect = await bcrypt.compare(credentials.password, user.password);
+                if (!isPasswordCorrect) throw new Error("Contraseña incorrecta");
+                return user;
             }
         })
     ],
-});
+    session: {
+        strategy: "jwt",
+    },
+    pages: {
+        signIn: "/login",
+    },
+    callbacks: {
+        async signIn({ user, account }) {
+            // 2. Si la conexión es de Facebook y tenemos un token...
+            if (account?.provider === 'facebook' && account.access_token) {
+                console.log("Recibido token de Facebook, guardando credenciales...");
+                // 3. Llamamos a la función para guardar el token en la base de datos
+                await saveWhatsAppCredentials(user.id, account.access_token);
+            }
+            return true; // Permitir siempre el inicio de sesión/conexión
+        },
+        async session({ session, token }) {
+            if (token && session.user) {
+                (session.user as any).id = token.sub;
+            }
+            return session;
+        },
+    },
+    secret: process.env.NEXTAUTH_SECRET,
+};
+
+const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST };

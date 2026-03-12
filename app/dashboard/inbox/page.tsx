@@ -1,261 +1,240 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Search, MoreVertical, PauseCircle, Send, Users, CheckCircle } from "lucide-react";
+import { Search, Filter, MoreVertical, CheckCircle2, AlertCircle, Clock, Smartphone, Instagram, Globe, Sparkles } from "lucide-react";
+import { useAgenty } from "@/context/AgentyContext";
 
-export default function Inbox() {
-    const [takeover, setTakeover] = useState(false);
-    const [inputValue, setInputValue] = useState("");
-    const [isAiTyping, setIsAiTyping] = useState(false);
+export default function LiveInbox() {
+    const { activeAgent } = useAgenty();
+    const [selectedChat, setSelectedChat] = useState<number | null>(1);
 
-    // Lista de mensajes dinámicos
-    const [conversation, setConversation] = useState([
-        { id: 1, role: "user", text: "Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?", time: "10:40 AM" },
-        { id: 2, role: "ai", text: "¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟", time: "10:40 AM" },
-        { id: 3, role: "user", text: "Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.", time: "10:42 AM" },
-        { id: 4, role: "system", text: "⚠️ El cliente solicitó un reembolso. Notificando a un humano.", time: "10:42 AM" }
-    ]);
-
-    const [chats, setChats] = useState([
+    // Mockup data for inbox
+    const chats = [
         {
             id: 1,
-            clientMatch: "Cliente Muestra",
-            lastMessage: "Hola, ¿Cómo estás?",
-            time: "10:42 AM"
+            name: "María Fernanda",
+            source: "whatsapp",
+            status: "resolved",
+            time: "2 min ago",
+            preview: "¡Perfecto! Ya quedó agendada la cita. Gracias.",
+            phone: "+57 300 *** ****",
+            history: [
+                { role: "user", text: "Hola, ¿tienen disponibilidad para mañana en la tarde?" },
+                { role: "agent", text: "¡Hola María! Sí, tenemos espacios a las 3:00 PM y a las 5:00 PM. ¿Cuál prefieres?" },
+                { role: "user", text: "A las 5:00 PM me queda perfecto." },
+                { role: "agent", text: "¡Excelente! Tu cita quedó agendada para mañana a las 5:00 PM. Te envié un recordatorio." },
+                { role: "user", text: "¡Perfecto! Ya quedó agendada la cita. Gracias." },
+                { role: "agent", text: "¡De nada! Aquí te esperamos." }
+            ]
+        },
+        {
+            id: 2,
+            name: "Carlos Restrepo",
+            source: "instagram",
+            status: "active",
+            time: "Just now",
+            preview: "¿Cuál es la dirección del local centro?",
+            phone: "@carlosrestrepo",
+            history: [
+                { role: "user", text: "Hola buenas tardes" },
+                { role: "agent", text: "¡Hola Carlos! Buenas tardes, ¿en qué podemos ayudarte hoy?" },
+                { role: "user", text: "¿Cuál es la dirección del local centro?" }
+            ]
+        },
+        {
+            id: 3,
+            name: "Ana Salazar",
+            source: "web",
+            status: "handoff",
+            time: "15 min ago",
+            preview: "Necesito hablar con un humano por un reclamo.",
+            phone: "Web Visitor #482",
+            history: [
+                { role: "user", text: "Tengo un problema con un pedido que no llegó." },
+                { role: "agent", text: "Lamento mucho escuchar eso Ana. ¿Me podrías dar tu número de orden?" },
+                { role: "user", text: "No lo tengo, por eso necesito ayuda urgente." },
+                { role: "user", text: "Necesito hablar con un humano por un reclamo." },
+                { role: "system", text: "⚠️ El agente de IA ha cedido la conversación al detectar frustración del usuario." }
+            ]
         }
-    ]);
+    ];
 
-    useEffect(() => {
-        const savedConfig = localStorage.getItem("agenty_config");
-        if (savedConfig) {
-            try {
-                const config = JSON.parse(savedConfig);
-                if (config.fakeChats && config.fakeChats.length > 0) {
-                    setChats(config.fakeChats);
-                }
-            } catch (e) {
-                console.error("Error parsing config", e);
-            }
-        }
-    }, []);
+    const agentName = activeAgent?.name || "Agent";
 
-    const handleSendMessage = () => {
-        if (!inputValue.trim()) return;
 
-        const newMessage = {
-            id: Date.now(),
-            role: takeover ? "human" : "user", // Si el humano tiene el control, envía como humano. Si no, simulamos que es el cliente respondiendo.
-            text: inputValue,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setConversation(prev => [...prev, newMessage]);
-        setInputValue("");
-
-        // Si la IA tiene el control y nosotros simulamos mandar un mensaje como usuario, la IA responde sola.
-        if (!takeover && newMessage.role === "user") {
-            setIsAiTyping(true);
-            setTimeout(() => {
-                setConversation(prev => [...prev, {
-                    id: Date.now() + 1,
-                    role: "ai",
-                    text: "Por supuesto, entiendo completamente. Déjame revisar nuestro sistema para procesar tu solicitud inmediatamente.",
-                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                }]);
-                setIsAiTyping(false);
-            }, 2500);
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleSendMessage();
-        }
-    };
+    const activeChatData = chats.find(c => c.id === selectedChat);
 
     return (
-        <div className="h-full flex flex-col relative z-10">
-            <div className="flex justify-between items-end mb-6">
+        <div className="h-full flex flex-col relative z-10 overflow-hidden">
+            <div className="flex justify-between items-end mb-6 shrink-0">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-                        Live Inbox <Users className="w-6 h-6 text-emerald-400" />
-                    </h1>
-                    <p className="text-white/60">Supervisa las conversaciones de tu agente y toma el control si es necesario.</p>
+                    <h1 className="text-3xl font-bold tracking-tight mb-2">Live Inbox (Monitor)</h1>
+                    <p className="text-white/60">Observa en tiempo real cómo <strong>{agentName}</strong> interactúa con tus clientes.</p>
                 </div>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+            <div className="flex-1 bg-black border border-white/10 rounded-2xl flex overflow-hidden shadow-2xl min-h-0">
 
-                {/* Left Column: Client List */}
-                <div className="col-span-1 bg-white/5 border border-white/10 rounded-2xl flex flex-col overflow-hidden backdrop-blur-sm">
-                    <div className="p-4 border-b border-white/10">
-                        <div className="relative">
+                {/* Left Sidebar: Conversaciones */}
+                <div className="w-80 border-r border-white/10 bg-[#0a0a0a] flex flex-col">
+                    <div className="p-4 border-b border-white/10 shrink-0">
+                        <div className="relative mb-4">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                             <input
                                 type="text"
-                                placeholder="Buscar cliente o número..."
-                                className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500"
+                                placeholder="Search conversations..."
+                                className="w-full bg-[#111] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-white/20"
                             />
+                        </div>
+                        <div className="flex gap-2">
+                            <button className="flex-1 flex items-center justify-center gap-1 bg-white/5 hover:bg-white/10 text-xs font-medium py-1.5 rounded-md border border-white/5 transition-colors">
+                                <span className="w-2 h-2 rounded-full bg-blue-500"></span> Active
+                            </button>
+                            <button className="flex-1 flex items-center justify-center gap-1 bg-white/5 hover:bg-white/10 text-xs font-medium py-1.5 rounded-md border border-white/5 transition-colors">
+                                <span className="w-2 h-2 rounded-full bg-amber-500"></span> Handoff
+                            </button>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto">
-                        {/* Render Dynamic Chats */}
-                        {chats.map((chat, index) => (
-                            <div key={chat.id} className={`p-4 cursor-pointer transition-colors ${index === 0 ? 'bg-white/10 border-l-2 border-blue-500 hover:bg-white/15' : 'border-b border-white/5 hover:bg-white/5'}`}>
+                    <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                        {chats.map((chat) => (
+                            <button
+                                key={chat.id}
+                                onClick={() => setSelectedChat(chat.id)}
+                                className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${selectedChat === chat.id ? 'bg-white/10' : ''}`}
+                            >
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className="font-semibold text-sm">{chat.clientMatch}</span>
-                                    <span className="text-[10px] text-white/40">{chat.time}</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-white/10 to-white/5 flex items-center justify-center font-bold text-xs uppercase text-white/70 shadow-inner">
+                                            {chat.name.charAt(0)}
+                                        </div>
+                                        <span className="font-medium text-sm text-white/90 truncate max-w-[120px]">{chat.name}</span>
+                                    </div>
+                                    <span className="text-[10px] text-white/40 whitespace-nowrap">{chat.time}</span>
                                 </div>
-                                <p className="text-xs text-white/60 truncate">{chat.lastMessage}</p>
-                                <div className="flex mt-2 gap-2">
-                                    {index === 0 ? (
-                                        <span className="bg-red-500/20 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">Urgente</span>
-                                    ) : (
-                                        <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 uppercase">
-                                            <CheckCircle className="w-3 h-3" /> Resuelto
-                                        </span>
-                                    )}
+                                <div className="pl-10">
+                                    <p className="text-xs text-white/60 truncate pr-6">{chat.preview}</p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                        {chat.source === 'whatsapp' && <Smartphone className="w-3 h-3 text-emerald-400" />}
+                                        {chat.source === 'instagram' && <Instagram className="w-3 h-3 text-rose-400" />}
+                                        {chat.source === 'web' && <Globe className="w-3 h-3 text-blue-400" />}
+
+                                        {chat.status === 'resolved' && <span className="text-[9px] text-emerald-400 border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5 rounded">Resolved by AI</span>}
+                                        {chat.status === 'active' && <span className="text-[9px] text-blue-400 border border-blue-400/20 bg-blue-400/10 px-1.5 py-0.5 rounded">AI Talking</span>}
+                                        {chat.status === 'handoff' && <span className="text-[9px] text-amber-400 border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 rounded">Needs Human</span>}
+                                    </div>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </div>
 
-                {/* Right Column: Chat Window */}
-                <div className="col-span-1 lg:col-span-2 bg-black border border-white/10 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
-
-                    {/* Header */}
-                    <div className="bg-[#111111] px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-stone-500 to-stone-700 flex items-center justify-center font-bold text-lg">
-                                J
+                {/* Right Area: Log de Lectura */}
+                <div className="flex-1 flex flex-col bg-[#111111] relative">
+                    {activeChatData ? (
+                        <>
+                            {/* Cabecera del chat */}
+                            <div className="h-16 border-b border-white/10 bg-[#161616] flex items-center justify-between px-6 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm text-white/70 shadow-inner">
+                                        {activeChatData.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-white/90">{activeChatData.name}</h2>
+                                        <p className="text-xs text-white/50">{activeChatData.phone}</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {activeChatData.status === 'handoff' && (
+                                        <button className="text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors shadow-lg shadow-blue-500/20">
+                                            Tomar Control (Handoff)
+                                        </button>
+                                    )}
+                                    <button className="p-2 border border-white/10 hover:bg-white/5 rounded-lg transition-colors text-white/50">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
-                            <div>
-                                <p className="font-semibold">Juan Pérez (+57 300 123 4567)</p>
-                                {takeover ? (
-                                    <p className="text-xs text-orange-400 flex items-center gap-1 font-medium">
-                                        <PauseCircle className="w-3 h-3" /> <span>Agente Pausado. Estás respondiendo tú.</span>
-                                    </p>
-                                ) : (
-                                    <p className="text-xs text-emerald-400 flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                        <span>Agente AI manejando la conversación</span>
-                                    </p>
-                                )}
-                            </div>
-                        </div>
 
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setTakeover(!takeover)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${takeover
-                                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/20 hover:bg-orange-500/30'
-                                    : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                            >
-                                <PauseCircle className="w-4 h-4" />
-                                {takeover ? "Reactivar IA" : "Pausar IA (Takeover)"}
-                            </button>
-                            <button className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors">
-                                <MoreVertical className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
+                            {/* Alerta si es handoff */}
+                            {activeChatData.status === 'handoff' && (
+                                <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-3 flex items-center gap-2 text-xs text-amber-500">
+                                    <AlertCircle className="w-4 h-4" />
+                                    El agente de IA detuvo la conversación. Este cliente necesita atención humana crítica.
+                                </div>
+                            )}
 
-                    {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#0a0a0a]">
+                            {/* Historial (Solo lectura) */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                <div className="text-center text-[10px] text-white/30 font-medium tracking-widest uppercase mb-8">
+                                    Conversación en {activeChatData.source}
+                                </div>
 
-                        {conversation.map((msg) => {
-                            if (msg.role === "system") {
-                                return (
-                                    <div key={msg.id} className="flex justify-center my-6">
-                                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium shadow-sm">
-                                            {msg.text}
+                                {activeChatData.history.map((msg, i) => {
+                                    if (msg.role === "system") {
+                                        return (
+                                            <div key={i} className="flex justify-center my-6">
+                                                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium shadow-sm">
+                                                    {msg.text}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                                            <div className="flex items-end gap-2 max-w-[70%]">
+                                                {msg.role === 'user' && (
+                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white/50 shrink-0">
+                                                        {activeChatData.name.charAt(0)}
+                                                    </div>
+                                                )}
+
+                                                <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.role === 'user'
+                                                    ? 'bg-[#222222] text-white/90 rounded-bl-none border border-white/5'
+                                                    : 'bg-gradient-to-tr from-blue-600 to-purple-600 text-white rounded-br-none shadow-md shadow-purple-500/10'
+                                                    }`}>
+                                                    {msg.text}
+                                                </div>
+
+                                                {msg.role === 'agent' && (
+                                                    <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
+                                                        <Sparkles className="w-3 h-3 text-white" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {activeChatData.status === 'active' && (
+                                    <div className="flex justify-end pr-8">
+                                        <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 animate-pulse">
+                                            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> IA pensando respuesta...
                                         </div>
                                     </div>
-                                );
-                            }
+                                )}
+                            </div>
 
-                            const isOwnEntity = msg.role === "ai" || msg.role === "human"; // Derecha
-
-                            return (
-                                <div key={msg.id} className={`flex ${isOwnEntity ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm relative ${msg.role === "ai"
-                                        ? "bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none"
-                                        : msg.role === "human"
-                                            ? "bg-orange-600/20 border border-orange-500/30 text-white/90 rounded-br-none"
-                                            : "bg-white/10 text-white/90 rounded-bl-none border border-white/5"
-                                        }`}>
-
-                                        {msg.role === "ai" && (
-                                            <div className="absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase">
-                                                AI Respondió
-                                            </div>
-                                        )}
-                                        {msg.role === "human" && (
-                                            <div className="absolute -top-2.5 -right-2 bg-orange-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase flex items-center gap-1">
-                                                Tú <CheckCircle className="w-2 h-2" />
-                                            </div>
-                                        )}
-
-                                        {msg.text}
-
-                                        <p className={`text-[10px] text-right mt-1 ${isOwnEntity ? 'text-white/40' : 'text-white/40'}`}>
-                                            {msg.time}
+                            {/* Input Disabled */}
+                            <div className="p-4 border-t border-white/10 bg-[#161616]">
+                                <div className="bg-[#0a0a0a] border border-white/5 rounded-xl p-3 text-center">
+                                    {activeChatData.status === 'handoff' ? (
+                                        <p className="text-xs font-medium text-white/50">Haz clic en "Tomar Control" arriba para chatear como humano.</p>
+                                    ) : (
+                                        <p className="text-xs font-medium text-white/30 flex justify-center items-center gap-2">
+                                            <CheckCircle2 className="w-3 h-3" /> El agente está manejando esta conversación automáticamente.
                                         </p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                        {isAiTyping && (
-                            <div className="flex justify-end">
-                                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/10 border border-blue-500/20 text-white/90 rounded-br-none shadow-sm flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    )}
                                 </div>
                             </div>
-                        )}
-
-                    </div>
-
-                    {/* Input Area */}
-                    <div className={`p-4 border-t transition-colors ${takeover ? 'bg-orange-950/20 border-orange-500/20' : 'bg-[#111111] border-white/10'}`}>
-                        <div className="flex relative items-center">
-                            <input
-                                type="text"
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder={takeover ? "Escribe un mensaje como humano..." : "Escribe como cliente para probar la IA (o Pausa IA para tomar control)"}
-                                className={`w-full rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none transition-colors border ${takeover
-                                    ? 'bg-[#0a0a0a] border-orange-500/30 text-white placeholder-white/40 focus:border-orange-500'
-                                    : 'bg-[#0a0a0a] border-white/10 text-white placeholder-white/40 focus:border-blue-500/50'
-                                    }`}
-                            />
-                            <button
-                                onClick={handleSendMessage}
-                                disabled={!inputValue.trim()}
-                                className={`absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${inputValue.trim()
-                                    ? takeover
-                                        ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100 text-black'
-                                        : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 opacity-100 text-white'
-                                    : 'bg-white/10 opacity-50 cursor-not-allowed text-white/40'
-                                    }`}
-                            >
-                                <Send className="w-4 h-4" />
-                            </button>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-white/30">
+                            <Sparkles className="w-12 h-12 mb-4 opacity-20" />
+                            <p className="text-sm">Selecciona una conversación para leer el historial.</p>
                         </div>
-                        {takeover && (
-                            <p className="text-[10px] text-orange-400/80 mt-2 ml-1">
-                                Envía este mensaje por WhatsApp a nombre de tu negocio.
-                            </p>
-                        )}
-                    </div>
-
+                    )}
                 </div>
-
             </div>
         </div>
     );

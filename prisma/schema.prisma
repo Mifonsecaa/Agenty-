@@ -1,5 +1,3 @@
-// agenty/prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,23 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- Modelos de Next-Auth ---
-
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -39,18 +34,16 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?    @unique
   emailVerified DateTime?
   image         String?
-  password      String?   // Para el login con credenciales
-
-  accounts Account[]
-  sessions Session[]
-
-  // Relación: Un usuario (dueño) tiene un negocio
-  business Business?
+  password      String?
+  accounts      Account[]
+  businesses    Business[]
+  sessions      Session[]
+  agents        Agent[]
 }
 
 model VerificationToken {
@@ -61,50 +54,63 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// --- Modelos de tu Aplicación ---
-
 model Business {
-  id          String   @id @default(cuid())
-  name        String
-  phone       String?  @unique
-
-  // El núcleo del MVP universal: Aquí vive la configuración de aforos y horarios
-  config      Json
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relación con el Usuario (Dueño)
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Relación: Un negocio tiene muchas reservas
+  id           String        @id @default(cuid())
+  name         String
+  phone        String?       @unique
+  config       Json
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations Reservation[]
+
+  // --- CONEXIONES: WhatsApp (Meta Cloud API) ---
+  whatsappAccessToken   String?
+  whatsappPhoneNumberId String?
+  whatsappBusinessId    String?
+  whatsappConnected     Boolean @default(false) // Para saber si mostrar "Conectado" en la UI
+
+  // --- CONEXIONES: Instagram (Meta API) ---
+  instagramAccessToken String?
+  instagramAccountId   String?
+  instagramConnected   Boolean @default(false)
+
+  // --- CONEXIONES: Telegram ---
+  telegramBotToken    String?
+  telegramBotUsername String?
+  telegramConnected   Boolean @default(false)
 }
 
 model Customer {
-  id          String   @id @default(cuid())
-  phone       String   @unique
-  name        String?
-
-  createdAt   DateTime @default(now())
+  id           String        @id @default(cuid())
+  phone        String        @unique
+  name         String?
+  createdAt    DateTime      @default(now())
   reservations Reservation[]
 }
 
 model Reservation {
-  id          String   @id @default(cuid())
-  startTime   DateTime
-  endTime     DateTime
-  status      String   @default("CONFIRMED")
-
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  startTime  DateTime
+  endTime    DateTime
+  status     String   @default("CONFIRMED")
+  businessId String
+  customerId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startTime])
+}
+
+model Agent {
+  id           String   @id @default(cuid())
+  name         String
+  role         String
+  systemPrompt String   @db.Text
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  createdAt    DateTime @default(now())
 }

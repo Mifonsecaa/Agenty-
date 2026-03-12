@@ -11,10 +11,13 @@ const PLACEHOLDER_PHRASES = [
     "Describe tu caso de uso ideal aquí..."
 ];
 
-export default function MagicBox() {
-    // --- ESTADOS DE LA UI ---
+interface MagicBoxProps {
+    onSubmit: (text: string) => void;
+    isLoading: boolean;
+}
+
+export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
     const [text, setText] = useState("");
-    const [isLoading, setIsLoading] = useState(false); // Estado de carga integrado
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const [isRecording, setIsRecording] = useState(false);
     const [showFileMenu, setShowFileMenu] = useState(false);
@@ -23,23 +26,26 @@ export default function MagicBox() {
     const fileMenuRef = useRef<HTMLDivElement>(null);
     const [fileAccept, setFileAccept] = useState<string>("");
 
-    // --- EFECTO TYPEWRITER ---
+    // --- Efecto Typewriter para el Placeholder ---
     const [placeholderText, setPlaceholderText] = useState("");
     const [phraseIndex, setPhraseIndex] = useState(0);
     const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         const currentPhrase = PLACEHOLDER_PHRASES[phraseIndex];
-        const typingSpeed = isDeleting ? 30 : 60;
-        const pauseTime = isDeleting ? 500 : 2500;
+        const typingSpeed = isDeleting ? 30 : 60; // Más rápido al borrar
+        const pauseTime = isDeleting ? 500 : 2500; // Pausa al final de escribir/borrar
 
         const handleTyping = () => {
             if (!isDeleting && placeholderText === currentPhrase) {
+                // Terminó de escribir, esperar y empezar a borrar
                 setTimeout(() => setIsDeleting(true), pauseTime);
             } else if (isDeleting && placeholderText === "") {
+                // Terminó de borrar, pasar a la siguiente frase
                 setIsDeleting(false);
                 setPhraseIndex((prev) => (prev + 1) % PLACEHOLDER_PHRASES.length);
             } else {
+                // Escribir o borrar el siguiente caracter
                 const nextText = isDeleting
                     ? currentPhrase.substring(0, placeholderText.length - 1)
                     : currentPhrase.substring(0, placeholderText.length + 1);
@@ -58,17 +64,27 @@ export default function MagicBox() {
                 setShowFileMenu(false);
             }
         };
-        if (showFileMenu) document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+
+        if (showFileMenu) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
     }, [showFileMenu]);
 
-    // --- MANEJO DE ARCHIVOS ---
-    const handleFileMenuClick = () => setShowFileMenu(!showFileMenu);
+    // Manejar botón Plus
+    const handleFileMenuClick = () => {
+        setShowFileMenu(!showFileMenu);
+    };
 
     const handleFileTypeSelect = (accept: string) => {
         setFileAccept(accept);
         setShowFileMenu(false);
-        setTimeout(() => fileInputRef.current?.click(), 100);
+        setTimeout(() => {
+            fileInputRef.current?.click();
+        }, 100);
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,7 +97,7 @@ export default function MagicBox() {
         setAttachedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
-    // --- MANEJO DE VOZ ---
+    // Manejar botón de voz
     const toggleRecording = async () => {
         if (!isRecording) {
             try {
@@ -89,10 +105,13 @@ export default function MagicBox() {
                 const mediaRecorder = new MediaRecorder(stream);
                 const chunks: BlobPart[] = [];
 
-                mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                mediaRecorder.ondataavailable = (e) => {
+                    chunks.push(e.data);
+                };
 
                 mediaRecorder.onstop = async () => {
                     const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+                    // Aquí podrías enviar el audio a un servicio de transcripción
                     setText(prev => prev + " [Audio grabado - pendiente transcripción]");
                     stream.getTracks().forEach(track => track.stop());
                 };
@@ -101,7 +120,8 @@ export default function MagicBox() {
                 mediaRecorderRef.current = mediaRecorder;
                 setIsRecording(true);
             } catch (error) {
-                toast.error("No se pudo acceder al micrófono.");
+                console.error("Error al acceder al micrófono:", error);
+                toast.error("No se pudo acceder al micrófono. Verifica los permisos.");
             }
         } else {
             mediaRecorderRef.current?.stop();
@@ -109,52 +129,49 @@ export default function MagicBox() {
         }
     };
 
-    // --- CONEXIÓN AL BACKEND (LA MAGIA REAL) ---
-    const handleSendToDB = async () => {
-        if (!text.trim()) return;
+    const [isImproving, setIsImproving] = useState(false);
 
-        setIsLoading(true);
-        const toastId = toast.loading("Analizando tu negocio y creando la base de datos...");
+    const handleImproveWithAI = async () => {
+        if (!text || text.length < 5 || isImproving) return;
+        setIsImproving(true);
 
         try {
-            // Enviamos el texto a nuestra API
-            const response = await fetch("/api/onboarding", {
+            const res = await fetch("/api/improve-description", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: text }),
+                body: JSON.stringify({ text }),
             });
 
-            const data = await response.json();
+            if (!res.ok) throw new Error("Error improving text");
 
-            if (!response.ok) throw new Error(data.error || "Error desconocido");
-
-            toast.success("¡Base de datos y agente creados con éxito!", { id: toastId });
-
-            // Limpiamos la caja después de enviarlo
-            setText("");
-            setAttachedFiles([]);
-
+            const data = await res.json();
+            if (data.success && data.improved) {
+                setText(data.improved);
+                toast.success("¡Descripción mejorada por la IA! ✨");
+            }
         } catch (error) {
-            toast.error("Hubo un error al crear el agente.", { id: toastId });
             console.error(error);
+            toast.error("No se pudo mejorar el texto en este momento.");
         } finally {
-            setIsLoading(false);
+            setIsImproving(false);
         }
     };
 
     return (
         <div className="relative w-full max-w-3xl mx-auto group z-20">
+            {/* Contenedor principal estilo Glassmorphism */}
             <div className="relative flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] p-6 sm:p-8 shadow-2xl transition-all duration-500 ease-out focus-within:border-white/30 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_40px_rgba(255,255,255,0.05)]">
 
+                {/* Input Area */}
                 <textarea
                     rows={4}
-                    disabled={isLoading}
-                    className="w-full bg-transparent border-none outline-none focus:ring-0 text-white/90 placeholder-white/40 resize-none text-xl sm:text-2xl font-light py-4 px-3 leading-relaxed transition-all focus:placeholder-white/20 disabled:opacity-50"
+                    className="w-full bg-transparent border-none outline-none focus:ring-0 text-white/90 placeholder-white/40 resize-none text-xl sm:text-2xl font-light py-4 px-3 leading-relaxed transition-all focus:placeholder-white/20"
                     placeholder={placeholderText}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                 />
 
+                {/* Archivos adjuntos */}
                 {attachedFiles.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-4 px-3">
                         {attachedFiles.map((file, index) => (
@@ -176,6 +193,7 @@ export default function MagicBox() {
                     </div>
                 )}
 
+                {/* Input oculto para archivos */}
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -185,29 +203,58 @@ export default function MagicBox() {
                     className="hidden"
                 />
 
+                {/* Controles de abajo */}
                 <div className="flex items-center justify-between mt-6 px-1">
                     <div className="flex items-center gap-3 relative">
                         <button
                             onClick={handleFileMenuClick}
                             disabled={isLoading}
                             className="p-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-full text-white/70 transition-all duration-300 hover:scale-105 active:scale-95 group-focus-within:border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Añadir contexto (Imágenes/Docs)"
                         >
                             <Plus size={22} />
                         </button>
 
+                        {/* Menú desplegable de tipos de archivo */}
                         {showFileMenu && (
-                            <div ref={fileMenuRef} className="absolute top-full left-0 mt-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div
+                                ref={fileMenuRef}
+                                className="absolute top-full left-0 mt-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200"
+                            >
                                 <div className="p-2">
-                                    <button onClick={() => handleFileTypeSelect("image/*")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group">
+                                    <button
+                                        onClick={() => handleFileTypeSelect("image/*")}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group"
+                                    >
                                         <ImageIcon size={18} className="text-blue-400 group-hover:scale-110 transition-transform" />
                                         <span className="font-medium">Imagen</span>
                                     </button>
-                                    <button onClick={() => handleFileTypeSelect(".pdf")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group">
+                                    <button
+                                        onClick={() => handleFileTypeSelect(".pdf")}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group"
+                                    >
                                         <FileText size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
                                         <span className="font-medium">PDF</span>
                                     </button>
+                                    <button
+                                        onClick={() => handleFileTypeSelect(".doc,.docx")}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group"
+                                    >
+                                        <File size={18} className="text-blue-500 group-hover:scale-110 transition-transform" />
+                                        <span className="font-medium">Documento</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleFileTypeSelect(".txt")}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group"
+                                    >
+                                        <FileText size={18} className="text-gray-400 group-hover:scale-110 transition-transform" />
+                                        <span className="font-medium">Texto</span>
+                                    </button>
                                     <div className="h-px bg-white/10 my-1" />
-                                    <button onClick={() => handleFileTypeSelect("*")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group">
+                                    <button
+                                        onClick={() => handleFileTypeSelect("*")}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/90 hover:bg-white/10 transition-all duration-200 text-left group"
+                                    >
                                         <Plus size={18} className="text-white/60 group-hover:scale-110 transition-transform" />
                                         <span className="font-medium">Todos</span>
                                     </button>
@@ -220,18 +267,28 @@ export default function MagicBox() {
                         <span className="text-xs font-semibold text-white/30 tracking-[0.15em] uppercase pointer-events-none transition-colors group-focus-within:text-white/50">
                             Build
                         </span>
+
                         <div className="h-4 w-px bg-white/10" />
+
                         <button
                             onClick={toggleRecording}
                             disabled={isLoading}
-                            className={`p-3 rounded-full transition-all duration-300 active:scale-95 ${isRecording ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 animate-pulse' : 'hover:bg-white/10 text-white/50 hover:text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                            className={`p-3 rounded-full transition-all duration-300 active:scale-95 ${isRecording
+                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 animate-pulse'
+                                : 'hover:bg-white/10 text-white/50 hover:text-white'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={isRecording ? "Detener grabación" : "Usar dictado por voz"}
                         >
                             <Mic size={22} />
                         </button>
+
                         <button
-                            onClick={handleSendToDB} // Aquí ejecutamos nuestra nueva función
+                            onClick={() => onSubmit(text)}
                             disabled={isLoading || !text}
-                            className={`p-3.5 rounded-full transition-all duration-500 flex items-center justify-center ${text ? 'bg-white text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] active:scale-95' : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'}`}
+                            className={`p-3.5 rounded-full transition-all duration-500 flex items-center justify-center ${text
+                                ? 'bg-white text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] active:scale-95'
+                                : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
+                                }`}
                         >
                             <ArrowUp size={22} className={text ? "stroke-[3px]" : "stroke-[2px]"} />
                         </button>
@@ -239,9 +296,20 @@ export default function MagicBox() {
                 </div>
             </div>
 
-            <div className="absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/10 pointer-events-none animate-float">
-                <Sparkles size={18} className="text-blue-300" />
-            </div>
+            {/* AI Badge - Now a functional button */}
+            <button
+                onClick={handleImproveWithAI}
+                disabled={isImproving || !text || text.length < 5}
+                className={`absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
+                title="Mejorar con IA"
+            >
+                <Sparkles size={18} className={`text-white transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
+                {isImproving && (
+                    <span className="absolute left-full ml-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap">
+                        Mejorando...
+                    </span>
+                )}
+            </button>
         </div>
     );
 }

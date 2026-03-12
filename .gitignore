@@ -1,11 +1,32 @@
+<<<<<<< HEAD
+=======
 # Dependencias
+>>>>>>> origin/Miguel
 /node_modules
+/.next/
+/out/
+/build
+.env*.local
+.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-/.pnp
-.pnp.js
 
+<<<<<<< HEAD
+# Misc
+.DS_Store
+*.pem
+
+# Prisma
+/prisma/migration_lock.toml
+
+=======
 # Next.js (Aquí está la corrección)
 /.next/
 /out/
@@ -24,3 +45,4 @@ yarn-error.log*
 .vscode/
 .idea/
 .DS_Store
+>>>>>>> origin/Miguel

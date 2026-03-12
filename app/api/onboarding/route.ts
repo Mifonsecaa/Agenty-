@@ -1,24 +1,25 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { generateBusinessConfig } from "@/services/ai/onboardingAgent";
 
 export async function POST(req: Request) {
     try {
         // 1. Verificamos sesión
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
 
         // 2. Recibimos texto
-        const { prompt } = await req.json();
-        if (!prompt) {
+        const { ownerDescription } = await req.json();
+        if (!ownerDescription) {
             return NextResponse.json({ error: "El texto está vacío." }, { status: 400 });
         }
 
         // 3. Pasamos texto a la IA
-        const aiConfig = await generateBusinessConfig(prompt);
+        const aiConfig = await generateBusinessConfig(ownerDescription);
 
         // 4. Buscamos al usuario o lo creamos si no existe (El parche inteligente)
         let user = await prisma.user.findUnique({
@@ -34,16 +35,9 @@ export async function POST(req: Request) {
             });
         }
 
-        // 5. Guardamos el negocio en PostgreSQL
-        const negocio = await prisma.business.upsert({
-            where: {
-                userId: user.id
-            },
-            update: {
-                name: aiConfig.businessName || "Negocio Nuevo",
-                config: aiConfig as any,
-            },
-            create: {
+        // 5. Guardamos el nuevo negocio en PostgreSQL garantizando persistencia múltiple
+        const negocio = await prisma.business.create({
+            data: {
                 name: aiConfig.businessName || "Negocio Nuevo",
                 config: aiConfig as any,
                 userId: user.id
