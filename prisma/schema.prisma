@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 model Account {
@@ -63,6 +65,21 @@ model Business {
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations Reservation[]
+  dailyMetrics DailyMetric[]
+  knowledgeItems KnowledgeItem[]
+}
+
+model DailyMetric {
+  id               String   @id @default(cuid())
+  businessId       String
+  date             DateTime // Fecha truncada (sólo día)
+  messagesReceived Int      @default(0)
+  messagesSent     Int      @default(0)
+  aiResponses      Int      @default(0)
+  tokensUsed       Int      @default(0)
+  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, date])
 }
 
 model Customer {
@@ -86,4 +103,16 @@ model Reservation {
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startTime])
+}
+
+model KnowledgeItem {
+  id         String   @id @default(cuid())
+  businessId String
+  content    String
+  embedding  Unsupported("vector(1536)")?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }

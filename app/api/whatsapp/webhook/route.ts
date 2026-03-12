@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { evolutionService } from "@/services/whatsapp/evolution";
 import { prisma } from "@/lib/prisma";
 import { aiService } from "@/lib/ai";
+import { metricsService } from "@/lib/metrics";
 
 export async function POST(req: Request) {
     try {
         const body = await req.json();
         const eventType = body.event || "UNKNOWN";
         const instanceName = body.instance || "UNKNOWN";
+
+        console.log(`[DEBUG Webhook] Incoming: event=${eventType}, instance=${instanceName}`);
 
         // Solo procesamos mensajes nuevos (upsert)
         const isUpsert = eventType === "messages.upsert" || eventType === "MESSAGES_UPSERT";
@@ -48,6 +51,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true, message: "Agent not found" });
         }
 
+        // --- REGISTRO DE MÉTRICA: Mensaje Recibido ---
+        await metricsService.incrementMetric(agent.id, 'messagesReceived');
+
         // --- RESOLUCIÓN DE LID ---
         if (targetJid.includes("@lid")) {
             const alternateJid = messageData.remoteJidAlt || messageData.senderPn;
@@ -68,20 +74,38 @@ export async function POST(req: Request) {
             }
         }
 
-        // 2. Generar respuesta real con la IA
+        // 2. Generar respuesta real con el Agente (LangGraph + RAG)
         let aiResponse = "Lo siento, tuve un problema interno.";
         try {
-            const result = await aiService.generateResponse(instanceName, [
-                { role: 'user', content: messageText }
-            ]);
-            if (result) aiResponse = result;
+            console.log(`[WhatsApp Webhook] Ejecutando agente para: "${messageText}"`);
+            const { createAgentGraph } = await import("@/lib/agent/graph");
+            const { HumanMessage } = await import("@langchain/core/messages");
+
+            const agentExecutor = createAgentGraph(agent.id, agent.name, agent.config);
+
+            const result = await agentExecutor.invoke({
+                messages: [new HumanMessage(messageText)],
+                businessId: agent.id,
+                businessName: agent.name,
+                config: agent.config
+            });
+
+            console.log(`[WhatsApp Webhook] Resultado del agente obtenido.`);
+            const lastMsg = result.messages[result.messages.length - 1];
+            aiResponse = lastMsg.content as string;
         } catch (aiErr: any) {
-            console.error("[WhatsApp Webhook] AI Error:", aiErr.message || aiErr);
+            console.error("[WhatsApp Webhook] Agent Error:", aiErr.message || aiErr);
         }
 
         // 3. Enviar respuesta vía Evolution API
-        await evolutionService.sendMessage(instanceName, targetJid, aiResponse);
-        console.log(`[WhatsApp Webhook] Responded to ${pushName}`);
+        if (aiResponse && aiResponse.trim() !== "") {
+            await evolutionService.sendMessage(instanceName, targetJid, aiResponse);
+            console.log(`[WhatsApp Webhook] Responded to ${pushName}`);
+        }
+
+        // --- REGISTRO DE MÉTRICA: Respuesta Enviada ---
+        await metricsService.incrementMetric(instanceName, 'messagesSent');
+        await metricsService.incrementMetric(instanceName, 'aiResponses');
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

@@ -5,17 +5,6 @@ import { motion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAgenty } from "@/context/AgentyContext";
 
-// Function to generate random chart data to simulate different agent performance
-const generateMockChartData = () => [
-    { name: 'Mon', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Tue', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Wed', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Thu', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Fri', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Sat', tokens: Math.floor(Math.random() * 5000) + 1000 },
-    { name: 'Sun', tokens: Math.floor(Math.random() * 5000) + 1000 },
-];
-
 export default function DashboardOverview() {
     const { activeAgent } = useAgenty();
     const [chartData, setChartData] = useState<any[]>([]);
@@ -25,11 +14,46 @@ export default function DashboardOverview() {
         savedTime: 0
     });
 
+    const [loading, setLoading] = useState(true);
+
     useEffect(() => {
-        setChartData(generateMockChartData());
+        if (!activeAgent?.id) {
+            setLoading(false);
+            return;
+        }
+
+        const fetchMetrics = async () => {
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/metrics?businessId=${activeAgent.id}&days=7`);
+                const data = await res.json();
+                if (data.success) {
+                    setChartData(data.chartData);
+                    setMetrics({
+                        conversations: data.stats.conversations,
+                        tasksAutomated: data.stats.tasksAutomated,
+                        savedTime: Math.round(data.stats.tasksAutomated * 0.1)
+                    });
+                }
+            } catch (error) {
+                console.error("Error fetching metrics:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchMetrics();
     }, [activeAgent]);
 
     const agentName = activeAgent?.name || "Asistente Virtual";
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 relative z-10">

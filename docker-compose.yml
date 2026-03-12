@@ -36,7 +36,7 @@ services:
 
   postgres_db:
     container_name: postgres_db
-    image: postgres:15-alpine
+    image: ankane/pgvector:v0.5.1
     restart: always
     environment:
       - POSTGRES_USER=admin
@@ -44,6 +44,7 @@ services:
       - POSTGRES_DB=evolution_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     ports:
       - "5433:5432"
 
