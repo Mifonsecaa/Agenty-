@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { evolutionService } from "@/services/whatsapp/evolution";
 
 export async function GET(req: Request) {
     try {
         // 1. Verificamos sesión
         const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
+            console.warn("[API Business] No session found or no email in session");
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
 
@@ -17,6 +19,7 @@ export async function GET(req: Request) {
         });
 
         if (!user) {
+            console.warn(`[API Business] User not found for email: ${session.user.email}`);
             return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
         }
 
@@ -26,11 +29,13 @@ export async function GET(req: Request) {
             orderBy: { createdAt: 'desc' }
         });
 
+        console.log(`[API Business] Found ${businesses.length} businesses for user ${user.id}`);
+
         // 4. Respondemos con éxito
         return NextResponse.json({ success: true, businesses });
 
     } catch (error) {
-        console.error("Error al obtener los negocios:", error);
+        console.error("[API Business] GET error:", error);
         return NextResponse.json({ error: "Error interno del servidor al obtener los datos." }, { status: 500 });
     }
 }

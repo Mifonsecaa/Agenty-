@@ -1,0 +1,162 @@
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+
+export interface EvolutionInstance {
+    instanceName: string;
+    status: string;
+    qrcode?: string;
+}
+
+export const evolutionService = {
+    async createInstance(instanceName: string) {
+        try {
+            console.log(`[EvolutionService] Creating instance at: ${EVOLUTION_API_URL}/instance/create`);
+            const response = await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    instanceName,
+                    token: instanceName,
+                    integration: 'WHATSAPP-BAILEYS',
+                    qrcode: true
+                })
+            });
+
+            const data = await response.json();
+            console.log("[EvolutionService] Create Instance full response:", JSON.stringify(data, null, 2));
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error creating instance:", error);
+            throw error;
+        }
+    },
+
+    async getQR(instanceName: string) {
+        try {
+            console.log(`[EvolutionService] Getting QR at: ${EVOLUTION_API_URL}/instance/connect/${instanceName}`);
+            const response = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
+                method: 'GET',
+                headers: {
+                    'apikey': EVOLUTION_API_KEY!
+                }
+            });
+
+            const data = await response.json();
+            console.log("[EvolutionService] Get QR response:", data);
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error getting QR:", error);
+            throw error;
+        }
+    },
+
+    async getInstanceStatus(instanceName: string) {
+        try {
+            console.log(`[EvolutionService] Getting status at: ${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`);
+            const response = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
+                method: 'GET',
+                headers: {
+                    'apikey': EVOLUTION_API_KEY!
+                }
+            });
+
+            const data = await response.json();
+            console.log("[EvolutionService] Get Status response:", data);
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error getting status:", error);
+            return { instance: { state: "DISCONNECTED" } };
+        }
+    },
+
+    async deleteInstance(instanceName: string) {
+        try {
+            console.log(`[EvolutionService] Deleting instance at: ${EVOLUTION_API_URL}/instance/delete/${instanceName}`);
+            await fetch(`${EVOLUTION_API_URL}/instance/delete/${instanceName}`, {
+                method: 'DELETE',
+                headers: {
+                    'apikey': EVOLUTION_API_KEY!
+                }
+            });
+        } catch (error) {
+            console.error("[EvolutionService] Error deleting instance:", error);
+        }
+    },
+
+    async sendMessage(instanceName: string, number: string, text: string) {
+        try {
+            console.log(`[EvolutionService] Sending message to ${number} via ${instanceName}`);
+            const response = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    number,
+                    text: text,
+                    linkPreview: false
+                })
+            });
+            return await response.json();
+        } catch (error) {
+            console.error("[EvolutionService] Error sending message:", error);
+            throw error;
+        }
+    },
+
+    async fetchContact(instanceName: string, jid: string) {
+        try {
+            console.log(`[EvolutionService] Fetching contact ${jid} via ${instanceName}`);
+            const response = await fetch(`${EVOLUTION_API_URL}/contact/fetchContact/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    where: { jid }
+                })
+            });
+            return await response.json();
+        } catch (error) {
+            console.error("[EvolutionService] Error fetching contact:", error);
+            return null;
+        }
+    },
+
+    async setWebhook(instanceName: string, url: string) {
+        try {
+            console.log(`[EvolutionService] Setting webhook for ${instanceName} to ${url}`);
+            const response = await fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    webhook: {
+                        enabled: true,
+                        url: url,
+                        webhookByEvents: false,
+                        events: [
+                            "MESSAGES_UPSERT",
+                            "MESSAGES_UPDATE",
+                            "MESSAGES_DELETE",
+                            "SEND_MESSAGE"
+                        ]
+                    }
+                })
+            });
+            const data = await response.json();
+            console.log("[EvolutionService] Set Webhook response:", JSON.stringify(data, null, 2));
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error setting webhook:", error);
+            throw error;
+        }
+    }
+};

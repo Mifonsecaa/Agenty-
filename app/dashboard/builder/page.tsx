@@ -1,10 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles, User } from "lucide-react";
+import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
+import { toast } from "sonner";
 
 export default function BuilderPlayground() {
-    const { activeAgent } = useAgenty();
+    const { activeAgent, saveAgent } = useAgenty();
     const [agentName, setAgentName] = useState("AgentBot");
     const [systemPrompt, setSystemPrompt] = useState("Cargando personalidad...");
     const [messages, setMessages] = useState([
@@ -16,25 +17,67 @@ export default function BuilderPlayground() {
 
     const [showQrModal, setShowQrModal] = useState(false);
     const [qrState, setQrState] = useState<"generating" | "ready" | "connected">("generating");
+    const [realQrCode, setRealQrCode] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
-    const handleDeploy = () => {
+    const handleDeploy = async () => {
+        if (!activeAgent) return;
         setShowQrModal(true);
         setQrState("generating");
+        setRealQrCode(null);
 
-        // Simular tiempo de generación del QR
-        setTimeout(() => {
-            setQrState("ready");
+        try {
+            const res = await fetch("/api/whatsapp/connect", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ agentId: activeAgent.id })
+            });
 
-            // Simular escaneo exitoso después de unos segundos
-            setTimeout(() => {
-                setQrState("connected");
+            const data = await res.json();
+            if (data.success) {
+                if (data.state === "CONNECTED") {
+                    setQrState("connected");
+                    setTimeout(() => setShowQrModal(false), 2000);
+                } else if (data.state === "READY" && data.qrcode) {
+                    setRealQrCode(data.qrcode);
+                    setQrState("ready");
+                    startPollingStatus();
+                } else if (data.state === "INITIALIZING") {
+                    // Si está inicializando, simplemente esperamos a que el polling haga su trabajo
+                    // o lanzamos un reintento silencioso después de 5 segundos si no hay QR aún
+                    if (qrState === "generating") {
+                        console.log("[Builder] Still initializing, retrying fetch in 5s...");
+                        setTimeout(() => handleDeploy(), 5000);
+                    }
+                }
+            } else {
+                toast.error(data.error || "Error al conectar con WhatsApp");
+            }
+        } catch (error) {
+            console.error("Error en handleDeploy:", error);
+            toast.error("Error al iniciar la conexión");
+        }
+    };
 
-                // Cerrar modal automáticamente
-                setTimeout(() => {
-                    setShowQrModal(false);
-                }, 2000);
-            }, 6000); // 6 segundos para que el usuario "escanee"
-        }, 1500);
+    const startPollingStatus = () => {
+        const interval = setInterval(async () => {
+            if (!showQrModal) {
+                clearInterval(interval);
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/whatsapp/connect?agentId=${activeAgent?.id}`);
+                const data = await res.json();
+                if (data.success && data.state === "CONNECTED") {
+                    setQrState("connected");
+                    clearInterval(interval);
+                    setTimeout(() => setShowQrModal(false), 2000);
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        }, 5000);
     };
 
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
@@ -84,6 +127,29 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
     }, [activeAgent]);
 
 
+    const handleSave = async () => {
+        if (!activeAgent || !fullAgentConfig) return;
+        setIsSaving(true);
+
+        try {
+            const updatedConfig = {
+                ...fullAgentConfig,
+                businessName: agentName,
+                systemPrompt: systemPrompt
+            };
+
+            const success = await saveAgent(activeAgent.id, agentName, updatedConfig);
+            if (success) {
+                toast.success("Borrador guardado correctamente");
+            }
+        } catch (error) {
+            console.error("Error al guardar:", error);
+            toast.error("Error al persistir los cambios");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleAutoGeneratePrompt = async () => {
         if (!fullAgentConfig) return;
         setIsGeneratingPrompt(true);
@@ -100,8 +166,6 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
             const data = await res.json();
             if (data.success && data.prompt) {
                 setSystemPrompt(data.prompt);
-
-                // TODO: Here you could also optionally trigger a PUT /api/business to save the new generated prompt permanently
             } else {
                 alert(data.error || "No se pudo generar el prompt estricto");
             }
@@ -125,17 +189,10 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
         setIsTyping(true);
 
         try {
-            // Formatear mensajes para la API
             const apiMessages = currentMessages.map(m => ({
                 role: m.role,
                 content: m.text
             }));
-
-            // Agregar el system prompt modificado (si editaron el textarea) como instrucciones inyectadas
-            // La API de /api/chat que arreglamos antes internamente antepone el prompt de Prisma.
-            // Puesto que aquí la UX permite editar el prompt "en vivo" pero no guardarlo todavía, 
-            // enviamos este contexto dinámicamente forzando que la API lo respete. 
-            // NOTA: esto sobreescribirá temporalmente el que saca de Primsma en la api para la DEMO en vivo
 
             const reqMessages = [
                 { role: 'system', content: systemPrompt },
@@ -154,7 +211,6 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
             if (!res.ok) throw new Error("Error en la respuesta del servidor");
 
             const data = await res.json();
-
             setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
 
         } catch (error) {
@@ -175,8 +231,13 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     <p className="text-white/60">Configura la personalidad y prueba a tu agente en tiempo real.</p>
                 </div>
                 <div className="flex gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all">
-                        <Save className="w-4 h-4" /> Save Draft
+                    <button
+                        onClick={handleSave}
+                        disabled={isSaving || !activeAgent}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all disabled:opacity-50"
+                    >
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {isSaving ? 'Guardando...' : 'Save Draft'}
                     </button>
                     <button
                         onClick={handleDeploy}
@@ -332,27 +393,31 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                             {qrState === "ready" && (
                                 <>
                                     {/* Un QR simulado usando caracteres de bloque para no depender de imágenes reales */}
-                                    <pre className="text-black text-[6px] leading-[6px] tracking-tighter opacity-80 pointer-events-none select-none overflow-hidden h-full flex flex-col justify-center">
-                                        {"██████████████  ████  ██████████████\n" +
-                                            "██          ██  ██    ██          ██\n" +
-                                            "██  ██████  ██      ████  ██████  ██\n" +
-                                            "██  ██████  ██  ████  ██  ██████  ██\n" +
-                                            "██  ██████  ██  ██  ████  ██████  ██\n" +
-                                            "██          ██  ██    ██          ██\n" +
-                                            "██████████████  ██  ████████████████\n" +
-                                            "                ██████              \n" +
-                                            "████  ████  ████████    ██  ████  ██\n" +
-                                            "  ████    ████████  ████████    ████\n" +
-                                            "██  ████████  ████  ██    ██████  ██\n" +
-                                            "                ██████              \n" +
-                                            "██████████████  ████████  ████  ████\n" +
-                                            "██          ██  ██████  ██      ████\n" +
-                                            "██  ██████  ██      ████████  ██  ██\n" +
-                                            "██  ██████  ██  ██████  ████    ████\n" +
-                                            "██  ██████  ██  ████  ██      ██  ██\n" +
-                                            "██          ██    ██████      ██  ██\n" +
-                                            "██████████████  ████████████████████"}
-                                    </pre>
+                                    {realQrCode ? (
+                                        <img src={realQrCode} alt="WhatsApp QR Code" className="w-full h-full object-contain" />
+                                    ) : (
+                                        <pre className="text-black text-[6px] leading-[6px] tracking-tighter opacity-80 pointer-events-none select-none overflow-hidden h-full flex flex-col justify-center">
+                                            {"██████████████  ████  ██████████████\n" +
+                                                "██          ██  ██    ██          ██\n" +
+                                                "██  ██████  ██      ████  ██████  ██\n" +
+                                                "██  ██████  ██  ████  ██  ██████  ██\n" +
+                                                "██  ██████  ██  ██  ████  ██████  ██\n" +
+                                                "██          ██  ██    ██          ██\n" +
+                                                "██████████████  ██  ████████████████\n" +
+                                                "                ██████              \n" +
+                                                "████  ████  ████████    ██  ████  ██\n" +
+                                                "  ████    ████████  ████████    ████\n" +
+                                                "██  ████████  ████  ██    ██████  ██\n" +
+                                                "                ██████              \n" +
+                                                "██████████████  ████████  ████  ████\n" +
+                                                "██          ██  ██████  ██      ████\n" +
+                                                "██  ██████  ██      ████████  ██  ██\n" +
+                                                "██  ██████  ██  ██████  ████    ████\n" +
+                                                "██  ██████  ██  ████  ██      ██  ██\n" +
+                                                "██          ██    ██████      ██  ██\n" +
+                                                "██████████████  ████████████████████"}
+                                        </pre>
+                                    )}
 
                                     {/* Efecto láser escaneando */}
                                     <div className="absolute top-0 left-0 w-full h-1 bg-emerald-400 shadow-[0_0_15px_#34d399] animate-[scan_2s_ease-in-out_infinite]" />

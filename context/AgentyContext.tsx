@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 
 interface Agent {
@@ -18,19 +19,36 @@ interface AgentyContextType {
     refreshAgents: () => Promise<void>;
     switchAgent: (agentId: string) => void;
     updateActiveAgentConfig: (newConfig: any) => void;
+    saveAgent: (agentId: string, name: string, config: any) => Promise<boolean>;
 }
 
 const AgentyContext = createContext<AgentyContextType | undefined>(undefined);
 
 export function AgentyProvider({ children }: { children: React.ReactNode }) {
+    const { status } = useSession();
     const [agents, setAgents] = useState<Agent[]>([]);
     const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const refreshAgents = useCallback(async () => {
+        // Only fetch if authenticated
+        if (status !== "authenticated") {
+            if (status === "unauthenticated") {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         try {
+            console.log("[AgentyProvider] Fetching agents...");
             const response = await fetch("/api/business");
-            if (!response.ok) throw new Error("Error fetching agents");
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error("[AgentyProvider] API Error:", response.status, errorData);
+                throw new Error(errorData.error || "Error fetching agents");
+            }
+
             const data = await response.json();
 
             if (data.success && data.businesses) {
@@ -55,8 +73,12 @@ export function AgentyProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     useEffect(() => {
-        refreshAgents();
-    }, [refreshAgents]);
+        if (status === "authenticated") {
+            refreshAgents();
+        } else if (status === "unauthenticated") {
+            setIsLoading(false);
+        }
+    }, [refreshAgents, status]);
 
     const switchAgent = (agentId: string) => {
         const agent = agents.find(a => a.id === agentId);
@@ -81,6 +103,39 @@ export function AgentyProvider({ children }: { children: React.ReactNode }) {
         setAgents(prev => prev.map(a => a.id === updated.id ? updated : a));
     };
 
+    const saveAgent = async (agentId: string, name: string, config: any) => {
+        try {
+            const response = await fetch("/api/business", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: agentId, name, config })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || "Error al guardar el agente");
+            }
+
+            const data = await response.json();
+            if (data.success && data.business) {
+                // Actualizar estado local si es el agente activo
+                if (activeAgent?.id === agentId) {
+                    setActiveAgent(data.business);
+                    localStorage.setItem("agenty_config", JSON.stringify(data.business));
+                }
+
+                // Actualizar en la lista de agentes
+                setAgents(prev => prev.map(a => a.id === agentId ? data.business : a));
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error("[AgentyProvider] Error saving agent:", error);
+            toast.error(error instanceof Error ? error.message : "Error al guardar");
+            return false;
+        }
+    };
+
     return (
         <AgentyContext.Provider value={{
             agents,
@@ -88,7 +143,8 @@ export function AgentyProvider({ children }: { children: React.ReactNode }) {
             isLoading,
             refreshAgents,
             switchAgent,
-            updateActiveAgentConfig
+            updateActiveAgentConfig,
+            saveAgent
         }}>
             {children}
         </AgentyContext.Provider>
