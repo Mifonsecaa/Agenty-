@@ -1,0 +1,53 @@
+services:
+  evolution_api:
+    container_name: evolution_api
+    image: atendai/evolution-api:v2.1.1
+    restart: always
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=agenty_secret_key_123
+      - SERVER_URL=http://localhost:8080
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://admin:admin_password@postgres_db:5432/evolution_db?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      # Optimización para Arch Linux
+      - DISABLE_CHROME_SANDBOX=true
+      - QR_CODE_MODE=base64
+      - CLEAN_ON_STARTUP=true
+      # Versión de WhatsApp corregida (otra variante)
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1034920861
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - postgres_db
+    shm_size: '2gb'
+    volumes:
+      - evolution_instances:/evolution/instances
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+  postgres_db:
+    container_name: postgres_db
+    image: ankane/pgvector:v0.5.1
+    restart: always
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin_password
+      - POSTGRES_DB=evolution_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5433:5432"
+
+volumes:
+  evolution_instances:
+  postgres_data:

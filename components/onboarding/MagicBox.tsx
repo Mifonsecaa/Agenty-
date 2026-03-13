@@ -1,6 +1,15 @@
 "use client";
 import { Plus, Mic, ArrowUp, Sparkles, X, FileText, Image as ImageIcon, File } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
+
+const PLACEHOLDER_PHRASES = [
+    "Cuéntame sobre tu negocio para crear tu agente...",
+    "Por ejemplo: 'Tengo una clínica dental y necesito agendar citas'",
+    "Por ejemplo: 'Vendo zapatos online y quiero responder dudas'",
+    "Por ejemplo: 'Soy abogado y necesito calificar leads legales'",
+    "Describe tu caso de uso ideal aquí..."
+];
 
 interface MagicBoxProps {
     onSubmit: (text: string) => void;
@@ -16,6 +25,37 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const fileMenuRef = useRef<HTMLDivElement>(null);
     const [fileAccept, setFileAccept] = useState<string>("");
+
+    // --- Efecto Typewriter para el Placeholder ---
+    const [placeholderText, setPlaceholderText] = useState("");
+    const [phraseIndex, setPhraseIndex] = useState(0);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    useEffect(() => {
+        const currentPhrase = PLACEHOLDER_PHRASES[phraseIndex];
+        const typingSpeed = isDeleting ? 30 : 60; // Más rápido al borrar
+        const pauseTime = isDeleting ? 500 : 2500; // Pausa al final de escribir/borrar
+
+        const handleTyping = () => {
+            if (!isDeleting && placeholderText === currentPhrase) {
+                // Terminó de escribir, esperar y empezar a borrar
+                setTimeout(() => setIsDeleting(true), pauseTime);
+            } else if (isDeleting && placeholderText === "") {
+                // Terminó de borrar, pasar a la siguiente frase
+                setIsDeleting(false);
+                setPhraseIndex((prev) => (prev + 1) % PLACEHOLDER_PHRASES.length);
+            } else {
+                // Escribir o borrar el siguiente caracter
+                const nextText = isDeleting
+                    ? currentPhrase.substring(0, placeholderText.length - 1)
+                    : currentPhrase.substring(0, placeholderText.length + 1);
+                setPlaceholderText(nextText);
+            }
+        };
+
+        const timer = setTimeout(handleTyping, typingSpeed);
+        return () => clearTimeout(timer);
+    }, [placeholderText, isDeleting, phraseIndex]);
 
     // Cerrar menú al hacer clic fuera
     useEffect(() => {
@@ -81,7 +121,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 setIsRecording(true);
             } catch (error) {
                 console.error("Error al acceder al micrófono:", error);
-                alert("No se pudo acceder al micrófono. Verifica los permisos.");
+                toast.error("No se pudo acceder al micrófono. Verifica los permisos.");
             }
         } else {
             mediaRecorderRef.current?.stop();
@@ -89,16 +129,44 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
         }
     };
 
+    const [isImproving, setIsImproving] = useState(false);
+
+    const handleImproveWithAI = async () => {
+        if (!text || text.length < 5 || isImproving) return;
+        setIsImproving(true);
+
+        try {
+            const res = await fetch("/api/improve-description", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+            });
+
+            if (!res.ok) throw new Error("Error improving text");
+
+            const data = await res.json();
+            if (data.success && data.improved) {
+                setText(data.improved);
+                toast.success("¡Descripción mejorada por la IA! ✨");
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("No se pudo mejorar el texto en este momento.");
+        } finally {
+            setIsImproving(false);
+        }
+    };
+
     return (
         <div className="relative w-full max-w-3xl mx-auto group z-20">
             {/* Contenedor principal estilo Glassmorphism */}
-            <div className="relative flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-[32px] p-5 shadow-2xl transition-all duration-500 ease-out focus-within:border-white/30 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_40px_rgba(255,255,255,0.05)]">
+            <div className="relative flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] p-6 sm:p-8 shadow-2xl transition-all duration-500 ease-out focus-within:border-white/30 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_40px_rgba(255,255,255,0.05)]">
 
                 {/* Input Area */}
                 <textarea
                     rows={4}
-                    className="w-full bg-transparent border-none outline-none focus:ring-0 text-white/90 placeholder-white/30 resize-none text-xl sm:text-2xl font-light py-2 px-3 leading-relaxed transition-all placeholder:transition-opacity focus:placeholder-white/10"
-                    placeholder="Cuéntame sobre tu negocio para crear tu agente..."
+                    className="w-full bg-transparent border-none outline-none focus:ring-0 text-white/90 placeholder-white/40 resize-none text-xl sm:text-2xl font-light py-4 px-3 leading-relaxed transition-all focus:placeholder-white/20"
+                    placeholder={placeholderText}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                 />
@@ -205,11 +273,10 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                         <button
                             onClick={toggleRecording}
                             disabled={isLoading}
-                            className={`p-3 rounded-full transition-all duration-300 active:scale-95 ${
-                                isRecording
-                                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 animate-pulse'
-                                    : 'hover:bg-white/10 text-white/50 hover:text-white'
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            className={`p-3 rounded-full transition-all duration-300 active:scale-95 ${isRecording
+                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 animate-pulse'
+                                : 'hover:bg-white/10 text-white/50 hover:text-white'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
                             title={isRecording ? "Detener grabación" : "Usar dictado por voz"}
                         >
                             <Mic size={22} />
@@ -219,8 +286,8 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                             onClick={() => onSubmit(text)}
                             disabled={isLoading || !text}
                             className={`p-3.5 rounded-full transition-all duration-500 flex items-center justify-center ${text
-                                    ? 'bg-white text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] active:scale-95'
-                                    : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
+                                ? 'bg-white text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] active:scale-95'
+                                : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
                                 }`}
                         >
                             <ArrowUp size={22} className={text ? "stroke-[3px]" : "stroke-[2px]"} />
@@ -229,10 +296,20 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 </div>
             </div>
 
-            {/* Badge de IA flotante estilo Lovable */}
-            <div className="absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/10 pointer-events-none animate-float">
-                <Sparkles size={18} className="text-blue-300" />
-            </div>
+            {/* AI Badge - Now a functional button */}
+            <button
+                onClick={handleImproveWithAI}
+                disabled={isImproving || !text || text.length < 5}
+                className={`absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
+                title="Mejorar con IA"
+            >
+                <Sparkles size={18} className={`text-white transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
+                {isImproving && (
+                    <span className="absolute left-full ml-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap">
+                        Mejorando...
+                    </span>
+                )}
+            </button>
         </div>
     );
 }
