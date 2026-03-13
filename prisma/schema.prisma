@@ -6,7 +6,6 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [vector]
 }
 
 model Account {
@@ -140,7 +139,7 @@ model KnowledgeItem {
   id         String   @id @default(cuid())
   businessId String
   content    String
-  embedding  Unsupported("vector(1536)")?
+  embedding  Json?
   metadata   Json     @default("{}")
   createdAt  DateTime @default(now())
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
