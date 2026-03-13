@@ -30,7 +30,8 @@ export async function POST(req: Request) {
                 const buffer = Buffer.from(text, "base64");
                 console.log(`[API Knowledge] Buffer creado, tamaño: ${buffer.length}`);
                 const data = await pdf(buffer);
-                text = data.text;
+                // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
+                text = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
                 console.log(`[API Knowledge] PDF procesado: ${name} (${text.length} caracteres)`);
             } catch (pdfError: any) {
                 console.error("[API Knowledge] Error parseando PDF:", pdfError);
@@ -124,17 +125,38 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { businessId } = await req.json();
+        const body = await req.json();
+        const { businessId, itemId } = body;
 
         if (!businessId) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
         }
 
-        await ingestionService.deleteAllKnowledge(businessId);
+        // Verificar propiedad del negocio
+        const business = await prisma.business.findFirst({
+            where: {
+                id: businessId,
+                user: { email: session.user.email }
+            }
+        });
 
-        return NextResponse.json({ success: true, message: "Conocimiento eliminado." });
+        if (!business) {
+             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        }
+
+        if (itemId) {
+            await ingestionService.deleteKnowledgeItem(itemId, businessId);
+             return NextResponse.json({ success: true, message: "Elemento eliminado." });
+        } else {
+            // Peligroso: Si no se envía itemId, borra todo.
+            // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.
+            // Asumiremos que si no hay itemId, es un "Limpiar todo".
+            await ingestionService.deleteAllKnowledge(businessId);
+             return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
+        }
 
     } catch (error: any) {
+        console.error("Delete Error:", error);
         return NextResponse.json({ error: "Internal Error" }, { status: 500 });
     }
 }

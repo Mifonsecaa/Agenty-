@@ -54,26 +54,36 @@ export async function POST(request: Request) {
         - Termina los mensajes invitándolos a registrarse y "crear su primer agente".
         `;
       }
-    } else {
-      // Find the specific config instead of blindly grabbing the first business 
-      // Note: For the builder, we pass the custom prompt directly in the messages payload via the Builder context,
-      // so we don't strictly *need* to pull Prisma here anymore, but keeping as fallback.
+    }
+
+    // Lógica para el Playground del Dashboard (No Demo)
+    if (!isDemo) {
+      // Intentar encontrar el negocio específico (o el primero por defecto para single-user setups)
+      // Idealmente, deberíamos pasar el ID del negocio en el cuerpo del request desde el frontend
       const business = await prisma.business.findFirst();
-      if (business && business.config) {
-        const config = business.config as any;
-        systemPrompt = config.systemPrompt || `Eres un asistente virtual para ${config.name || 'un negocio'}. Sé amable y conciso.`;
+      
+      if (!business) {
+        return new NextResponse(JSON.stringify({ error: "No se encontró ningún negocio configurado." }), { status: 404 });
       }
+
+      // Usar aiService que ahora implementa el Agente con Herramientas (RAG)
+      const { aiService } = await import("@/lib/ai");
+      
+      // Filtrar mensajes de sistema si vienen del frontend, ya que el agente maneja su propio prompt
+      const userMessages = messages.filter((m: any) => m.role !== 'system');
+      
+      console.log(`[API Chat] Delegando al Agente (Business ID: ${business.id})...`);
+      const responseContent = await aiService.generateResponse(business.id, userMessages);
+      
+      return NextResponse.json({
+        role: 'assistant',
+        content: responseContent
+      });
     }
 
-    let aiResponse;
-    let finalMessages = messages;
-
-    // Si inyectamos contexto, debemos borrar del historial el primer mensaje del bot 
-    // ("Soy AgentyBot...") para que la IA no entre en conflicto de personalidad.
-    if (isDemo && demoContext && demoContext.trim().length > 0) {
-      finalMessages = messages.filter((m: any) => !(m.role === 'assistant' && m.content.includes('AgentyBot')));
-    }
-
+    // --- LÓGICA DE DEMO (Sin persistencia / RAG) ---
+    // Mantenemos la lógica simple para la demo pública que usa contexto efímero
+    // ...
     if (provider === 'openai') {
       if (!process.env.OPENAI_API_KEY) throw new Error("Falta la clave de API de OpenAI.");
 
