@@ -1,16 +1,17 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import MagicBox from "../components/onboarding/MagicBox";
 import ParticleBackground from "../components/ui/ParticleBackground";
 import { InteractiveDemo } from "@/components/InteractiveDemo";
+import { SearchParamsHandler } from "@/components/SearchParamsHandler";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle } from "lucide-react";
 
 export default function HomePage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
+    // Search params moved to SearchParamsHandler
     const [loading, setLoading] = useState(false);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
     const [isDemoOpen, setIsDemoOpen] = useState(false);
@@ -24,11 +25,9 @@ export default function HomePage() {
         "Preparando tu Agente...",
     ];
 
-    useEffect(() => {
-        if (searchParams.get('demo') === 'true') {
-            setIsDemoOpen(true);
-        }
-    }, [searchParams]);
+    const handleSetIsDemoOpen = useCallback((val: boolean) => {
+        setIsDemoOpen(val);
+    }, []);
 
     const handleCloseDemo = () => {
         window.history.pushState({}, '', '/');
@@ -87,7 +86,11 @@ export default function HomePage() {
 
     return (
         <>
+            <Suspense fallback={null}>
+                <SearchParamsHandler onDemoOpen={handleSetIsDemoOpen} />
+            </Suspense>
             <main className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-12 overflow-hidden">
+
                 <div className="aurora-bg" />
                 <ParticleBackground />
 

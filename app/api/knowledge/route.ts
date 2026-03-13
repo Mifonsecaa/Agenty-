@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { ingestionService } from "@/lib/rag/ingestion";
+import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
+import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
+
 
 export async function POST(req: Request) {
     try {
@@ -11,11 +14,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        let { businessId, text, name, type } = await req.json();
-
-        if (!businessId || !text) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        const body = await req.json();
+        const validation = validateData<KnowledgeCreateInput>(body, knowledgeCreateSchema);
+        
+        if (!validation.success) {
+            return validationErrorResponse(validation.errors!);
         }
+
+        let { businessId, text, name, type } = validation.data!;
 
         if (type === "application/pdf") {
             try {
@@ -46,9 +52,7 @@ export async function POST(req: Request) {
 
         if (!business) {
             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
-        }
-
-        // Ingerir el texto en la base de datos vectorial
+        }        // Ingerir el texto en la base de datos vectorial
         const chunkCount = await ingestionService.ingestText(businessId, text, {
             fileName: name || "document",
             fileType: type || "txt"
@@ -62,11 +66,7 @@ export async function POST(req: Request) {
 
     } catch (error: any) {
         console.error("[API Knowledge] Error fatal:", error);
-        return NextResponse.json({
-            error: "Internal Server Error",
-            message: error.message,
-            stack: error.stack
-        }, { status: 500 });
+        return serverErrorResponse("Error al procesar el conocimiento");
     }
 }
 
@@ -78,10 +78,24 @@ export async function GET(req: Request) {
         }
 
         const { searchParams } = new URL(req.url);
-        const businessId = searchParams.get("businessId");
+        const validation = validateData<KnowledgeQueryInput>({ businessId: searchParams.get("businessId") }, knowledgeQuerySchema);
+        
+        if (!validation.success) {
+            return validationErrorResponse(validation.errors!);
+        }
 
-        if (!businessId) {
-            return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
+        const { businessId } = validation.data!;
+
+        // Verificar que el negocio pertenece al usuario
+        const business = await prisma.business.findFirst({
+            where: {
+                id: businessId,
+                user: { email: session.user.email }
+            }
+        });
+
+        if (!business) {
+            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
         const items = await prisma.knowledgeItem.findMany({
@@ -96,7 +110,7 @@ export async function GET(req: Request) {
             take: 50
         });
 
-        return NextResponse.json({ success: true, items });
+        return successResponse({ items });
 
     } catch (error: any) {
         return NextResponse.json({ error: "Internal Error" }, { status: 500 });

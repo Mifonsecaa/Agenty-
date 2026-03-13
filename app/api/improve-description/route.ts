@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import OpenAI from "openai";
+import { improveDescriptionSchema, type ImproveDescriptionInput } from "@/lib/validation/schemas";
+import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 
 export async function POST(req: Request) {
     try {
         // En este caso, permitimos que sea público para que el usuario pueda probarlo antes de loguearse
         const body = await req.json();
-        const { text } = body;
-
-        if (!text || text.trim().length < 5) {
-            return NextResponse.json({ error: "Escribe un poco más para poder ayudarte." }, { status: 400 });
+        const validation = validateData<ImproveDescriptionInput>(body, improveDescriptionSchema);
+        
+        if (!validation.success) {
+            return validationErrorResponse(validation.errors!);
         }
+
+        const { text } = validation.data!;
 
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -39,10 +41,10 @@ export async function POST(req: Request) {
 
         const improved = response.choices[0].message.content?.trim();
 
-        return NextResponse.json({ success: true, improved });
+        return successResponse({ improved });
 
     } catch (error) {
         console.error("Error improving description:", error);
-        return NextResponse.json({ error: "Error interno al mejorar el texto." }, { status: 500 });
+        return serverErrorResponse("Error al mejorar el texto");
     }
 }

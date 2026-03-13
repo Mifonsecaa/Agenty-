@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders } from "lucide-react";
 import { motion } from "framer-motion";

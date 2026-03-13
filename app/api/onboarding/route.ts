@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { generateBusinessConfig } from "@/services/ai/onboardingAgent";
+import { onboardingSchema, type OnboardingInput } from "@/lib/validation/schemas";
+import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 
 export async function POST(req: Request) {
     try {
@@ -12,16 +14,20 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
 
-        // 2. Recibimos texto
-        const { ownerDescription } = await req.json();
-        if (!ownerDescription) {
-            return NextResponse.json({ error: "El texto está vacío." }, { status: 400 });
+        // 2. Recibimos y validamos texto
+        const body = await req.json();
+        const validation = validateData<OnboardingInput>(body, onboardingSchema);
+        
+        if (!validation.success) {
+            return validationErrorResponse(validation.errors!);
         }
+
+        const { ownerDescription } = validation.data!;
 
         // 3. Pasamos texto a la IA
         const aiConfig = await generateBusinessConfig(ownerDescription);
 
-        // 4. Buscamos al usuario o lo creamos si no existe (El parche inteligente)
+        // 4. Buscamos al usuario o lo creamos si no existe
         let user = await prisma.user.findUnique({
             where: { email: session.user.email }
         });
@@ -35,7 +41,7 @@ export async function POST(req: Request) {
             });
         }
 
-        // 5. Guardamos el nuevo negocio en PostgreSQL garantizando persistencia múltiple
+        // 5. Guardamos el nuevo negocio en PostgreSQL
         const negocio = await prisma.business.create({
             data: {
                 name: aiConfig.businessName || "Negocio Nuevo",
@@ -45,10 +51,10 @@ export async function POST(req: Request) {
         });
 
         // 6. Respondemos éxito
-        return NextResponse.json({ success: true, business: negocio });
+        return successResponse({ business: negocio }, 201);
 
     } catch (error) {
         console.error("Error en la API de onboarding:", error);
-        return NextResponse.json({ error: "Error interno del servidor al crear el negocio." }, { status: 500 });
+        return serverErrorResponse("Error al crear el negocio");
     }
 }
