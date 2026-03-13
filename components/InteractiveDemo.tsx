@@ -7,7 +7,7 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
 };
-type Provider = 'openai' | 'gemini';
+type Provider = 'openai' | 'gemini' | 'github';
 type TaskStatus = 'pending' | 'in_progress' | 'completed';
 
 const TASKS = [
@@ -85,6 +85,7 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
           </h2>
           <div className="flex items-center gap-2 bg-white/5 p-1 rounded-lg border border-white/10">
             <button onClick={() => setProvider('openai')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'openai' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>OpenAI</button>
+            <button onClick={() => setProvider('github')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'github' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>GitHub</button>
             <button onClick={() => setProvider('gemini')} className={`px-3 py-1 text-xs rounded-md transition-colors ${provider === 'gemini' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>Gemini</button>
           </div>
         </div>

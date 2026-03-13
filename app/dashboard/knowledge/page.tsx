@@ -49,6 +49,16 @@ export default function KnowledgeBase() {
     const handleUpload = async (file: File) => {
         if (!activeAgent?.id || uploadState === "uploading") return;
 
+        // Validación de tipos de archivo
+        const validTypes = [
+            "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"
+        ];
+        
+        if (!validTypes.includes(file.type) && !file.name.endsWith(".txt") && !file.name.endsWith(".md")) {
+            alert(`El tipo de archivo "${file.type}" no es soportado actualmente. Por favor sube archivos de texto (.txt, .md, .csv, .json) o PDF.`);
+            return;
+        }
+
         setUploadState("uploading");
         setProgress(10);
 

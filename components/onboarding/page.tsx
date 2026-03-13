@@ -6,12 +6,27 @@ export default function OnboardingPage() {
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState(1);
 
-    const handleMagicSubmit = async (description: string) => {
+    const handleMagicSubmit = async (description: string, files?: File[]) => {
         setLoading(true);
         try {
+            let body: any;
+            const headers: any = {};
+
+            if (files && files.length > 0) {
+                 const formData = new FormData();
+                 formData.append("ownerDescription", description);
+                 files.forEach(file => formData.append("files", file));
+                 
+                 body = formData;
+            } else {
+                 body = JSON.stringify({ ownerDescription: description });
+                 headers["Content-Type"] = "application/json";
+            }
+
             const response = await fetch("/api/onboarding", {
                 method: "POST",
-                body: JSON.stringify({ ownerDescription: description }),
+                headers: headers,
+                body: body,
             });
 
             const result = await response.json();

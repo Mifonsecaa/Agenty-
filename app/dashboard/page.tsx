@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2 } from "lucide-react";
+import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2, ChevronRight, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAgenty } from "@/context/AgentyContext";
+import Link from "next/link";
 
 export default function DashboardOverview() {
     const { activeAgent } = useAgenty();
@@ -46,6 +47,40 @@ export default function DashboardOverview() {
     }, [activeAgent]);
 
     const agentName = activeAgent?.name || "Asistente Virtual";
+
+    // Checklist Logic
+    const steps = [
+        {
+            id: 'agent-created',
+            title: 'Crear Agente',
+            completed: true, // Always true if they are here
+            icon: CheckCircle2,
+            href: '/dashboard/builder'
+        },
+        {
+            id: 'customize',
+            title: 'Personalizar Respuestas',
+            completed: activeAgent?.config?.systemPrompt && activeAgent.config.systemPrompt.length > 50,
+            icon: Settings,
+            href: '/dashboard/builder'
+        },
+        {
+            id: 'test',
+            title: 'Probar conversación',
+            completed: false, // Hard to track without more state, keep as action
+            icon: MessageSquare,
+            href: '/dashboard/builder'
+        },
+        {
+            id: 'connect',
+            title: 'Conectar WhatsApp',
+            completed: false, // To implement real check later
+            icon: Zap,
+            href: '/dashboard/builder'
+        }
+    ];
+
+    const progress = Math.round((steps.filter(s => s.completed).length / steps.length) * 100);
 
     if (loading) {
         return (
@@ -204,21 +239,54 @@ export default function DashboardOverview() {
                     </div>
                 </div>
 
-                {/* Recent Activity */}
+                {/* Recent Activity / Onboarding Checklist */}
                 <div className="col-span-1 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
-                    <h2 className="text-lg font-bold mb-6">Recent Activity</h2>
+                    <h2 className="text-lg font-bold mb-4 flex justify-between items-center">
+                        <span>Guía de Inicio</span>
+                        <span className="text-xs font-normal text-white/40">{progress}% Completado</span>
+                    </h2>
 
-                    {/* Empty State */}
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
-                        <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
-                            <MessageSquare className="w-5 h-5 text-blue-400" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-white/90 mb-1">Esperando datos...</h3>
-                        <p className="text-xs text-white/50 mb-6 max-w-[200px]">Tu agente está en vivo y esperando su primera conversación.</p>
-                        <button className="text-xs font-semibold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-4 py-2 rounded-lg transition-colors border border-blue-500/20">
-                            Probar Agente
-                        </button>
+                    {/* Progress Bar */}
+                    <div className="w-full bg-white/10 h-1.5 rounded-full mb-6 overflow-hidden">
+                        <div 
+                            className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-1000"
+                            style={{ width: `${progress}%` }}
+                        />
                     </div>
+
+                    <div className="space-y-3">
+                        {steps.map((step) => (
+                            <Link 
+                                key={step.id}
+                                href={step.href}
+                                className={`flex items-center justify-between p-3 rounded-xl border transition-all group ${
+                                    step.completed 
+                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10' 
+                                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                        step.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'
+                                    }`}>
+                                        {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <step.icon className="w-4 h-4" />}
+                                    </div>
+                                    <span className={`text-sm font-medium ${step.completed ? 'text-white/60 line-through' : 'text-white/90'}`}>
+                                        {step.title}
+                                    </span>
+                                </div>
+                                {!step.completed && (
+                                    <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-colors" />
+                                )}
+                            </Link>
+                        ))}
+                    </div>
+
+                    {!steps.every(s => s.completed) && (
+                         <div className="mt-6 pt-4 border-t border-white/5 text-center">
+                            <p className="text-xs text-white/40">Completa estos pasos para activar tu agente al 100%.</p>
+                         </div>
+                    )}
                 </div>
             </motion.div>
         </div>

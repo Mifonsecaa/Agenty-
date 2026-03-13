@@ -8,6 +8,7 @@ import Image from 'next/image';
 export default function BuilderPlayground() {
     const { activeAgent, saveAgent } = useAgenty();
     const [agentName, setAgentName] = useState("AgentBot");
+    const [aiProvider, setAiProvider] = useState("openai");
     const [systemPrompt, setSystemPrompt] = useState("Cargando personalidad...");
     const [messages, setMessages] = useState([
         { role: "assistant", text: "¡Hola! Soy tu asistente de prueba. ¿En qué te ayudo hoy?" }
@@ -96,6 +97,7 @@ export default function BuilderPlayground() {
         const config = activeAgent.config || activeAgent;
         setFullAgentConfig(config);
         setAgentName(config.businessName || activeAgent.name || "AgentBot");
+        setAiProvider(config.aiProvider || "openai");
 
         // Si ya tiene un system prompt guardado, usamos ese. Si no, generamos uno a partir del config
         if (activeAgent.systemPrompt) {
@@ -136,6 +138,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
             const updatedConfig = {
                 ...fullAgentConfig,
                 businessName: agentName,
+                aiProvider,
                 systemPrompt: systemPrompt
             };
 
@@ -205,7 +208,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: reqMessages,
-                    provider: 'openai'
+                    provider: aiProvider
                 })
             });
 
@@ -268,6 +271,19 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                                 onChange={(e) => setAgentName(e.target.value)}
                                 className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-blue-500 transition-colors"
                             />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white/70 mb-2">AI Provider</label>
+                            <select
+                                value={aiProvider}
+                                onChange={(e) => setAiProvider(e.target.value)}
+                                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-blue-500 transition-colors appearance-none"
+                            >
+                                <option value="openai">OpenAI (GPT-4o Mini)</option>
+                                <option value="github">GitHub Models (Copilot)</option>
+                                <option value="gemini">Google Gemini</option>
+                            </select>
                         </div>
 
                         <div className="flex-1 flex flex-col">
