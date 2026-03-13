@@ -50,3 +50,4 @@ yarn-error.log*
 # Documentación generada localmente
 *.md
 !README.md
+.idea/workspace.xml
