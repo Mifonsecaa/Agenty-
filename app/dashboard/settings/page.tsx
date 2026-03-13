@@ -1,9 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders } from "lucide-react";
+import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAgenty } from "@/context/AgentyContext";
+
+type Schedule = {
+    day: string;
+    start: string;
+    end: string;
+};
+
+type AgentData = {
+    id: string;
+    name: string;
+    businessType: string;
+    agentTone: string;
+    businessDescription: string;
+    defaultDurationMinutes: number;
+    schedules: Schedule[];
+};
 
 export default function SettingsPage() {
     const { activeAgent, updateActiveAgentConfig } = useAgenty();
@@ -11,7 +27,7 @@ export default function SettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    const [agentData, setAgentData] = useState({
+    const [agentData, setAgentData] = useState<AgentData>({
         id: "",
         name: "",
         businessType: "INDIVIDUAL_APPOINTMENTS",
@@ -167,6 +183,49 @@ export default function SettingsPage() {
                                 Este es el <strong>cerebro</strong> de tu agente. Cualquier detalle sobre precios, promociones, direcciones o reglas de tu negocio debe ir aquí para que el bot pueda responder a los clientes con precisión.
                             </p>
                         </div>
+                    </div>
+
+                    {/* Schedule Section (Simplified) */}
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                        <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-white/90">
+                            <Clock className="w-5 h-5 text-orange-400" /> Horarios de Atención (Lunes a Viernes)
+                        </h2>
+                        
+                        <div className="flex flex-col sm:flex-row gap-6">
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-white/70 mb-1.5">Apertura</label>
+                                <input
+                                    type="time"
+                                    value={agentData.schedules.find((s: any) => s.day === "monday")?.start || "09:00"}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const days = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+                                        const currentEnd = agentData.schedules.find((s: any) => s.day === "monday")?.end || "18:00";
+                                        const newSchedules = days.map(day => ({ day, start: val, end: currentEnd }));
+                                        setAgentData(prev => ({ ...prev, schedules: newSchedules }));
+                                    }}
+                                    className="w-full bg-black/50 border border-white/10 focus:border-orange-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-white/70 mb-1.5">Cierre</label>
+                                <input
+                                    type="time"
+                                    value={agentData.schedules.find((s: any) => s.day === "monday")?.end || "18:00"}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const days = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+                                        const currentStart = agentData.schedules.find((s: any) => s.day === "monday")?.start || "09:00";
+                                        const newSchedules = days.map(day => ({ day, start: currentStart, end: val }));
+                                        setAgentData(prev => ({ ...prev, schedules: newSchedules }));
+                                    }}
+                                    className="w-full bg-black/50 border border-white/10 focus:border-orange-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-white/40 mt-3">
+                            La IA solo ofrecerá citas dentro de este rango horario. Se aplica de Lunes a Viernes.
+                        </p>
                     </div>
 
                     {/* Submit Button */}

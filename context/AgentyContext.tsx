@@ -24,15 +24,26 @@ interface AgentyContextType {
 
 const AgentyContext = createContext<AgentyContextType | undefined>(undefined);
 
-export function AgentyProvider({ children }: { children: React.ReactNode }) {
+export function AgentyProvider({ 
+    children, 
+    initialAgents = [] 
+}: { 
+    children: React.ReactNode;
+    initialAgents?: Agent[];
+}) {
     const { status } = useSession();
-    const [agents, setAgents] = useState<Agent[]>([]);
-    const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [agents, setAgents] = useState<Agent[]>(initialAgents);
+    const [activeAgent, setActiveAgent] = useState<Agent | null>(initialAgents.length > 0 ? initialAgents[0] : null);
+    const [isLoading, setIsLoading] = useState(initialAgents.length === 0); // Only loading if no initial data
 
     const refreshAgents = useCallback(async () => {
+        // Prevent re-fetching if initialAgents are already set and we are authenticated
+        if (initialAgents.length > 0 && isLoading === false) {
+             return; // Skip explicit fetch
+        }
+        
         // Only fetch if authenticated
-        if (status !== "authenticated") {
+        if (status !== "authenticated" && initialAgents.length === 0) {
             if (status === "unauthenticated") {
                 setIsLoading(false);
             }
