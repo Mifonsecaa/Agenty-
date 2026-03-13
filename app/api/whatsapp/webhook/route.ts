@@ -51,6 +51,54 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true, message: "Agent not found" });
         }
 
+        // --- GESTIÓN DE CONTACTO Y CONVERSACIÓN ---
+        const customerPhone = targetJid.split('@')[0];
+        let customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
+        if (!customer) {
+            customer = await prisma.customer.create({
+                data: {
+                    phone: customerPhone,
+                    name: pushName
+                }
+            });
+        }
+
+        // Buscar conversación activa o crear nueva
+        let conversation = await prisma.conversation.findFirst({
+            where: {
+                businessId: agent.id,
+                customerId: customer.id,
+                status: { not: "RESOLVED" }
+            }
+        });
+
+        if (!conversation) {
+            conversation = await prisma.conversation.create({
+                data: {
+                    businessId: agent.id,
+                    customerId: customer.id,
+                    channel: "WHATSAPP",
+                    status: "ACTIVE"
+                }
+            });
+        }
+
+        // Guardar mensaje del USUARIO
+        await prisma.message.create({
+            data: {
+                conversationId: conversation.id,
+                role: "user",
+                content: messageText
+            }
+        });
+        
+        // Actualizar timestamp
+        await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { lastMessageAt: new Date() }
+        });
+
+
         // --- REGISTRO DE MÉTRICA: Mensaje Recibido ---
         await metricsService.incrementMetric(agent.id, 'messagesReceived');
 
@@ -101,6 +149,19 @@ export async function POST(req: Request) {
         if (aiResponse && aiResponse.trim() !== "") {
             await evolutionService.sendMessage(instanceName, targetJid, aiResponse);
             console.log(`[WhatsApp Webhook] Responded to ${pushName}`);
+
+            // Guardar respuesta del AGENTE (IA) en DB
+            await prisma.message.create({
+                data: {
+                    conversationId: conversation.id,
+                    role: "agent",
+                    content: aiResponse
+                }
+            });
+            await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: { lastMessageAt: new Date() }
+            });
         }
 
         // --- REGISTRO DE MÉTRICA: Respuesta Enviada ---

@@ -5,63 +5,86 @@ import { useAgenty } from "@/context/AgentyContext";
 
 export default function LiveInbox() {
     const { activeAgent } = useAgenty();
-    const [selectedChat, setSelectedChat] = useState<number | null>(1);
+    const [chats, setChats] = useState<any[]>([]);
+    const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+    const [inputMessage, setInputMessage] = useState("");
 
-    // Mockup data for inbox
-    const chats = [
-        {
-            id: 1,
-            name: "María Fernanda",
-            source: "whatsapp",
-            status: "resolved",
-            time: "2 min ago",
-            preview: "¡Perfecto! Ya quedó agendada la cita. Gracias.",
-            phone: "+57 300 *** ****",
-            history: [
-                { role: "user", text: "Hola, ¿tienen disponibilidad para mañana en la tarde?" },
-                { role: "agent", text: "¡Hola María! Sí, tenemos espacios a las 3:00 PM y a las 5:00 PM. ¿Cuál prefieres?" },
-                { role: "user", text: "A las 5:00 PM me queda perfecto." },
-                { role: "agent", text: "¡Excelente! Tu cita quedó agendada para mañana a las 5:00 PM. Te envié un recordatorio." },
-                { role: "user", text: "¡Perfecto! Ya quedó agendada la cita. Gracias." },
-                { role: "agent", text: "¡De nada! Aquí te esperamos." }
-            ]
-        },
-        {
-            id: 2,
-            name: "Carlos Restrepo",
-            source: "instagram",
-            status: "active",
-            time: "Just now",
-            preview: "¿Cuál es la dirección del local centro?",
-            phone: "@carlosrestrepo",
-            history: [
-                { role: "user", text: "Hola buenas tardes" },
-                { role: "agent", text: "¡Hola Carlos! Buenas tardes, ¿en qué podemos ayudarte hoy?" },
-                { role: "user", text: "¿Cuál es la dirección del local centro?" }
-            ]
-        },
-        {
-            id: 3,
-            name: "Ana Salazar",
-            source: "web",
-            status: "handoff",
-            time: "15 min ago",
-            preview: "Necesito hablar con un humano por un reclamo.",
-            phone: "Web Visitor #482",
-            history: [
-                { role: "user", text: "Tengo un problema con un pedido que no llegó." },
-                { role: "agent", text: "Lamento mucho escuchar eso Ana. ¿Me podrías dar tu número de orden?" },
-                { role: "user", text: "No lo tengo, por eso necesito ayuda urgente." },
-                { role: "user", text: "Necesito hablar con un humano por un reclamo." },
-                { role: "system", text: "⚠️ El agente de IA ha cedido la conversación al detectar frustración del usuario." }
-            ]
+    // Cargar lista de chats
+    useEffect(() => {
+        if (!activeAgent?.id) return;
+
+        const fetchChats = async () => {
+            try {
+                const res = await fetch(`/api/chats?businessId=${activeAgent.id}`);
+                const data = await res.json();
+                if (data.success) {
+                    setChats(data.chats);
+                }
+            } catch (error) {
+                console.error("Error loading chats", error);
+            }
+        };
+
+        fetchChats();
+        const interval = setInterval(fetchChats, 5000);
+        return () => clearInterval(interval);
+    }, [activeAgent]);
+
+    // Cargar historial de mensajes
+    useEffect(() => {
+        if (!selectedChatId) return;
+
+        const fetchMessages = async () => {
+            // Solo poner loading la primera vez o si cambia de chat
+            if (messages.length === 0) setIsLoadingMessages(true);
+            try {
+                const res = await fetch(`/api/chats/${selectedChatId}/messages`);
+                const data = await res.json();
+                if (data.success) {
+                    const mapped = data.history.map((m: any) => ({
+                        id: m.id,
+                        role: m.role === 'assistant' ? 'agent' : m.role, // Mapping backend -> UI
+                        text: m.content || m.text,
+                        createdAt: m.createdAt
+                    }));
+                    setMessages(mapped);
+                }
+            } catch (error) {
+                console.error("Error loading messages", error);
+            } finally {
+                setIsLoadingMessages(false);
+            }
+        };
+
+        fetchMessages();
+        const interval = setInterval(fetchMessages, 3000);
+        return () => clearInterval(interval);
+    }, [selectedChatId]);
+
+    const handleSendMessage = async () => {
+        if (!selectedChatId || !inputMessage.trim()) return;
+        
+        const tempMsg = { role: 'agent', text: inputMessage, id: 'temp-' + Date.now() };
+        setMessages(prev => [...prev, tempMsg]);
+        setInputMessage("");
+
+        try {
+            await fetch(`/api/chats/${selectedChatId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: tempMsg.text })
+            });
+            // El polling actualizará el mensaje real
+        } catch (error) {
+            console.error("Error sending message", error);
+            alert("No se pudo enviar el mensaje");
         }
-    ];
+    };
 
     const agentName = activeAgent?.name || "Agent";
-
-
-    const activeChatData = chats.find(c => c.id === selectedChat);
+    const activeChatData = chats.find(c => c.id === selectedChatId);
 
     return (
         <div className="h-full flex flex-col relative z-10 overflow-hidden">
@@ -99,8 +122,8 @@ export default function LiveInbox() {
                         {chats.map((chat) => (
                             <button
                                 key={chat.id}
-                                onClick={() => setSelectedChat(chat.id)}
-                                className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${selectedChat === chat.id ? 'bg-white/10' : ''}`}
+                                onClick={() => setSelectedChatId(chat.id)}
+                                className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${selectedChatId === chat.id ? 'bg-white/10' : ''}`}
                             >
                                 <div className="flex justify-between items-start mb-1">
                                     <div className="flex items-center gap-2">
@@ -163,13 +186,13 @@ export default function LiveInbox() {
                                 </div>
                             )}
 
-                            {/* Historial (Solo lectura) */}
+                            {/* Historial (Conectado a API) */}
                             <div className="flex-1 overflow-y-auto p-6 space-y-6">
                                 <div className="text-center text-[10px] text-white/30 font-medium tracking-widest uppercase mb-8">
                                     Conversación en {activeChatData.source}
                                 </div>
 
-                                {activeChatData.history.map((msg, i) => {
+                                {messages.map((msg, i) => {
                                     if (msg.role === "system") {
                                         return (
                                             <div key={i} className="flex justify-center my-6">
@@ -206,7 +229,7 @@ export default function LiveInbox() {
                                     );
                                 })}
 
-                                {activeChatData.status === 'active' && (
+                                {activeChatData.status === 'active' && messages.length > 0 && messages[messages.length - 1].role === 'user' && (
                                     <div className="flex justify-end pr-8">
                                         <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 animate-pulse">
                                             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> IA pensando respuesta...
@@ -215,17 +238,28 @@ export default function LiveInbox() {
                                 )}
                             </div>
 
-                            {/* Input Disabled */}
+                            {/* Input Habilitado */}
                             <div className="p-4 border-t border-white/10 bg-[#161616]">
-                                <div className="bg-[#0a0a0a] border border-white/5 rounded-xl p-3 text-center">
-                                    {activeChatData.status === 'handoff' ? (
-                                        <p className="text-xs font-medium text-white/50">Haz clic en "Tomar Control" arriba para chatear como humano.</p>
-                                    ) : (
-                                        <p className="text-xs font-medium text-white/30 flex justify-center items-center gap-2">
-                                            <CheckCircle2 className="w-3 h-3" /> El agente está manejando esta conversación automáticamente.
-                                        </p>
-                                    )}
-                                </div>
+                                <form 
+                                    onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+                                    className="bg-[#0a0a0a] border border-white/5 rounded-xl p-2 flex gap-2 items-center"
+                                >
+                                    <input 
+                                        type="text" 
+                                        className="flex-1 bg-transparent border-none text-white text-sm px-3 focus:outline-none"
+                                        placeholder="Escribe un mensaje..."
+                                        value={inputMessage}
+                                        onChange={(e) => setInputMessage(e.target.value)}
+                                    />
+                                    <button 
+                                        type="submit"
+                                        className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition-colors"
+                                        disabled={!inputMessage.trim()}
+                                    >
+                                        <span className="sr-only">Enviar</span>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    </button>
+                                </form>
                             </div>
                         </>
                     ) : (

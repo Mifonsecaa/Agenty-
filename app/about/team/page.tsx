@@ -1,5 +1,6 @@
 import React from 'react';
 import { Github, Twitter, Linkedin, Mail } from 'lucide-react';
+import Image from 'next/image';
 
 const teamMembers = [
     {
@@ -62,7 +63,15 @@ export default function TeamPage() {
                             {/* Image Placeholder */}
                             <div className="w-full aspect-[4/5] rounded-2xl mb-6 overflow-hidden bg-gradient-to-br from-white/5 to-white/10 border border-white/10 relative flex items-center justify-center group-hover:border-blue-500/30 transition-colors">
                                 {member.image ? (
-                                    <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
+                                    <div className="relative w-full h-full">
+                                        <Image 
+                                            src={member.image} 
+                                            alt={member.name} 
+                                            fill 
+                                            className="object-cover"
+                                            unoptimized
+                                        />
+                                    </div>
                                 ) : (
                                     <div className="flex flex-col items-center justify-center text-white/30 group-hover:text-blue-400/50 transition-colors">
                                         <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-3">

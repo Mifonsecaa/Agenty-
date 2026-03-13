@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { toast } from "sonner";
+import Image from 'next/image';
 
 export default function BuilderPlayground() {
     const { activeAgent, saveAgent } = useAgenty();
@@ -394,7 +395,15 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                                 <>
                                     {/* Un QR simulado usando caracteres de bloque para no depender de imágenes reales */}
                                     {realQrCode ? (
-                                        <img src={realQrCode} alt="WhatsApp QR Code" className="w-full h-full object-contain" />
+                                        <div className="relative w-full h-full">
+                                            <Image 
+                                                src={realQrCode} 
+                                                alt="WhatsApp QR Code" 
+                                                fill 
+                                                className="object-contain" 
+                                                unoptimized
+                                            />
+                                        </div>
                                     ) : (
                                         <pre className="text-black text-[6px] leading-[6px] tracking-tighter opacity-80 pointer-events-none select-none overflow-hidden h-full flex flex-col justify-center">
                                             {"██████████████  ████  ██████████████\n" +
