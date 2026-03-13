@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Suspense, useCallback } from "react";
+import { useState, Suspense, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import MagicBox from "../components/onboarding/MagicBox";
 import ParticleBackground from "../components/ui/ParticleBackground";
@@ -7,7 +7,7 @@ import { InteractiveDemo } from "@/components/InteractiveDemo";
 import { SearchParamsHandler } from "@/components/SearchParamsHandler";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle } from "lucide-react";
+import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle, PlayCircle, MessageSquare, Clock, Users } from "lucide-react";
 
 export default function HomePage() {
     const router = useRouter();
@@ -34,7 +34,11 @@ export default function HomePage() {
         setIsDemoOpen(false);
     };
 
-    const handleMagicSubmit = async (description: string) => {
+    const handleOpenDemo = () => {
+        setIsDemoOpen(true);
+    };
+
+    const handleMagicSubmit = async (description: string, files?: File[]) => {
         setLoading(true);
         setLoadingPhraseIndex(0);
 
@@ -47,23 +51,50 @@ export default function HomePage() {
             // Guardamos el contexto del negocio para que la demo lo pueda usar.
             localStorage.setItem("business_context", description);
 
+            let body: any;
+            const headers: any = {};
+
+            if (files && files.length > 0) {
+                 const formData = new FormData();
+                 formData.append("ownerDescription", description);
+                 files.forEach(file => formData.append("files", file));
+                 
+                 body = formData;
+                 // Don't set Content-Type header when using FormData, let browser set boundary
+            } else {
+                 body = JSON.stringify({ ownerDescription: description });
+                 headers["Content-Type"] = "application/json";
+            }
+
             const response = await fetch("/api/onboarding", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ownerDescription: description }),
+                headers: headers,
+                body: body,
             });
             const data = await response.json();
             if (!response.ok) {
                 throw new Error(data.error || "Error al procesar la descripción");
             }
-            const newAgent = data.business;
-            newAgent.id = Date.now().toString();
-            // Generar métricas aleatorias para simular diferentes consumos
-            newAgent.metrics = {
-                conversations: Math.floor(Math.random() * 5000) + 150,
-                tasksAutomated: Math.floor(Math.random() * 3000) + 80,
-                savedTime: Math.floor(Math.random() * 400) + 20
-            };
+            // Check if business is in data.data or directly in data
+            const newAgent = data.data?.business || data.business;
+            
+            if (!newAgent) {
+               throw new Error("No se pudo crear el agente: Respuesta inválida del servidor");
+            }
+            
+            // Si el backend devuelve el ID, lo usamos. Si no, generamos uno temporal (fallback raro)
+            if (!newAgent.id) {
+                newAgent.id = Date.now().toString();
+            }
+            
+            // Generar métricas iniciales para demo si no vienen
+            if (!newAgent.metrics) {
+                newAgent.metrics = {
+                    conversations: 0,
+                    tasksAutomated: 0,
+                    savedTime: 0
+                };
+            }
 
             const existingAgentsStr = localStorage.getItem("agenty_agents");
             const agentsArray = existingAgentsStr ? JSON.parse(existingAgentsStr) : [];
@@ -103,9 +134,17 @@ export default function HomePage() {
                     <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-8 leading-tight">
                         Tu fuerza laboral <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Autónoma</span>
                     </h1>
-                    <p className="text-xl md:text-2xl text-white/50 font-light leading-relaxed">
+                    <p className="text-xl md:text-2xl text-white/50 font-light leading-relaxed mb-8">
                         Entrena un Agente de IA experto en tu negocio en segundos. Solo describe lo que haces.
                     </p>
+                    
+                    <button 
+                        onClick={handleOpenDemo}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white font-medium transition-all hover:scale-105 mb-8 group"
+                    >
+                        <PlayCircle className="w-5 h-5 text-emerald-400 group-hover:text-emerald-300 transition-colors" />
+                        Probar Demo Interactiva
+                    </button>
                 </motion.div>
 
                 <motion.div
@@ -145,6 +184,54 @@ export default function HomePage() {
                     <span>AI Native</span>
                     <span className="hidden md:inline">•</span>
                     <span>Omnichannel</span>
+                </motion.div>
+                
+                {/* Features Section */}
+                <motion.div
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.8 }}
+                    className="mt-32 w-full max-w-6xl relative z-10 px-4"
+                >
+                    <div className="text-center mb-16">
+                        <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+                            Automatiza sin perder el toque humano
+                        </h2>
+                        <p className="text-white/40 max-w-2xl mx-auto">
+                            Agenty se encarga del 80% de las consultas repetitivas, permitiéndote enfocarte en lo que realmente importa: hacer crecer tu negocio.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {[
+                            {
+                                icon: <MessageSquare className="w-8 h-8 text-blue-400" />,
+                                title: "Respuestas Instantáneas",
+                                desc: "Tu agente responde dudas sobre precios, horarios y servicios en segundos, 24/7."
+                            },
+                            {
+                                icon: <Clock className="w-8 h-8 text-purple-400" />,
+                                title: "Agendamiento Automático",
+                                desc: "Gestiona reservas y citas directamente en el chat sin intervención humana."
+                            },
+                            {
+                                icon: <Users className="w-8 h-8 text-emerald-400" />,
+                                title: "Handoff Inteligente",
+                                desc: "Si el agente no sabe la respuesta, transfiere la conversación a un humano al instante."
+                            }
+                        ].map((feature, i) => (
+                            <div key={i} className="p-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors group">
+                                <div className="mb-6 p-4 rounded-xl bg-white/5 w-fit group-hover:scale-110 transition-transform">
+                                    {feature.icon}
+                                </div>
+                                <h3 className="text-xl font-bold text-white mb-3">{feature.title}</h3>
+                                <p className="text-white/50 leading-relaxed text-sm">
+                                    {feature.desc}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
                 </motion.div>
 
                 {/* Logo Cloud Preview */}

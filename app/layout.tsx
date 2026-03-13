@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google"; // 1. Import Inter Font
 import "./globals.css";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import Providers from "@/components/Providers";
 import { Toaster } from "sonner";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
         <Providers>
           <Header />
           {children}
+          <Footer />
           <Toaster theme="dark" position="top-center" richColors />
         </Providers>
       </body>

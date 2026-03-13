@@ -12,7 +12,7 @@ const PLACEHOLDER_PHRASES = [
 ];
 
 interface MagicBoxProps {
-    onSubmit: (text: string) => void;
+    onSubmit: (text: string, files?: File[]) => void;
     isLoading: boolean;
 }
 
@@ -283,7 +283,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                         </button>
 
                         <button
-                            onClick={() => onSubmit(text)}
+                            onClick={() => onSubmit(text, attachedFiles)}
                             disabled={isLoading || !text}
                             className={`p-3.5 rounded-full transition-all duration-500 flex items-center justify-center ${text
                                 ? 'bg-white text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] active:scale-95'
