@@ -1,0 +1,104 @@
+# 🌳 ESTRUCTURA DEL PROYECTO AGENTY.AI
+
+Este documento describe la arquitectura y el propósito de los directorios y archivos clave del proyecto.
+
+## 📂 Estructura de Directorios Principal
+
+```
+/
+├── app/                # EL CEREBRO: Contiene todas las páginas y la lógica del backend (API).
+├── components/         # BLOQUES REUTILIZABLES: Componentes de React para la interfaz (botones, modales, etc.).
+├── lib/                # CÓDIGO DE SOPORTE: Utilidades compartidas, como la conexión a la base de datos.
+├── prisma/             # BASE DE DATOS: Define la estructura de la base de datos.
+├── public/             # ARCHIVOS ESTÁTICOS: Imágenes (como tu logo), fuentes y otros archivos accesibles públicamente.
+├── services/           # LÓGICA DE NEGOCIO: Orquesta tareas complejas del backend (ej. ejecutar un agente).
+├── .env                # SECRETOS: Guarda todas las claves de API y contraseñas (NUNCA COMPARTIR).
+├── package.json        # EL ÍNDICE: Lista todas las librerías externas que usa el proyecto.
+├── next.config.js      # Configuración específica de Next.js.
+└── tsconfig.json       # Configuración de TypeScript, incluyendo los alias de ruta como @/.
+```
+
+---
+
+## 🔬 Desglose Detallado
+
+### `app/` - El Corazón de la Aplicación
+
+Aquí es donde Next.js busca las páginas y los endpoints de la API.
+
+```
+app/
+├── layout.tsx          # PLANTILLA RAÍZ: Envuelve toda la aplicación. Aquí se colocan el Header y los Providers.
+├── page.tsx            # PÁGINA DE INICIO: Es la landing page con la "Magic Box".
+├── globals.css         # ESTILOS GLOBALES: Define la apariencia base, como el fondo "Aurora".
+│
+├── dashboard/
+│   └── builder/
+│       └── page.tsx    # PLAYGROUND DEL AGENTE: La página principal donde el usuario configura y prueba su agente.
+│
+├── login/page.tsx      # Página de INICIO DE SESIÓN.
+├── register/page.tsx   # Página de REGISTRO de nuevos usuarios.
+├── pricing/page.tsx    # Página de PLANES Y PRECIOS.
+│
+└── api/                # EL BACKEND: Cada carpeta aquí es un "endpoint" que el frontend puede llamar.
+    │
+    ├── auth/[...nextauth]/
+    │   └── route.ts    # NÚCLEO DE AUTENTICACIÓN: Gestiona el login con Google, Facebook y contraseñas. Guarda los tokens.
+    │
+    ├── business/
+    │   ├── connections/
+    │   │   ├── route.ts        # API para OBTENER el estado de las conexiones (ej. ¿WhatsApp está conectado?).
+    │   │   └── telegram/
+    │   │       └── route.ts    # API para GUARDAR el token de un bot de Telegram.
+    │   └── route.ts            # API para OBTENER la lista de negocios de un usuario.
+    │
+    ├── chat/
+    │   ├── intro/
+    │   │   └── route.ts  # API DE SALUDO: Genera el mensaje de bienvenida para la "Prueba Interactiva".
+    │   └── route.ts      # API DE CHAT PRINCIPAL: Conecta la "Prueba Interactiva" con los LLMs (OpenAI/Gemini).
+    │
+    ├── register/
+    │   └── route.ts      # API DE REGISTRO: Crea un nuevo usuario en la base de datos.
+    │
+    └── webhooks/
+        └── whatsapp/
+            └── route.ts  # CONECTOR DE WHATSAPP: Recibe los mensajes entrantes desde Meta.
+```
+
+### `components/` - Los Bloques de LEGO
+
+Componentes reutilizables que forman la interfaz de usuario.
+
+```
+components/
+├── Header.tsx              # BARRA DE NAVEGACIÓN: El menú superior que cambia si el usuario está logueado.
+├── InteractiveDemo.tsx     # DEMO INTERACTIVA: La ventana modal del chat que se conecta a la IA.
+├── Providers.tsx           # PROVEEDOR DE SESIÓN: Un componente técnico que permite a toda la app saber si un usuario ha iniciado sesión.
+└── dashboard/
+    └── ConnectionsManager.tsx # GESTOR DE CONEXIONES: La interfaz con los botones para conectar WhatsApp, Instagram, etc.
+```
+
+### `lib/` y `prisma/` - La Base de Datos
+
+Todo lo relacionado con la persistencia de datos.
+
+```
+lib/
+└── prisma.ts           # CONECTOR ÚNICO A PRISMA: Asegura que toda la aplicación use una sola conexión a la base de datos de forma eficiente.
+
+prisma/
+├── schema.prisma       # EL PLANO DE LA BD: Aquí defines todas tus tablas (User, Business, Agent, etc.) y sus relaciones.
+└── migrations/         # HISTORIAL DE CAMBIOS: Prisma guarda aquí cada cambio que has hecho a la estructura de la base de datos.
+```
+
+### `services/` - La Lógica de Negocio del Backend
+
+Orquesta tareas complejas que no son una simple llamada de API.
+
+```
+services/
+├── agent-execution.ts    # CEREBRO DEL AGENTE: Lógica central para recibir un mensaje (de cualquier plataforma) y ejecutar el agente correspondiente.
+├── whatsapp-sender.ts    # ENVIADOR DE WHATSAPP: Una función específica para enviar un mensaje de vuelta usando la API de Meta.
+└── database/
+    └── business.ts     # FUNCIONES DE BD: Contiene lógica para interactuar con el modelo `Business` (ej. guardar credenciales).
+```

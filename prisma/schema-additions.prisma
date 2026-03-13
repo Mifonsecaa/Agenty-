@@ -1,0 +1,53 @@
+// prisma/schema.prisma
+// Añade los nuevos campos al modelo Business para soportar WhatsApp, Telegram e Instagram
+
+// ────────────────────────────────────────────────────────────────────────────
+// INSTRUCCIONES:
+// Agrega los campos marcados con [NUEVO] al modelo Business existente.
+// Luego ejecuta:
+//   npx prisma migrate dev --name add_platform_connections
+// ────────────────────────────────────────────────────────────────────────────
+
+// Ejemplo de cómo debería quedar el modelo Business:
+
+model Business {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones existentes
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Campos básicos del negocio (los que ya tengas)
+  name        String
+  description String?
+  // ... otros campos que ya tengas ...
+
+  // ─── WhatsApp (Meta Cloud API) ────────────────────────────────────────────
+  whatsappPhoneNumberId      String? // [NUEVO] Phone Number ID de Meta
+  whatsappAccessToken        String? // [NUEVO] Token de acceso permanente
+  whatsappWebhookVerifyToken String? // [NUEVO] Token para verificar el webhook
+
+  // ─── Telegram ─────────────────────────────────────────────────────────────
+  telegramBotToken    String? // [NUEVO] Token del bot (de @BotFather)
+  telegramBotUsername String? // [NUEVO] @username del bot
+
+  // ─── Instagram Business ───────────────────────────────────────────────────
+  instagramPageId      String? // [NUEVO] ID de la Página de Facebook vinculada
+  instagramAccountId   String? // [NUEVO] ID de la cuenta de Instagram Business
+  instagramAccessToken String? // [NUEVO] Token de acceso de la página
+  instagramAppSecret   String? // [NUEVO] App Secret para verificar webhooks
+
+  // Relaciones
+  agents Agent[]
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// COMANDO PARA APLICAR LA MIGRACIÓN:
+//
+// npx prisma migrate dev --name add_platform_connections
+//
+// Esto generará y aplicará el archivo SQL en prisma/migrations/
+// También regenera el Prisma Client automáticamente.
+// ────────────────────────────────────────────────────────────────────────────
