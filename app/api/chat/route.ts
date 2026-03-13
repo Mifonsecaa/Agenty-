@@ -91,6 +91,28 @@ export async function POST(request: Request) {
       });
       aiResponse = response.choices[0].message;
     }
+    else if (provider === 'github') {
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) throw new Error("Falta la clave de API de GitHub (GITHUB_TOKEN).");
+
+      const client = new OpenAI({
+        baseURL: "https://models.inference.ai.azure.com",
+        apiKey: token
+      });
+
+      const payloadMessages = isDemo
+          ? [{ role: 'system', content: systemPrompt }, ...finalMessages]
+          : (finalMessages[0]?.role === 'system' ? finalMessages : [{ role: 'system', content: systemPrompt }, ...finalMessages]);
+
+      const response = await client.chat.completions.create({
+        messages: payloadMessages,
+        model: "gpt-4o",
+        temperature: 0.7,
+        max_tokens: 150
+      });
+
+      aiResponse = response.choices[0].message;
+    }
     else if (provider === 'gemini') {
       if (!process.env.GEMINI_API_KEY) throw new Error("Falta la clave de API de Gemini.");
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
