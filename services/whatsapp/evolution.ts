@@ -158,5 +158,72 @@ export const evolutionService = {
             console.error("[EvolutionService] Error setting webhook:", error);
             throw error;
         }
-    }
+    },
+
+    async sendMedia(instanceName: string, number: string, mediaUrl: string, mediaType: "image" | "video" | "document" = "image", caption: string = "") {
+        try {
+            console.log(`[EvolutionService] Sending media to ${number} via ${instanceName}`);
+            
+            // Determinar mimetype y tipo basado en extensión si es posible
+            let mimetype = "image/jpeg";
+            if (mediaUrl.endsWith(".pdf")) {
+                mimetype = "application/pdf";
+                mediaType = "document";
+            } else if (mediaUrl.endsWith(".png")) {
+                mimetype = "image/png";
+            }
+
+            const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    number,
+                    mediatype: mediaType,
+                    mimetype: mimetype,
+                    media: mediaUrl,
+                    fileName: mediaUrl.split("/").pop() || "archivo",
+                    caption: caption
+                })
+            });
+
+            const data = await response.json();
+            console.log("[EvolutionService] Send Media response:", data);
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error sending media:", error);
+            throw error;
+        }
+    },
+
+    async fetchMediaBase64(instanceName: string, messageObject: any) {
+        try {
+            console.log(`[EvolutionService] Fetching media base64 for message in ${instanceName}`);
+            // Evolution API endpoint typical structure
+            const response = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    message: messageObject,
+                    convertToMp4: false
+                })
+            });
+
+            const data = await response.json();
+            // Expected response: { base64: "..." }
+            if (data && data.base64) {
+                 return data.base64;
+            }
+            console.warn("[EvolutionService] No base64 found in response:", data);
+            return null;
+        } catch (error) {
+            console.error("[EvolutionService] Error fetching media base64:", error);
+            return null;
+        }
+    },
 };

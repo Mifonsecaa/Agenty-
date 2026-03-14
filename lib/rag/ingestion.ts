@@ -16,76 +16,44 @@ export class IngestionService {
         });
     }
 
-
-    // Utility to clean strings for PostgreSQL
-    private cleanString(str: string): string {
-        if (!str) return "";
-        // Remove null bytes and other non-printable control characters (except newline \n, return \r, tab \t)
-        // \x00-\x08 (null to backspace)
-        // \x0B-\x0C (vertical tab, form feed)
-        // \x0E-\x1F (shift out, etc)
-        // \x7F (delete) - Optional, but 0x00 is the critical one for Postgres
-        return str.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-    }
-
     async ingestText(businessId: string, text: string, metadata: any = {}) {
         console.log(`[Ingestion] Iniciando ingesta para negocio: ${businessId}`);
-        // Ensure initial text is clean
-        const cleanText = this.cleanString(text);
-        console.log(`[Ingestion] Tamaño del texto limpio: ${cleanText.length} caracteres`);
+        console.log(`[Ingestion] Tamaño del texto: ${text.length} caracteres`);
 
         try {
-            // 0. Eliminar versiones anteriores del mismo documento (Update Logic)
-            if (metadata.fileName) {
-                console.log(`[Ingestion] Eliminando versiones anteriores de: ${metadata.fileName}`);
-                await prisma.knowledgeItem.deleteMany({
-                    where: {
-                        businessId,
-                        metadata: {
-                            path: ['fileName'],
-                            equals: metadata.fileName
-                        }
-                    }
-                });
-            }
-
             // 1. Dividir texto en fragmentos (Chunks)
             console.log("[Ingestion] Dividiendo texto en chunks...");
-            const docs = await this.splitter.createDocuments([cleanText]);
+            const docs = await this.splitter.createDocuments([text]);
             console.log(`[Ingestion] Creados ${docs.length} chunks`);
 
             // 2. Procesar cada fragmento
             let processedItems = 0;
-            
-            // Clean metadata values
-            const cleanMetadata = Object.entries(metadata).reduce((acc: any, [key, val]) => {
-                acc[key] = typeof val === 'string' ? this.cleanString(val) : val;
-                return acc;
-            }, {});
-
             for (const doc of docs) {
                 console.log(`[Ingestion] Generando embedding para chunk ${processedItems + 1}/${docs.length}...`);
                 const embedding = await this.embeddings.embedQuery(doc.pageContent);
-                
+                const vectorString = `[${embedding.join(",")}]`;
+
                 // 3. Guardar en la DB con el vector
-                const cleanContent = this.cleanString(doc.pageContent);
                 console.log(`[Ingestion] Guardando chunk ${processedItems + 1} en base de datos...`);
-                
-                await prisma.knowledgeItem.create({
+                // @ts-ignore - Prisma types might be out of sync
+                const knowledgeItem = await prisma.knowledgeItem.create({
                     data: {
                         businessId,
-                        content: cleanContent,
-                        embedding: embedding, // Saving as JSON array directly
+                        content: doc.pageContent,
                         metadata: {
-                            ...cleanMetadata,
-                            fileName: cleanMetadata.fileName || "unknown", // Assert fileName is in metadata
-                            source: cleanMetadata.source || "manual_ingestion"
+                            ...metadata,
+                            source: metadata.source || "manual_ingestion"
                         }
                     }
                 });
 
-
-                console.log(`[Ingestion] Chunk ${processedItems + 1} guardado correctamente.`);
+                console.log(`[Ingestion] Actualizando embedding para item ID: ${knowledgeItem.id}`);
+                // Actualizar el embedding con SQL crudo - Sintaxis más robusta para pgvector
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "KnowledgeItem" SET embedding = $1::vector WHERE id = $2`,
+                    vectorString,
+                    knowledgeItem.id
+                );
                 processedItems++;
             }
 
@@ -103,10 +71,41 @@ export class IngestionService {
         });
     }
 
-    async deleteKnowledgeItem(itemId: string, businessId: string) {
-        return await prisma.knowledgeItem.deleteMany({
-            where: { id: itemId, businessId }
-        });
+    async ingestStructuredKnowledge(businessId: string, item: { content: string, tags: string[], relevance: number }, metadata: any = {}) {
+        console.log(`[Ingestion] Ingesting Structured Knowledge Chunk for business ${businessId} (Content size: ${item.content.length}, tags: ${item.tags.join(',')})`);
+
+        try {
+            // Generar embedding (que es obligatorio para vector store)
+            const embedding = await this.embeddings.embedQuery(item.content);
+            const vectorString = `[${embedding.join(",")}]`;
+
+            // Guardar en DB con metadatos enriquecidos por el Agente
+            const knowledgeItem = await prisma.knowledgeItem.create({
+                data: {
+                    businessId,
+                    content: item.content,
+                    metadata: {
+                        ...metadata,
+                        tags: item.tags,
+                        relevance: item.relevance,
+                        isAgentGenerated: true,
+                        source: metadata.source || "agent_ingestion"
+                    }
+                }
+            });
+
+            // Actualizar vector
+            await prisma.$executeRawUnsafe(
+                `UPDATE "KnowledgeItem" SET embedding = $1::vector WHERE id = $2`,
+                vectorString,
+                knowledgeItem.id
+            );
+            
+            return knowledgeItem;
+        } catch (error) {
+            console.error("[Ingestion] Error ingesting structured chunk:", error);
+            throw error;
+        }
     }
 }
 
