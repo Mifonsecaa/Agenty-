@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ingestionService } from "@/lib/rag/ingestion";
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
+import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
 
 
 export async function POST(req: Request) {
@@ -110,7 +111,24 @@ export async function GET(req: Request) {
             take: 50
         });
 
-        return successResponse({ items });
+        const normalizedItems: KnowledgeItem[] = items.map((item) => {
+            const metadata = item.metadata;
+            const safeMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+                ? metadata as { fileName?: unknown }
+                : undefined;
+
+            return {
+                id: item.id,
+                content: item.content,
+                metadata: {
+                    fileName: typeof safeMetadata?.fileName === "string" ? safeMetadata.fileName : undefined,
+                },
+                createdAt: item.createdAt.toISOString(),
+            };
+        });
+
+        const payload: KnowledgeListData = { items: normalizedItems };
+        return successResponse<KnowledgeListData>(payload);
 
     } catch (error: any) {
         return NextResponse.json({ error: "Internal Error" }, { status: 500 });

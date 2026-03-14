@@ -2,13 +2,38 @@
 import { useState, useEffect } from "react";
 import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
+import { AnimatePresence, motion } from "framer-motion";
+import type { KnowledgeItem, KnowledgeListResponse } from "@/types/knowledge";
+
+const KNOWLEDGE_LOADING_PHRASES = [
+    "Escaneando documento...",
+    "Extrayendo precios y servicios...",
+    "Construyendo base de conocimiento...",
+];
 
 export default function KnowledgeBase() {
     const { activeAgent } = useAgenty();
     const [isDragging, setIsDragging] = useState(false);
     const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success">("idle");
     const [progress, setProgress] = useState(0);
-    const [activeFiles, setActiveFiles] = useState<any[]>([]);
+    const [activeFiles, setActiveFiles] = useState<KnowledgeItem[]>([]);
+    const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
+    const [uploadingFileName, setUploadingFileName] = useState("");
+
+    const loadingMessage = KNOWLEDGE_LOADING_PHRASES[loadingPhraseIndex % KNOWLEDGE_LOADING_PHRASES.length];
+
+    useEffect(() => {
+        if (uploadState !== "uploading") {
+            setLoadingPhraseIndex(0);
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setLoadingPhraseIndex((prev) => prev + 1);
+        }, 1800);
+
+        return () => clearInterval(interval);
+    }, [uploadState]);
 
     useEffect(() => {
         if (activeAgent?.id) {
@@ -17,11 +42,13 @@ export default function KnowledgeBase() {
     }, [activeAgent]);
 
     const fetchKnowledge = async () => {
+        if (!activeAgent?.id) return;
+
         try {
             const res = await fetch(`/api/knowledge?businessId=${activeAgent?.id}`);
-            const data = await res.json();
+            const data: KnowledgeListResponse = await res.json();
             if (data.success) {
-                setActiveFiles(data.items || []);
+                setActiveFiles(data.data?.items || data.items || []);
             }
         } catch (error) {
             console.error("Error fetching knowledge:", error);
@@ -49,6 +76,8 @@ export default function KnowledgeBase() {
     const handleUpload = async (file: File) => {
         if (!activeAgent?.id || uploadState === "uploading") return;
 
+        const businessId = activeAgent.id;
+
         // Validación de tipos de archivo
         const validTypes = [
             "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"
@@ -61,10 +90,11 @@ export default function KnowledgeBase() {
 
         setUploadState("uploading");
         setProgress(10);
+        setUploadingFileName(file.name);
 
         try {
             const reader = new FileReader();
-            reader.onload = async (e) => {
+            reader.onload = async (e: ProgressEvent<FileReader>) => {
                 let content = e.target?.result as string;
                 setProgress(40);
 
@@ -77,7 +107,7 @@ export default function KnowledgeBase() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        businessId: activeAgent.id,
+                        businessId,
                         text: content,
                         name: file.name,
                         type: file.type
@@ -89,11 +119,13 @@ export default function KnowledgeBase() {
                     setUploadState("success");
                     setTimeout(() => {
                         setUploadState("idle");
+                        setUploadingFileName("");
                         fetchKnowledge();
                     }, 2000);
                 } else {
-                    const errorData = await res.json().catch(() => ({ error: "Error desconocido" }));
+                    const errorData: KnowledgeListResponse = await res.json().catch(() => ({ error: "Error desconocido", success: false }));
                     setUploadState("idle");
+                    setUploadingFileName("");
                     const errorMsg = errorData.error || "Error al procesar el documento.";
                     const errorDetails = errorData.details || errorData.message || "";
                     alert(`Error: ${errorMsg}\n\nDetalles técnicos: ${errorDetails}`);
@@ -110,16 +142,18 @@ export default function KnowledgeBase() {
         } catch (error) {
             console.error("Upload error:", error);
             setUploadState("idle");
+            setUploadingFileName("");
         }
     };
 
     const handleDelete = async (itemId: string) => {
+        if (!activeAgent?.id) return;
         if (!confirm("¿Seguro que quieres borrar este conocimiento?")) return;
         try {
             await fetch("/api/knowledge", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessId: activeAgent?.id, itemId })
+                body: JSON.stringify({ businessId: activeAgent.id, itemId })
             });
             fetchKnowledge();
         } catch (error) {
@@ -151,12 +185,13 @@ export default function KnowledgeBase() {
                                 if (uploadState !== "idle") return;
                                 const input = document.createElement('input');
                                 input.type = 'file';
-                                input.onchange = (e: any) => {
-                                    if (e.target.files?.[0]) handleUpload(e.target.files[0]);
+                                input.onchange = (e: Event) => {
+                                    const target = e.target as HTMLInputElement | null;
+                                    if (target?.files?.[0]) handleUpload(target.files[0]);
                                 };
                                 input.click();
                             }}
-                            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all min-h-[220px] ${uploadState === "uploading" ? 'border-blue-500/50 bg-blue-500/5 cursor-wait' :
+                            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all min-h-55 ${uploadState === "uploading" ? 'border-blue-500/50 bg-blue-500/5 cursor-wait' :
                                 isDragging ? 'border-blue-400 bg-blue-500/10' :
                                     'border-white/20 hover:border-white/40 hover:bg-white/5 cursor-pointer'
                                 }`}
@@ -167,8 +202,29 @@ export default function KnowledgeBase() {
                                         <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
                                         <span className="absolute text-[10px] font-bold text-blue-400 mt-12">{progress}%</span>
                                     </div>
-                                    <p className="text-sm font-medium text-white/90">Aprendiendo conceptos...</p>
-                                    <div className="w-full max-w-[150px] h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/80" aria-live="polite">
+                                        <Loader2 size={13} className="animate-spin text-emerald-300" />
+                                        <div className="relative h-4 min-w-55 overflow-hidden text-left">
+                                            <AnimatePresence mode="wait">
+                                                <motion.span
+                                                    key={loadingMessage}
+                                                    initial={{ opacity: 0, y: 8 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    exit={{ opacity: 0, y: -8 }}
+                                                    transition={{ duration: 0.25, ease: "easeOut" }}
+                                                    className="absolute left-0 top-0"
+                                                >
+                                                    {loadingMessage}
+                                                </motion.span>
+                                            </AnimatePresence>
+                                        </div>
+                                    </div>
+                                    {uploadingFileName && (
+                                        <p className="text-xs text-white/50 mt-2 max-w-55 truncate">
+                                            Procesando: {uploadingFileName}
+                                        </p>
+                                    )}
+                                    <div className="w-full max-w-37.5 h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
                                         <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progress}%` }} />
                                     </div>
                                 </>
@@ -234,14 +290,14 @@ export default function KnowledgeBase() {
                                         <FileText className="w-5 h-5 text-blue-400" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-medium text-white/90 truncate max-w-[200px] md:max-w-xs">
+                                        <p className="text-sm font-medium text-white/90 truncate max-w-50 md:max-w-xs">
                                             {file.metadata?.fileName || "Fragmento de conocimiento"}
                                         </p>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded flex items-center gap-1">
                                                 <CheckCircle2 className="w-3 h-3" /> Indexado
                                             </span>
-                                            <span className="text-[10px] text-white/40 truncate max-w-[150px]">
+                                            <span className="text-[10px] text-white/40 truncate max-w-37.5">
                                                 {file.content.substring(0, 60)}...
                                             </span>
                                         </div>
