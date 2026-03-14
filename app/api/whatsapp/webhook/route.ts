@@ -4,6 +4,22 @@ import { prisma } from "@/lib/prisma";
 import { aiService } from "@/lib/ai";
 import { metricsService } from "@/lib/metrics";
 
+const ALLOWED_MEDIA_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+function isValidMediaUrl(mediaUrl: string): boolean {
+    try {
+        const url = new URL(mediaUrl);
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+            return false;
+        }
+        const pathname = url.pathname.toLowerCase();
+        return ALLOWED_MEDIA_EXTENSIONS.some((ext) => pathname.endsWith(ext));
+    } catch {
+        // Invalid URL
+        return false;
+    }
+}
+
 export async function POST(req: Request) {
     try {
         const body = await req.json();
@@ -154,6 +170,12 @@ export async function POST(req: Request) {
                 if (mediaUrl.startsWith("/")) {
                     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3001";
                     mediaUrl = new URL(mediaUrl, baseUrl).toString();
+                }
+
+                // Validar URL de media antes de usarla
+                if (!isValidMediaUrl(mediaUrl)) {
+                    console.warn(`[WhatsApp Webhook] mediaUrl inválida o no permitida: ${mediaUrl}`);
+                    mediaUrl = undefined as any;
                 }
             }
         } catch (aiErr: any) {
