@@ -84,12 +84,14 @@ model DailyMetric {
 }
 
 model Customer {
-  id           String        @id @default(cuid())
-  phone        String        @unique
-  name         String?
-  createdAt    DateTime      @default(now())
-  reservations Reservation[]
-  conversations Conversation[]
+  id               String        @id @default(cuid())
+  phone            String        @unique
+  name             String?
+  aiProfile        String?       @db.Text // Resumen generado por IA sobre gustos/perfil
+  lastProfileUpdate DateTime?
+  createdAt        DateTime      @default(now())
+  reservations     Reservation[]
+  conversations    Conversation[]
 }
 
 model Conversation {
@@ -126,6 +128,8 @@ model Reservation {
   startTime  DateTime
   endTime    DateTime
   status     String   @default("CONFIRMED")
+  details    String?  // Detalles extra como "Corte y barba"
+  metadata   Json?    @default("{}") // Datos estructurados extra
   businessId String
   customerId String
   createdAt  DateTime @default(now())

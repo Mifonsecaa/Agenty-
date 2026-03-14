@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { evolutionService } from "@/services/whatsapp/evolution";
+import { transcriptionService } from "@/services/ai/transcription";
 import { prisma } from "@/lib/prisma";
 import { aiService } from "@/lib/ai";
 import { metricsService } from "@/lib/metrics";
@@ -28,11 +29,38 @@ export async function POST(req: Request) {
         const pushName = messageData.pushName || "Usuario";
 
         // Extraer texto
-        const messageText = messageData.message?.conversation ||
+        let messageText = messageData.message?.conversation ||
             messageData.message?.extendedTextMessage?.text ||
             messageData.message?.imageMessage?.caption ||
             messageData.body ||
             "";
+
+        // --- PROCESAMIENTO DE AUDIO (WHISPER) ---
+        if (messageData.message?.audioMessage) {
+            console.log(`[Webhook] Audio message from ${pushName} detected. Fetching...`);
+            try {
+                // Fetch base64 audio from Evolution API
+                const base64Audio = await evolutionService.fetchMediaBase64(instanceName, messageData);
+                if (base64Audio) {
+                    const audioBuffer = Buffer.from(base64Audio, 'base64');
+                    console.log(`[Webhook] Audio fetched (${audioBuffer.byteLength} bytes). Transcribing...`);
+                    
+                    const transcription = await transcriptionService.transcribeAudio(audioBuffer);
+                    if (transcription) {
+                        messageText = `[NOTA DE VOZ DEL CLIENTE]: ${transcription}`;
+                        console.log(`[Webhook] Audio transcribed: "${transcription}"`);
+                    } else {
+                        messageText = "[Audio ininteligible]";
+                    }
+                } else {
+                    console.warn("[Webhook] Could not fetch audio base64 from Evolution.");
+                    messageText = "[Error descargando audio]";
+                }
+            } catch (err) {
+                console.error("[Webhook] Audio processing error:", err);
+                messageText = "[Error procesando audio]";
+            }
+        }
 
         // Evitar responder a mensajes propios o vacíos
         if (messageData.key.fromMe || !messageText || targetJid === body.sender) {

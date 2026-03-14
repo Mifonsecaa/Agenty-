@@ -4,12 +4,17 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AgentState, AgentStateType } from "./state";
 import { createKnowledgeTool } from "../tools/knowledge-tool";
+import { createBookingTool } from "../tools/booking-tool";
 import { SystemMessage } from "@langchain/core/messages";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
 export const createAgentGraph = (businessId: string, businessName: string, config: any) => {
     // 1. Definir herramientas habilitadas para este agente
-    const tools = [createKnowledgeTool(businessId)];
+    const tools = [
+        createKnowledgeTool(businessId),
+        // booking tool se inicializa con businessId; el phone se inyecta por state
+        createBookingTool(businessId, undefined),
+    ];
     const toolNode = new ToolNode(tools);
 
     // 2. Definir el modelo (OpenAI es superior para Tool Calling)
@@ -46,9 +51,14 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const { messages, businessName, config } = state;
 
         // System Prompt dinámico
-        const systemPrompt = config?.systemPrompt ||
-            `Eres un asistente experto para ${businessName}. Sé amable y conciso. 
+        let systemPrompt = config?.systemPrompt ||
+            `Eres un asistente experto para ${businessName}. Sé amable y conciso.
        Utiliza tus herramientas si necesitas datos específicos sobre productos o políticas.`;
+
+        systemPrompt += `\n\nTienes acceso a una herramienta de reservas llamada booking_manager.\n` +
+            `- Usa action="CHECK" para consultar disponibilidad en una fecha (YYYY-MM-DD).\n` +
+            `- Usa action="CREATE" para crear una reserva cuando el cliente confirme fecha y hora.\n` +
+            `Antes de crear, siempre verifica primero. Explica al cliente las opciones de horarios en lenguaje natural.`;
 
         const response = await model.invoke([
             new SystemMessage(systemPrompt),

@@ -6,6 +6,7 @@ export const AgentState = Annotation.Root({
     businessId: Annotation<string>(),
     businessName: Annotation<string>(),
     config: Annotation<any>(),
+    customerPhone: Annotation<string>(), // Add this for booking context
 });
 
 export type AgentStateType = typeof AgentState.State;

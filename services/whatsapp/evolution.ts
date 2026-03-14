@@ -197,4 +197,33 @@ export const evolutionService = {
             throw error;
         }
     },
+
+    async fetchMediaBase64(instanceName: string, messageObject: any) {
+        try {
+            console.log(`[EvolutionService] Fetching media base64 for message in ${instanceName}`);
+            // Evolution API endpoint typical structure
+            const response = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    message: messageObject,
+                    convertToMp4: false
+                })
+            });
+
+            const data = await response.json();
+            // Expected response: { base64: "..." }
+            if (data && data.base64) {
+                 return data.base64;
+            }
+            console.warn("[EvolutionService] No base64 found in response:", data);
+            return null;
+        } catch (error) {
+            console.error("[EvolutionService] Error fetching media base64:", error);
+            return null;
+        }
+    },
 };
