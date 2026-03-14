@@ -158,5 +158,43 @@ export const evolutionService = {
             console.error("[EvolutionService] Error setting webhook:", error);
             throw error;
         }
-    }
+    },
+
+    async sendMedia(instanceName: string, number: string, mediaUrl: string, mediaType: "image" | "video" | "document" = "image", caption: string = "") {
+        try {
+            console.log(`[EvolutionService] Sending media to ${number} via ${instanceName}`);
+            
+            // Determinar mimetype y tipo basado en extensión si es posible
+            let mimetype = "image/jpeg";
+            if (mediaUrl.endsWith(".pdf")) {
+                mimetype = "application/pdf";
+                mediaType = "document";
+            } else if (mediaUrl.endsWith(".png")) {
+                mimetype = "image/png";
+            }
+
+            const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': EVOLUTION_API_KEY!
+                },
+                body: JSON.stringify({
+                    number,
+                    mediatype: mediaType,
+                    mimetype: mimetype,
+                    media: mediaUrl,
+                    fileName: mediaUrl.split("/").pop() || "archivo",
+                    caption: caption
+                })
+            });
+
+            const data = await response.json();
+            console.log("[EvolutionService] Send Media response:", data);
+            return data;
+        } catch (error) {
+            console.error("[EvolutionService] Error sending media:", error);
+            throw error;
+        }
+    },
 };

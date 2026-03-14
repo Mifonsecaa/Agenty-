@@ -22,6 +22,16 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             temperature: 0.7,
             streaming: false,
         }).bindTools(tools);
+    } else if (provider === "github" && process.env.GITHUB_TOKEN) {
+        // GitHub Models (via Azure AI Inference)
+        model = new ChatOpenAI({
+            modelName: "gpt-4o",
+            temperature: 0.7,
+            configuration: {
+                baseURL: "https://models.inference.ai.azure.com",
+                apiKey: process.env.GITHUB_TOKEN
+            }
+        }).bindTools(tools);
     } else {
         // Fallback a Gemini si es necesario
         model = new ChatGoogleGenerativeAI({

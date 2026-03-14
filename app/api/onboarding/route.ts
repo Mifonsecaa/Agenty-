@@ -7,6 +7,30 @@ import { onboardingSchema, type OnboardingInput } from "@/lib/validation/schemas
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import { ingestionService } from "@/lib/rag/ingestion";
 // import pdf from "pdf-parse"; // Removed in favor of require inside the function to avoid strict ESM issues with this old lib
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+async function describeImage(buffer: Buffer, mimeType: string): Promise<string> {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            "Describe detalladamente el contenido de esta imagen. Si es un menú, lista los platos y precios. Si es un horario, lista las horas. Si es un producto, descríbelo.",
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: mimeType
+                }
+            }
+        ]);
+        return result.response.text();
+    } catch (error) {
+        console.error("Error describiendo imagen con Gemini:", error);
+        return "";
+    }
+}
 
 export async function POST(req: Request) {
     try {
@@ -18,7 +42,7 @@ export async function POST(req: Request) {
         }
 
         let ownerDescription = "";
-        let filesContent: { name: string, content: string }[] = [];
+        let filesContent: { name: string, content: string, metadata?: any }[] = [];
 
         const contentType = req.headers.get("content-type") || "";
 
@@ -28,31 +52,62 @@ export async function POST(req: Request) {
 
             const files = formData.getAll("files") as File[];
             if (files && files.length > 0) {
+               // Asegurar directorio de subida
+               const uploadDir = path.join(process.cwd(), "public", "uploads");
+               await mkdir(uploadDir, { recursive: true });
+
                for (const file of files) {
                    try {
                        const arrayBuffer = await file.arrayBuffer();
                        const buffer = Buffer.from(arrayBuffer);
+                       
+                       // Guardar archivo físicamente para poder enviarlo después
+                       const uniqueName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+                       const filePath = path.join(uploadDir, uniqueName);
+                       await writeFile(filePath, buffer);
+                       const publicUrl = `/uploads/${uniqueName}`; // URL accesible por el navegador/bot
+                       
                        let fileText = "";
 
                        // Detectar PDF por tipo o extensión
                        if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
                            try {
-                               const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM con esta librería legacy
+                               const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM
                                const data = await pdf(buffer);
                                fileText = data.text;
                                console.log(`[Onboarding] PDF procesado: ${file.name} (${fileText.length} chars)`);
                            } catch (pdfErr) {
                                console.error(`[Onboarding] Error parseando PDF ${file.name}:`, pdfErr);
                            }
+                       } else if (file.type.startsWith("image/")) {
+                           // Procesar imagen con Gemini Vision
+                           console.log(`[Onboarding] Procesando imagen ${file.name} con IA...`);
+                           const description = await describeImage(buffer, file.type);
+                           if (description) {
+                               fileText = `[IMAGEN: ${file.name}]\nDescripción visual: ${description}`;
+                               console.log(`[Onboarding] Imagen descrita: ${description.substring(0, 50)}...`);
+                           }
                        } else if (file.type.startsWith("text/") || file.name.endsWith(".txt") || file.name.endsWith(".md") || file.name.endsWith(".json") || file.name.endsWith(".csv")) {
                            fileText = buffer.toString("utf-8");
                        }
 
                        if (fileText && fileText.trim().length > 0) {
-                           // Sanitizamos el texto para evitar errores de Postgres
+                           // Sanitizamos el texto
                            fileText = fileText.replace(/\0/g, '');
-                           filesContent.push({ name: file.name, content: fileText });
-                           ownerDescription += `\n\n--- CONTENIDO DEL ARCHIVO ${file.name} ---\n${fileText}\n--- FIN ARCHIVO ---\n`;
+                           
+                           // Guardamos metadata extendida
+                           filesContent.push({ 
+                               name: file.name, 
+                               content: fileText,
+                               // @ts-ignore
+                               metadata: {
+                                   fileUrl: publicUrl,
+                                   fileType: file.type,
+                                   fileName: file.name
+                               }
+                           });
+                           
+                           ownerDescription += `\n\n--- CONTENIDO DEL ARCHIVO ${file.name} (URL: ${publicUrl}) ---\n${fileText}\n--- FIN ARCHIVO ---\n`;
                        } else {
                            console.warn(`[Onboarding] Archivo ${file.name} vacío o no procesado correctamente.`);
                        }
@@ -108,7 +163,12 @@ export async function POST(req: Request) {
             // Hacemos esto asíncrono pero no bloqueamos la respuesta necesariamente si tarda mucho,
             // aunque para onboarding es mejor esperar para asegurar que el agente sepa del contenido.
             await Promise.allSettled(filesContent.map(file => 
-                ingestionService.ingestText(negocio.id, file.content, { source: file.name, type: "onboarding_upload" })
+                ingestionService.ingestText(negocio.id, file.content, { 
+                    source: file.name, 
+                    type: "onboarding_upload",
+                    fileUrl: file.metadata?.fileUrl,
+                    fileType: file.metadata?.fileType
+                })
             ));
         }
 

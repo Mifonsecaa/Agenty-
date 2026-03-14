@@ -39,7 +39,14 @@ export const createKnowledgeTool = (businessId: string) => {
                 // 3. Formatear resultados para el agente
                 const context = results
                     .filter(r => r.similarity > 0.3) // Filtro de calidad mínimo
-                    .map(r => `- ${r.content}`)
+                    .map(r => {
+                        let text = `- ${r.content}`;
+                        const meta = r.metadata || {};
+                        if (meta.fileUrl) {
+                            text += `\n\n[FILE AVAILABLE]: This content is associated with a file. If the user asks for the document, image, or file related to this, you MUST include this tag at the end of your response: [MEDIA_URL: ${meta.fileUrl}]`;
+                        }
+                        return text;
+                    })
                     .join("\n\n");
 
                 return context || "La búsqueda no devolvió resultados lo suficientemente similares.";

@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
+import { OpenAIEmbeddings } from "@langchain/openai";
 import { prisma } from './prisma';
 
 console.log("[AIService] Module Loading...");
@@ -27,8 +28,65 @@ export const aiService = {
                 throw new Error("Negocio no encontrado en la base de datos");
             }
 
+            // 2. Recuperar Contexto RAG (Base de Conocimiento)
+            let ragContext = "";
+            let availableFiles: { url: string, description: string }[] = [];
+            
+            try {
+                const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
+                if (lastUserMessage && process.env.OPENAI_API_KEY) {
+                    const embeddings = new OpenAIEmbeddings({ 
+                        openAIApiKey: process.env.OPENAI_API_KEY, 
+                        modelName: "text-embedding-3-small" 
+                    });
+                    
+                    const queryVector = await embeddings.embedQuery(lastUserMessage);
+                    const vectorStr = `[${queryVector.join(",")}]`;
+
+                    // Búsqueda vectorial
+                    const items = await prisma.$queryRaw`
+                        SELECT content, metadata
+                        FROM "KnowledgeItem"
+                        WHERE "businessId" = ${businessId}
+                        ORDER BY embedding <-> ${vectorStr}::vector
+                        LIMIT 3;
+                    ` as any[];
+
+                    if (items && items.length > 0) {
+                        ragContext = items.map(item => {
+                            const meta = item.metadata || {};
+                            let text = item.content;
+                            if (meta.fileUrl) {
+                                availableFiles.push({ 
+                                    url: meta.fileUrl, 
+                                    description: `Documento: ${meta.source || item.name || 'Archivo adjunto'}` 
+                                });
+                                text += `\n[ESTE FRAGMENTO CONTIENE UN ARCHIVO: ${meta.fileUrl}]`;
+                            }
+                            return text;
+                        }).join("\n\n");
+                        console.log(`[AIService] RAG Context retrieved: ${items.length} items`);
+                    }
+                }
+            } catch (ragError) {
+                console.error("[AIService] Error en RAG retrieval:", ragError);
+            }
+
             const config = business.config as any;
-            const systemPrompt = config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+            let systemPrompt = config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+
+            // Inyectar contexto RAG al prompt
+            if (ragContext) {
+                systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
+            }
+
+            // Inyectar instrucciones para archivos
+            if (availableFiles.length > 0) {
+                systemPrompt += `\n\nTIENES ACCESO A LOS SIGUIENTES ARCHIVOS. Si el usuario solicita explícitamente ver el menú, catálogo, horario o documento mencionado, DEBES añadir al final de tu respuesta el comando: [MEDIA_URL: <url_del_archivo>].
+                
+                Archivos disponibles:
+                ${availableFiles.map(f => `- ${f.description} (URL: ${f.url})`).join("\n")}`;
+            }
 
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
             const provider = config?.aiProvider || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini');
@@ -40,6 +98,23 @@ export const aiService = {
                 const response = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
                     messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                    temperature: 0.7,
+                    max_tokens: 300,
+                });
+                return response.choices[0].message.content;
+            };
+
+            const callGitHub = async () => {
+                if (!process.env.GITHUB_TOKEN) throw new Error("Missing GITHUB_TOKEN");
+                console.log("[AIService] Calling GitHub Models (gpt-4o)...");
+                const client = new OpenAI({
+                    baseURL: "https://models.inference.ai.azure.com",
+                    apiKey: process.env.GITHUB_TOKEN
+                });
+                
+                const response = await client.chat.completions.create({
+                    messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                    model: "gpt-4o",
                     temperature: 0.7,
                     max_tokens: 300,
                 });
@@ -66,6 +141,8 @@ export const aiService = {
 
             if (provider === 'openai') {
                 return await callOpenAI();
+            } else if (provider === 'github') {
+                return await callGitHub();
             } else {
                 try {
                     return await callGemini();

@@ -124,6 +124,8 @@ export async function POST(req: Request) {
 
         // 2. Generar respuesta real con el Agente (LangGraph + RAG)
         let aiResponse = "Lo siento, tuve un problema interno.";
+        let mediaUrl: string | null = null;
+        
         try {
             console.log(`[WhatsApp Webhook] Ejecutando agente para: "${messageText}"`);
             const { createAgentGraph } = await import("@/lib/agent/graph");
@@ -141,6 +143,19 @@ export async function POST(req: Request) {
             console.log(`[WhatsApp Webhook] Resultado del agente obtenido.`);
             const lastMsg = result.messages[result.messages.length - 1];
             aiResponse = lastMsg.content as string;
+            
+            // DETECTAR ARCHIVO
+            const mediaMatch = aiResponse.match(/\[MEDIA_URL:\s*(.*?)\]/);
+            if (mediaMatch && mediaMatch[1]) {
+                mediaUrl = mediaMatch[1].trim();
+                aiResponse = aiResponse.replace(/\[MEDIA_URL:\s*.*?\]/, "").trim();
+                
+                // Resolver URL relativa
+                if (mediaUrl.startsWith("/")) {
+                    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3001";
+                    mediaUrl = new URL(mediaUrl, baseUrl).toString();
+                }
+            }
         } catch (aiErr: any) {
             console.error("[WhatsApp Webhook] Agent Error:", aiErr.message || aiErr);
         }
@@ -148,7 +163,7 @@ export async function POST(req: Request) {
         // 3. Enviar respuesta vía Evolution API
         if (aiResponse && aiResponse.trim() !== "") {
             await evolutionService.sendMessage(instanceName, targetJid, aiResponse);
-            console.log(`[WhatsApp Webhook] Responded to ${pushName}`);
+            console.log(`[WhatsApp Webhook] Responded with text to ${pushName}`);
 
             // Guardar respuesta del AGENTE (IA) en DB
             await prisma.message.create({
@@ -161,6 +176,23 @@ export async function POST(req: Request) {
             await prisma.conversation.update({
                 where: { id: conversation.id },
                 data: { lastMessageAt: new Date() }
+            });
+        }
+        
+        // 4. Enviar archivo si existe
+        if (mediaUrl) {
+            console.log(`[Webhook] Enviando archivo: ${mediaUrl}`);
+            const type = mediaUrl.endsWith(".pdf") ? "document" : "image";
+            // Enviamos el medio
+            await evolutionService.sendMedia(instanceName, targetJid, mediaUrl, type, "Aquí tienes el archivo.");
+            
+            // Opcional: Registrar que se envió un archivo en la conversación
+             await prisma.message.create({
+                data: {
+                    conversationId: conversation.id,
+                    role: "agent",
+                    content: `[ARCHIVO ENVIADO: ${mediaUrl}]`
+                }
             });
         }
 
