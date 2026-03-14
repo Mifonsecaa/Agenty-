@@ -70,6 +70,43 @@ export class IngestionService {
             where: { businessId }
         });
     }
+
+    async ingestStructuredKnowledge(businessId: string, item: { content: string, tags: string[], relevance: number }, metadata: any = {}) {
+        console.log(`[Ingestion] Ingesting Structured Knowledge Chunk for business ${businessId} (Content size: ${item.content.length}, tags: ${item.tags.join(',')})`);
+
+        try {
+            // Generar embedding (que es obligatorio para vector store)
+            const embedding = await this.embeddings.embedQuery(item.content);
+            const vectorString = `[${embedding.join(",")}]`;
+
+            // Guardar en DB con metadatos enriquecidos por el Agente
+            const knowledgeItem = await prisma.knowledgeItem.create({
+                data: {
+                    businessId,
+                    content: item.content,
+                    metadata: {
+                        ...metadata,
+                        tags: item.tags,
+                        relevance: item.relevance,
+                        isAgentGenerated: true,
+                        source: metadata.source || "agent_ingestion"
+                    }
+                }
+            });
+
+            // Actualizar vector
+            await prisma.$executeRawUnsafe(
+                `UPDATE "KnowledgeItem" SET embedding = $1::vector WHERE id = $2`,
+                vectorString,
+                knowledgeItem.id
+            );
+            
+            return knowledgeItem;
+        } catch (error) {
+            console.error("[Ingestion] Error ingesting structured chunk:", error);
+            throw error;
+        }
+    }
 }
 
 export const ingestionService = new IngestionService();

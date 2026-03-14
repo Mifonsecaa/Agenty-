@@ -10,6 +10,7 @@ import { ingestionService } from "@/lib/rag/ingestion";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { knowledgeAgent } from "@/services/ai/knowledgeAgent";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -157,19 +158,45 @@ export async function POST(req: Request) {
             }
         });
 
-        // 6. Si hubo archivos, los procesamos e insertamos en la BD Vectorial
+        // 6. Si hubo archivos, procesamos con AGENTE de Conocimiento
         if (filesContent.length > 0) {
-            console.log(`[Onboarding] Ingestando ${filesContent.length} archivos para el negocio ${negocio.id}...`);
-            // Hacemos esto asíncrono pero no bloqueamos la respuesta necesariamente si tarda mucho,
-            // aunque para onboarding es mejor esperar para asegurar que el agente sepa del contenido.
-            await Promise.allSettled(filesContent.map(file => 
-                ingestionService.ingestText(negocio.id, file.content, { 
-                    source: file.name, 
-                    type: "onboarding_upload",
-                    fileUrl: file.metadata?.fileUrl,
-                    fileType: file.metadata?.fileType
-                })
-            ));
+            console.log(`[Onboarding] Invocando Agente de Conocimiento para ${filesContent.length} archivos...`);
+            
+            // Procesamiento en segundo plano (pero esperamos para demo)
+            await Promise.allSettled(filesContent.map(async (file) => {
+                try {
+                    // 6.1. El Agente "Lee" y estructura la info
+                    const structuredKnowledge = await knowledgeAgent.processDocument(file.content, file.name);
+                    
+                    console.log(`[Onboarding] Agente extrajo ${structuredKnowledge.items.length} items de ${file.name}`);
+                    
+                    // 6.2. Ingestar items estructurados
+                    for (const item of structuredKnowledge.items) {
+                        await ingestionService.ingestStructuredKnowledge(
+                            negocio.id, 
+                            item, 
+                            { 
+                                source: file.name, 
+                                type: "agentic_extraction",
+                                fileUrl: file.metadata?.fileUrl,
+                                fileType: file.metadata?.fileType
+                            }
+                        );
+                    }
+                } catch (err) {
+                    console.error(`[Onboarding] Error agéntico en ${file.name}, fallback a simple:`, err);
+                    // Fallback: ingesta simple si falla el agente
+                    await ingestionService.ingestText(
+                        negocio.id, 
+                        file.content, 
+                        { 
+                            source: file.name, 
+                            type: "fallback_simple",
+                             fileUrl: file.metadata?.fileUrl
+                        }
+                    );
+                }
+            }));
         }
 
         // 7. Respondemos éxito
