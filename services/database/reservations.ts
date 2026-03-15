@@ -1,5 +1,37 @@
 import { prisma } from "@/lib/prisma";
 
+const BOGOTA_OFFSET_HOURS = -5; // America/Bogota (UTC-5, sin DST)
+
+function parseIsoDateParts(dateStr: string) {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return { year, month, day };
+}
+
+function bogotaLocalToUtcDate(dateStr: string, timeStr: string): Date {
+    const { year, month, day } = parseIsoDateParts(dateStr);
+    const [hour, minute] = timeStr.split(":").map(Number);
+    // Si Bogota es UTC-5, para llevar a UTC sumamos 5 horas.
+    const utcHour = hour - BOGOTA_OFFSET_HOURS;
+    return new Date(Date.UTC(year, month - 1, day, utcHour, minute, 0, 0));
+}
+
+function getBogotaDayUtcRange(dateStr: string) {
+    const { year, month, day } = parseIsoDateParts(dateStr);
+    const dayStartUtc = new Date(Date.UTC(year, month - 1, day, -BOGOTA_OFFSET_HOURS, 0, 0, 0));
+    const nextDayStartUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
+    const dayEndUtc = new Date(nextDayStartUtc.getTime() - 1);
+    return { dayStartUtc, dayEndUtc };
+}
+
+function getBogotaTimeParts(dateUtc: Date) {
+    // Convertimos el instante UTC a reloj local de Bogota y leemos con getters UTC.
+    const bogotaClock = new Date(dateUtc.getTime() + BOGOTA_OFFSET_HOURS * 60 * 60 * 1000);
+    return {
+        hour: bogotaClock.getUTCHours(),
+        minute: bogotaClock.getUTCMinutes(),
+    };
+}
+
 export const reservationService = {
     /**
      * Verifica disponibilidad para una fecha específica (YYYY-MM-DD)
@@ -15,7 +47,7 @@ export const reservationService = {
             if (!business) throw new Error("Negocio no encontrado");
 
             const config = business.config as any;
-            // Parsear fecha localmente (asumiendo input YYYY-MM-DD)
+            // Parsear fecha local del negocio (America/Bogota)
             const [year, month, day] = dateStr.split("-").map(Number);
             const targetDate = new Date(year, month - 1, day);
             const dayOfWeek = targetDate.getDay() || 7; // 0=Domingo -> 7
@@ -43,19 +75,15 @@ export const reservationService = {
                 allSlots.push(`${h}:${m}`);
             }
 
-            // 3. Buscar reservas existentes DB
-            // Usamos rangos de fecha UTC aproximados
-            const dayStart = new Date(targetDate);
-            dayStart.setHours(0,0,0,0);
-            const dayEnd = new Date(targetDate);
-            dayEnd.setHours(23,59,59,999);
+            // 3. Buscar reservas existentes DB para el dia local en Bogota
+            const { dayStartUtc, dayEndUtc } = getBogotaDayUtcRange(dateStr);
 
             const existingReservations = await prisma.reservation.findMany({
                 where: {
                     businessId,
                     startTime: {
-                        gte: dayStart,
-                        lte: dayEnd
+                        gte: dayStartUtc,
+                        lte: dayEndUtc
                     },
                     status: "CONFIRMED"
                 }
@@ -69,8 +97,7 @@ export const reservationService = {
 
                 // Contar cuántas reservas hay en este slot (mismo inicio)
                 const conflicts = existingReservations.filter(r => {
-                    const rH = r.startTime.getHours();
-                    const rM = r.startTime.getMinutes();
+                    const { hour: rH, minute: rM } = getBogotaTimeParts(r.startTime);
                     return rH === h && rM === m;
                 });
                 
@@ -102,11 +129,8 @@ export const reservationService = {
                 });
             }
 
-            // 2. Calcular tiempos
-            const [year, month, day] = dateStr.split("-").map(Number);
-            const [hour, minute] = timeStr.split(":").map(Number);
-            
-            const startTime = new Date(year, month - 1, day, hour, minute);
+            // 2. Calcular tiempos en zona horaria de Bogota y guardar en UTC
+            const startTime = bogotaLocalToUtcDate(dateStr, timeStr);
             
             // Obtener duración del negocio para calcular endTime
             const business = await prisma.business.findUnique({ where: { id: businessId } });
@@ -117,19 +141,22 @@ export const reservationService = {
 
             // 3. Crear reserva
             // @ts-ignore
-            const reservation = await prisma.reservation.create({
-                data: {
-                    businessId,
-                    customerId: customer.id,
-                    startTime,
-                    endTime,
-                    status: "CONFIRMED",
-                    details: details || "Reserva vía Agente IA",
-                    metadata: { source: "whatsapp_agent" }
-                }
-            });
-
-            return reservation;
+            return {
+                ...(await prisma.reservation.create({
+                    data: {
+                        businessId,
+                        customerId: customer.id,
+                        startTime,
+                        endTime,
+                        status: "CONFIRMED",
+                        details: details || "Reserva vía Agente IA",
+                        metadata: { source: "ai_agent" }
+                    }
+                })),
+                customerName: customer.name || "Cliente",
+                customerPhone: customer.phone,
+                timeZone: "America/Bogota",
+            };
 
         } catch (error) {
             console.error("[ReservationService] Create Error:", error);

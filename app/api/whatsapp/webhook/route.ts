@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { evolutionService } from "@/services/whatsapp/evolution";
 import { transcriptionService } from "@/services/ai/transcription";
 import { prisma } from "@/lib/prisma";
-import { aiService } from "@/lib/ai";
 import { metricsService } from "@/lib/metrics";
 
 export async function POST(req: Request) {
@@ -159,7 +158,7 @@ export async function POST(req: Request) {
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const { HumanMessage } = await import("@langchain/core/messages");
 
-            const agentExecutor = createAgentGraph(agent.id, agent.name, agent.config);
+            const agentExecutor = createAgentGraph(agent.id, agent.name, agent.config, targetJid);
 
             const result = await agentExecutor.invoke({
                 messages: [new HumanMessage(messageText)],

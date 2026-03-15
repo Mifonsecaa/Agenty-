@@ -6,14 +6,13 @@ import { AgentState, AgentStateType } from "./state";
 import { createKnowledgeTool } from "../tools/knowledge-tool";
 import { createBookingTool } from "../tools/booking-tool";
 import { SystemMessage } from "@langchain/core/messages";
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
-export const createAgentGraph = (businessId: string, businessName: string, config: any) => {
+export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
     // 1. Definir herramientas habilitadas para este agente
     const tools = [
         createKnowledgeTool(businessId),
-        // booking tool se inicializa con businessId; el phone se inyecta por state
-        createBookingTool(businessId, undefined),
+        // Booking requiere phone para CREATE; se inyecta desde el canal (WhatsApp/Telegram)
+        createBookingTool(businessId, customerPhone),
     ];
     const toolNode = new ToolNode(tools);
 
@@ -58,7 +57,12 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         systemPrompt += `\n\nTienes acceso a una herramienta de reservas llamada booking_manager.\n` +
             `- Usa action="CHECK" para consultar disponibilidad en una fecha (YYYY-MM-DD).\n` +
             `- Usa action="CREATE" para crear una reserva cuando el cliente confirme fecha y hora.\n` +
-            `Antes de crear, siempre verifica primero. Explica al cliente las opciones de horarios en lenguaje natural.`;
+            `Antes de crear, siempre verifica primero. Explica al cliente las opciones de horarios en lenguaje natural.\n` +
+            `REGLAS OBLIGATORIAS DE RESERVA:\n` +
+            `1) Si el usuario habla de reservar, disponibilidad, citas u horarios, DEBES usar booking_manager; no inventes horarios.\n` +
+            `2) No menciones fechas pasadas ni años pasados (por ejemplo 2023) en tu respuesta final al cliente.\n` +
+            `3) Si la fecha del usuario es ambigua o antigua, ofrece una alternativa próxima con fecha completa en español (ejemplo: 16 de marzo del 2026).\n` +
+            `4) No confirmes una reserva sin pasar por booking_manager action="CREATE".`;
 
         const response = await model.invoke([
             new SystemMessage(systemPrompt),
