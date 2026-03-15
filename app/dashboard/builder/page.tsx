@@ -184,6 +184,10 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
     const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if (!input.trim() || isTyping) return;
+        if (!activeAgent) {
+            toast.error("Selecciona un agente antes de probar el chat");
+            return;
+        }
 
         const userMsg = input.trim();
         const currentMessages = [...messages, { role: "user", text: userMsg }];
@@ -208,7 +212,9 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: reqMessages,
-                    provider: aiProvider
+                    provider: aiProvider,
+                    agentId: activeAgent?.id,
+                    systemPrompt,
                 })
             });
 

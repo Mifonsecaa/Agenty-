@@ -20,7 +20,8 @@ import {
     PanelLeftOpen,
     User,
     CreditCard,
-    Sparkles
+    Sparkles,
+    Share2
 } from 'lucide-react';
 
 import { useState, useEffect, useRef } from "react";
@@ -107,6 +108,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
         { href: '/dashboard/builder', label: 'Playground', icon: Bot },
         { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: Database },
+        { href: '/dashboard/connections', label: 'Conexiones', icon: Share2 },
         { href: '/dashboard/tools', label: 'Tools Store', icon: Blocks },
         { href: '/dashboard/inbox', label: 'Live Inbox', icon: MessageSquare, badge: 3 },
     ];
@@ -167,10 +169,10 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                             className="flex items-center gap-3 px-2 py-2.5 flex-1 text-left min-w-0"
                                         >
                                             <div className="w-5 h-5 rounded bg-white/10 flex items-center justify-center shrink-0">
-                                                <span className="text-[9px] font-bold text-white/70 group-hover/item:text-white">{ag.name?.charAt(0).toUpperCase()}</span>
+                                                <span className="text-[9px] font-bold text-white/70 group-hover:item:text-white">{ag.name?.charAt(0).toUpperCase()}</span>
                                             </div>
                                             <div className="flex flex-col truncate w-full pr-6">
-                                                <span className="font-medium text-xs text-white/80 group-hover/item:text-white truncate">{ag.name}</span>
+                                                <span className="font-medium text-xs text-white/80 group-hover:item:text-white truncate">{ag.name}</span>
                                                 <span className="text-[9px] text-white/30 truncate">{ag.objective || 'AI Assistant'}</span>
                                             </div>
                                         </button>

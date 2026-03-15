@@ -1,7 +1,7 @@
 // app/api/agents/create/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import prisma from "@/lib/prisma"; // Ajusta la ruta a tu archivo prisma.ts
+import { prisma } from "@/lib/prisma"; // Ajusta la ruta a tu archivo prisma.ts
 import { getServerSession } from "next-auth";
 // Importa tus opciones de auth si las tienes en otro archivo, ej: import { authOptions } from "../auth/[...nextauth]/route"
 

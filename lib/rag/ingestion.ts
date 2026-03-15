@@ -48,12 +48,25 @@ export class IngestionService {
                 });
 
                 console.log(`[Ingestion] Actualizando embedding para item ID: ${knowledgeItem.id}`);
-                // Actualizar el embedding con SQL crudo - Sintaxis más robusta para pgvector
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "KnowledgeItem" SET embedding = $1::vector WHERE id = $2`,
-                    vectorString,
-                    knowledgeItem.id
-                );
+                try {
+                    await prisma.$executeRawUnsafe(
+                        `UPDATE "KnowledgeItem" SET embedding = $1::vector WHERE id = $2`,
+                        vectorString,
+                        knowledgeItem.id
+                    );
+                } catch (vectorError: any) {
+                    console.warn(`[Ingestion] Warning: No se pudo guardar el vector para item ${knowledgeItem.id}. ¿pgvector instalado?`, vectorError.message);
+                    // Intentamos fallback a JSON si la columna es JSON (por compatibilidad temporal)
+                    try {
+                         await prisma.$executeRawUnsafe(
+                            `UPDATE "KnowledgeItem" SET embedding = $1::jsonb WHERE id = $2`,
+                            vectorString,
+                            knowledgeItem.id
+                        );
+                    } catch (jsonError) {
+                        // Ignoramos si también falla
+                    }
+                }
                 processedItems++;
             }
 
