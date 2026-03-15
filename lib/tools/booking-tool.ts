@@ -261,29 +261,34 @@ export const createBookingTool = (businessId: string, customerPhone?: string) =>
         name: "booking_manager",
         description: "Use this tool to check availability or create a reservation for the customer. ALWAYS check availability before creating a reservation.",
         schema: z.object({
-            action: z.enum(["CHECK", "CREATE"]).describe("Action to perform: CHECK for availability, CREATE to book."),
+            action: z.enum(["CHECK", "CREATE", "CANCEL"]).describe("Action to perform: CHECK for availability, CREATE to book, CANCEL to cancel."),
             date: z.string().describe("Date in natural language or YYYY-MM-DD. Examples: 'mañana', 'pasado mañana', 'lunes', 'próximo lunes', '15', '15/03', '15 de marzo', '2026-03-15'."),
             time: z.string().optional().describe("Time in natural language or HH:mm. Examples: '5pm', '5:30 pm', '5 de la tarde', '17:00'. Required for CREATE."),
             details: z.string().optional().describe("Extra details for the reservation (e.g., 'Haircut and beard')."),
+            reservationCode: z.string().optional().describe("Optional reservation code (last 4 chars), used for CANCEL."),
         }),
-        func: async ({ action, date, time, details }) => {
+        func: async ({ action, date, time, details, reservationCode }) => {
             try {
                 const parsedDate = normalizeNaturalDate(date);
-                if (!parsedDate) {
+                if ((action === "CHECK" || action === "CREATE" || (action === "CANCEL" && !reservationCode)) && !parsedDate) {
                     return "No pude interpretar la fecha. Dime una fecha como 'mañana', 'pasado mañana', 'lunes', '15', '15/03', '15 de marzo' o '2026-03-15'.";
                 }
 
+                const normalizedCode = reservationCode?.trim().toLowerCase();
+
+                const parsedTime = time ? normalizeNaturalTime(time) : null;
+
                 const now = new Date();
                 const today = startOfToday(now);
-                const candidate = new Date(`${parsedDate}T00:00:00`);
-                if (candidate < today) {
+                const candidate = parsedDate ? new Date(`${parsedDate}T00:00:00`) : null;
+                if (candidate && candidate < today) {
                     const suggestedDate = resolveNextWeekday(candidate.getDay(), now, false);
                     const suggestedDateText = formatSpanishLongDate(toIsoDate(suggestedDate));
                     const suggestedWeekday = WEEKDAY_NAMES_ES[suggestedDate.getDay()];
                     return `¿Te parece bien el próximo ${suggestedWeekday}, ${suggestedDateText}, a la misma hora, o prefieres otro día?`;
                 }
 
-                const fullDateText = formatSpanishLongDate(parsedDate);
+                const fullDateText = parsedDate ? formatSpanishLongDate(parsedDate) : "";
 
                 if (action === "CHECK") {
                     console.log(`[BookingTool] CHECK requested. businessId=${businessId}, rawDate=${date}, parsedDate=${parsedDate}`);
@@ -299,7 +304,6 @@ export const createBookingTool = (businessId: string, customerPhone?: string) =>
                 }
 
                 if (action === "CREATE") {
-                    const parsedTime = time ? normalizeNaturalTime(time) : null;
                     console.log(
                         `[BookingTool] CREATE requested. businessId=${businessId}, customerPhone=${customerPhone || "missing"}, rawDate=${date}, parsedDate=${parsedDate}, rawTime=${time || "missing"}, parsedTime=${parsedTime || "invalid"}, details=${details || ""}`,
                     );
@@ -327,6 +331,47 @@ export const createBookingTool = (businessId: string, customerPhone?: string) =>
                         `Hora (Bogotá): ${parsedTime}`,
                         safeDetails ? `Detalle: ${safeDetails}` : "",
                         `Código de reserva: #${reservation.id.slice(-4)}`,
+                    ].filter(Boolean).join("\n");
+                }
+
+                if (action === "CANCEL") {
+                    console.log(
+                        `[BookingTool] CANCEL requested. businessId=${businessId}, customerPhone=${customerPhone || "missing"}, code=${normalizedCode || ""}, rawDate=${date || ""}, parsedDate=${parsedDate || ""}, rawTime=${time || ""}, parsedTime=${parsedTime || ""}`,
+                    );
+
+                    if (!customerPhone) return "No tengo el número del cliente para cancelar la reserva.";
+
+                    if (!normalizedCode && !parsedDate) {
+                        return "Para cancelar, indícame el código de reserva o una fecha (por ejemplo: 'cancela mi reserva del lunes').";
+                    }
+
+                    if (!normalizedCode && !parsedTime) {
+                        return "Para cancelar por fecha, también necesito la hora (por ejemplo, '5 de la tarde' o '17:00').";
+                    }
+
+                    const cancelled = await reservationService.cancelReservation(businessId, customerPhone, {
+                        reservationCode: normalizedCode,
+                        dateStr: parsedDate || undefined,
+                        timeStr: parsedTime || undefined,
+                    });
+
+                    const cancelDateIso = cancelled.startTime instanceof Date
+                        ? cancelled.startTime.toISOString().slice(0, 10)
+                        : parsedDate || "";
+                    const cancelDateText = cancelDateIso ? formatSpanishLongDate(cancelDateIso) : (parsedDate ? formatSpanishLongDate(parsedDate) : "");
+                    const cancelTimeText = parsedTime || (cancelled.startTime instanceof Date
+                        ? (() => {
+                            const bogotaClock = new Date(cancelled.startTime.getTime() - 5 * 60 * 60 * 1000);
+                            return `${String(bogotaClock.getUTCHours()).padStart(2, "0")}:${String(bogotaClock.getUTCMinutes()).padStart(2, "0")}`;
+                        })()
+                        : "");
+
+                    return [
+                        "Listo, tu reserva quedó cancelada ✅",
+                        cancelled.customerName ? `A nombre de: ${cancelled.customerName}` : "",
+                        cancelDateText ? `Fecha: ${cancelDateText}` : "",
+                        cancelTimeText ? `Hora (Bogotá): ${cancelTimeText}` : "",
+                        `Código de reserva: #${cancelled.reservationCode || cancelled.id.slice(-4)}`,
                     ].filter(Boolean).join("\n");
                 }
                 

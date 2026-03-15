@@ -163,5 +163,80 @@ export const reservationService = {
             throw new Error("No se pudo crear la reserva.");
         }
     }
+    ,
+
+    /**
+     * Cancela una reserva confirmada del cliente
+     */
+    async cancelReservation(
+        businessId: string,
+        customerPhone: string,
+        params: { reservationCode?: string; dateStr?: string; timeStr?: string }
+    ) {
+        console.log(
+            `[ReservationService] Cancelling reservation for ${customerPhone}. business=${businessId}, code=${params.reservationCode || ""}, date=${params.dateStr || ""}, time=${params.timeStr || ""}`,
+        );
+
+        try {
+            const customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
+            if (!customer) {
+                throw new Error("No encontré un cliente asociado a este chat.");
+            }
+
+            let reservation = null as any;
+
+            if (params.reservationCode) {
+                reservation = await prisma.reservation.findFirst({
+                    where: {
+                        businessId,
+                        customerId: customer.id,
+                        status: "CONFIRMED",
+                        id: { endsWith: params.reservationCode.toLowerCase() },
+                    },
+                    orderBy: { createdAt: "desc" },
+                });
+            } else if (params.dateStr && params.timeStr) {
+                const startTime = bogotaLocalToUtcDate(params.dateStr, params.timeStr);
+                reservation = await prisma.reservation.findFirst({
+                    where: {
+                        businessId,
+                        customerId: customer.id,
+                        status: "CONFIRMED",
+                        startTime,
+                    },
+                    orderBy: { createdAt: "desc" },
+                });
+            } else {
+                throw new Error("Para cancelar necesito el código de reserva o fecha y hora.");
+            }
+
+            if (!reservation) {
+                throw new Error("No encontré una reserva activa con esos datos.");
+            }
+
+            const cancelled = await prisma.reservation.update({
+                where: { id: reservation.id },
+                data: {
+                    status: "CANCELLED",
+                    metadata: {
+                        ...(reservation.metadata as any || {}),
+                        cancelledBy: "ai_agent",
+                        cancelledAt: new Date().toISOString(),
+                    },
+                },
+            });
+
+            return {
+                ...cancelled,
+                customerName: customer.name || "Cliente",
+                customerPhone: customer.phone,
+                reservationCode: cancelled.id.slice(-4),
+                timeZone: "America/Bogota",
+            };
+        } catch (error) {
+            console.error("[ReservationService] Cancel Error:", error);
+            throw new Error(error instanceof Error ? error.message : "No se pudo cancelar la reserva.");
+        }
+    }
 };
 
