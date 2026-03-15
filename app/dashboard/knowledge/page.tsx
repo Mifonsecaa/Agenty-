@@ -4,6 +4,7 @@ import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2
 import { useAgenty } from "@/context/AgentyContext";
 import { AnimatePresence, motion } from "framer-motion";
 import type { KnowledgeItem, KnowledgeListResponse } from "@/types/knowledge";
+import { toast } from "sonner";
 
 const KNOWLEDGE_LOADING_PHRASES = [
     "Escaneando documento...",
@@ -19,6 +20,9 @@ export default function KnowledgeBase() {
     const [activeFiles, setActiveFiles] = useState<KnowledgeItem[]>([]);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
     const [uploadingFileName, setUploadingFileName] = useState("");
+    const [websiteUrl, setWebsiteUrl] = useState("");
+    const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
+    const [websiteSyncMessage, setWebsiteSyncMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     const loadingMessage = KNOWLEDGE_LOADING_PHRASES[loadingPhraseIndex % KNOWLEDGE_LOADING_PHRASES.length];
 
@@ -84,7 +88,7 @@ export default function KnowledgeBase() {
         ];
         
         if (!validTypes.includes(file.type) && !file.name.endsWith(".txt") && !file.name.endsWith(".md")) {
-            alert(`El tipo de archivo "${file.type}" no es soportado actualmente. Por favor sube archivos de texto (.txt, .md, .csv, .json) o PDF.`);
+            toast.error(`El tipo de archivo "${file.type}" no es soportado. Sube .txt, .md, .csv, .json o PDF.`);
             return;
         }
 
@@ -117,6 +121,7 @@ export default function KnowledgeBase() {
                 if (res.ok) {
                     setProgress(100);
                     setUploadState("success");
+                    toast.success("Conocimiento cargado correctamente");
                     setTimeout(() => {
                         setUploadState("idle");
                         setUploadingFileName("");
@@ -128,7 +133,7 @@ export default function KnowledgeBase() {
                     setUploadingFileName("");
                     const errorMsg = errorData.error || "Error al procesar el documento.";
                     const errorDetails = errorData.details || errorData.message || "";
-                    alert(`Error: ${errorMsg}\n\nDetalles técnicos: ${errorDetails}`);
+                    toast.error(errorDetails ? `${errorMsg} ${errorDetails}` : errorMsg);
                     console.error("Server Error:", errorData);
                 }
             };
@@ -143,6 +148,7 @@ export default function KnowledgeBase() {
             console.error("Upload error:", error);
             setUploadState("idle");
             setUploadingFileName("");
+            toast.error("No se pudo subir el archivo");
         }
     };
 
@@ -150,14 +156,71 @@ export default function KnowledgeBase() {
         if (!activeAgent?.id) return;
         if (!confirm("¿Seguro que quieres borrar este conocimiento?")) return;
         try {
-            await fetch("/api/knowledge", {
+            const res = await fetch("/api/knowledge", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ businessId: activeAgent.id, itemId })
             });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                toast.error(data.error || "No se pudo eliminar el fragmento");
+                return;
+            }
+
+            toast.success("Fragmento eliminado");
             fetchKnowledge();
         } catch (error) {
             console.error("Delete error:", error);
+            toast.error("No se pudo eliminar el fragmento");
+        }
+    };
+
+    const handleSyncWebsite = async () => {
+        if (!activeAgent?.id || isSyncingWebsite) return;
+
+        const url = websiteUrl.trim();
+        if (!url) {
+            setWebsiteSyncMessage({ type: "error", text: "Ingresa una URL para sincronizar." });
+            return;
+        }
+
+        try {
+            new URL(url);
+        } catch {
+            setWebsiteSyncMessage({ type: "error", text: "La URL no es válida." });
+            return;
+        }
+
+        setIsSyncingWebsite(true);
+        setWebsiteSyncMessage(null);
+
+        try {
+            const res = await fetch("/api/knowledge", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    businessId: activeAgent.id,
+                    url,
+                    name: new URL(url).hostname,
+                    type: "text/html",
+                }),
+            });
+
+            const data: KnowledgeListResponse = await res.json().catch(() => ({ success: false, error: "Error desconocido" }));
+            if (!res.ok || !data.success) {
+                setWebsiteSyncMessage({ type: "error", text: data.error || "No se pudo sincronizar la URL." });
+                return;
+            }
+
+            setWebsiteSyncMessage({ type: "success", text: "Sitio sincronizado y agregado a la base de conocimiento." });
+            setWebsiteUrl("");
+            await fetchKnowledge();
+        } catch (error) {
+            console.error("Error syncing website:", error);
+            setWebsiteSyncMessage({ type: "error", text: "No se pudo sincronizar la URL." });
+        } finally {
+            setIsSyncingWebsite(false);
         }
     };
 
@@ -255,13 +318,32 @@ export default function KnowledgeBase() {
                             <input
                                 type="url"
                                 placeholder="https://tupagina.com"
+                                value={websiteUrl}
+                                onChange={(e) => setWebsiteUrl(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        handleSyncWebsite();
+                                    }
+                                }}
+                                disabled={isSyncingWebsite}
                                 className="flex-1 min-w-0 bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
                             />
-                            <button className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0">
-                                Sincronizar
+                            <button
+                                onClick={handleSyncWebsite}
+                                disabled={isSyncingWebsite || !websiteUrl.trim()}
+                                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
+                            >
+                                {isSyncingWebsite ? "Sincronizando..." : "Sincronizar"}
                             </button>
                         </div>
-                        <p className="text-[10px] text-white/40 mt-2">Próximamente: Sincronización automática de URLs.</p>
+                        {websiteSyncMessage ? (
+                            <p className={`text-[11px] mt-2 ${websiteSyncMessage.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                                {websiteSyncMessage.text}
+                            </p>
+                        ) : (
+                            <p className="text-[10px] text-white/40 mt-2">Sincroniza una URL pública para extraer texto y entrenar al agente.</p>
+                        )}
                     </div>
                 </div>
 

@@ -7,6 +7,21 @@ import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, 
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
 
+function htmlToPlainText(html: string): string {
+    const noScripts = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ");
+
+    return noScripts
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 
 export async function POST(req: Request) {
     try {
@@ -16,13 +31,50 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const validation = validateData<KnowledgeCreateInput>(body, knowledgeCreateSchema);
+
+        let normalizedBody: any = { ...body };
+        if (body?.url && !body?.text) {
+            const targetUrl = String(body.url);
+            const urlObj = new URL(targetUrl);
+            if (!["http:", "https:"].includes(urlObj.protocol)) {
+                return NextResponse.json({ error: "Solo se permiten URLs http/https" }, { status: 400 });
+            }
+
+            const pageRes = await fetch(targetUrl, {
+                headers: {
+                    "User-Agent": "AgentyBot/1.0 (+knowledge-sync)",
+                },
+            });
+
+            if (!pageRes.ok) {
+                return NextResponse.json({ error: `No se pudo descargar la URL (${pageRes.status})` }, { status: 422 });
+            }
+
+            const html = await pageRes.text();
+            const extractedText = htmlToPlainText(html);
+            if (!extractedText) {
+                return NextResponse.json({ error: "No se pudo extraer texto útil de la URL" }, { status: 422 });
+            }
+
+            normalizedBody = {
+                ...body,
+                text: extractedText,
+                name: body.name || urlObj.hostname,
+                type: body.type || "text/html",
+            };
+        }
+
+        const validation = validateData<KnowledgeCreateInput>(normalizedBody, knowledgeCreateSchema);
         
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, name, type } = validation.data!;
+        let { businessId, text, name, type, url } = validation.data! as KnowledgeCreateInput & { url?: string };
+
+        if (!text || !name) {
+            return NextResponse.json({ error: "Faltan datos de contenido para ingestar conocimiento" }, { status: 400 });
+        }
 
         if (type === "application/pdf") {
             try {
@@ -56,7 +108,9 @@ export async function POST(req: Request) {
         }        // Ingerir el texto en la base de datos vectorial
         const chunkCount = await ingestionService.ingestText(businessId, text, {
             fileName: name || "document",
-            fileType: type || "txt"
+            fileType: type || "txt",
+            source: url ? "website_sync" : "manual_ingestion",
+            sourceUrl: url,
         });
 
         return NextResponse.json({
@@ -142,10 +196,32 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { businessId } = await req.json();
+        const { businessId, itemId } = await req.json();
 
         if (!businessId) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
+        }
+
+        const business = await prisma.business.findFirst({
+            where: {
+                id: businessId,
+                user: { email: session.user.email }
+            }
+        });
+
+        if (!business) {
+            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        }
+
+        if (itemId) {
+            await prisma.knowledgeItem.deleteMany({
+                where: {
+                    id: itemId,
+                    businessId,
+                },
+            });
+
+            return NextResponse.json({ success: true, message: "Fragmento eliminado." });
         }
 
         await ingestionService.deleteAllKnowledge(businessId);

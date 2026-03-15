@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAgenty } from "@/context/AgentyContext";
+import { useSearchParams } from "next/navigation";
 
 type Schedule = {
     day: string;
@@ -22,10 +23,12 @@ type AgentData = {
 };
 
 export default function SettingsPage() {
+    const searchParams = useSearchParams();
     const { activeAgent, updateActiveAgentConfig } = useAgenty();
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [integrationHint, setIntegrationHint] = useState<{ toolLabel: string; section: "identity" | "knowledge" | "schedule" } | null>(null);
 
     const [agentData, setAgentData] = useState<AgentData>({
         id: "",
@@ -51,6 +54,25 @@ export default function SettingsPage() {
             schedules: config.schedules || []
         });
     }, [activeAgent]);
+
+    useEffect(() => {
+        const tab = searchParams.get("tab");
+        const tool = searchParams.get("tool");
+
+        if (tab !== "integrations" || !tool) {
+            setIntegrationHint(null);
+            return;
+        }
+
+        const map: Record<string, { toolLabel: string; section: "identity" | "knowledge" | "schedule" }> = {
+            "google-calendar": { toolLabel: "Google Calendar", section: "schedule" },
+            payments: { toolLabel: "MercadoPago / Wompi", section: "identity" },
+            shopify: { toolLabel: "Shopify Inventory", section: "knowledge" },
+            email: { toolLabel: "Gmail / Outlook", section: "knowledge" },
+        };
+
+        setIntegrationHint(map[tool] || null);
+    }, [searchParams]);
 
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -125,8 +147,14 @@ export default function SettingsPage() {
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2 pb-10">
                 <form onSubmit={handleSave} className="space-y-6">
 
+                    {integrationHint && (
+                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-4 text-sm text-blue-200">
+                            Ajustando <strong>{integrationHint.toolLabel}</strong>. Revisa y guarda la sección resaltada para dejar la integración lista.
+                        </div>
+                    )}
+
                     {/* General Section */}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                    <div className={`bg-white/5 border rounded-2xl p-6 backdrop-blur-sm ${integrationHint?.section === "identity" ? "border-blue-400/50 ring-1 ring-blue-400/40" : "border-white/10"}`}>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-white/90">
                             <Bot className="w-5 h-5 text-purple-400" /> Identidad Básica
                         </h2>
@@ -162,7 +190,7 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Knowledge & Rules Section */}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                    <div className={`bg-white/5 border rounded-2xl p-6 backdrop-blur-sm ${integrationHint?.section === "knowledge" ? "border-blue-400/50 ring-1 ring-blue-400/40" : "border-white/10"}`}>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-white/90">
                             <AlertCircle className="w-5 h-5 text-emerald-400" /> Reglas y Conocimiento (Precios, Productos, FAQs)
                         </h2>
@@ -186,7 +214,7 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Schedule Section (Simplified) */}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                    <div className={`bg-white/5 border rounded-2xl p-6 backdrop-blur-sm ${integrationHint?.section === "schedule" ? "border-blue-400/50 ring-1 ring-blue-400/40" : "border-white/10"}`}>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-4 text-white/90">
                             <Clock className="w-5 h-5 text-orange-400" /> Horarios de Atención (Lunes a Viernes)
                         </h2>

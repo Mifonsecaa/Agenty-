@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
-import { evolutionService } from "@/services/whatsapp/evolution";
 
 export async function GET(
     req: Request,
@@ -94,6 +93,7 @@ export async function POST(
 
         // 3. Enviar por WhatsApp
         // Asumiendo instanceName = business.id
+        const { evolutionService } = await import("@/services/whatsapp/evolution");
         await evolutionService.sendMessage(
             conversation.business.id, 
             conversation.customer.phone,
