@@ -1,20 +1,36 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [successMessage, setSuccessMessage] = useState("");
+
+    useEffect(() => {
+        const registered = searchParams.get("registered") === "1";
+        const incomingEmail = searchParams.get("email")?.trim() || "";
+
+        if (registered) {
+            setSuccessMessage("Cuenta creada con éxito. Inicia sesión para continuar.");
+        }
+
+        if (incomingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(incomingEmail)) {
+            setEmail(incomingEmail.toLowerCase());
+        }
+    }, [searchParams]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
+        setSuccessMessage("");
 
         try {
             // Usamos la función signIn de NextAuth
@@ -25,8 +41,8 @@ export default function LoginPage() {
             });
 
             if (result?.error) {
-                // NextAuth nos devolverá el error limpio si la contraseña está mal
-                throw new Error(result.error);
+                setError(result.error);
+                return;
             }
 
             // Si todo sale bien, lo mandamos al panel
@@ -89,6 +105,12 @@ export default function LoginPage() {
                         {error && (
                             <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
                                 {error}
+                            </div>
+                        )}
+
+                        {successMessage && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-emerald-400 text-sm">
+                                {successMessage}
                             </div>
                         )}
 

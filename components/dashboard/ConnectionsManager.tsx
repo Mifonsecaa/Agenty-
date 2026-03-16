@@ -54,7 +54,7 @@ const PLATFORMS = {
       { key: "botUsername", label: "Username del Bot", placeholder: "@mi_agente_bot", type: "text" },
     ],
     docsUrl: "https://core.telegram.org/bots/tutorial",
-    webhookPath: "/api/webhooks/telegram",
+    webhookPath: "/api/telegram/webhook",
   },
   instagram: {
     name: "Instagram",

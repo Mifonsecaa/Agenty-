@@ -11,11 +11,22 @@ export default function RegisterPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [successMessage, setSuccessMessage] = useState("");
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
+        setSuccessMessage("");
+
+        const trimmedName = name.trim();
+        const trimmedEmail = email.trim().toLowerCase();
+
+        if (!trimmedName || !trimmedEmail) {
+            setError("Nombre y correo son obligatorios");
+            setLoading(false);
+            return;
+        }
 
         // Validaciones
         if (password !== confirmPassword) {
@@ -31,23 +42,25 @@ export default function RegisterPage() {
         }
 
         try {
-            // TODO: Conectar con el backend de autenticación
             const response = await fetch("/api/auth/register", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ name, email, password }),
+                body: JSON.stringify({ name: trimmedName, email: trimmedEmail, password }),
             });
 
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                throw new Error(data.error || "Error al registrarse");
+                setError(data.error || "Error al registrarse");
+                return;
             }
 
-            // Redirigir al onboarding o dashboard
-            router.push("/");
+            setSuccessMessage("Cuenta creada con éxito. Te redirigimos a iniciar sesión...");
+            setTimeout(() => {
+                router.push(`/login?registered=1&email=${encodeURIComponent(trimmedEmail)}`);
+            }, 900);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Error desconocido");
         } finally {
@@ -141,10 +154,16 @@ export default function RegisterPage() {
                             </div>
                         )}
 
+                        {successMessage && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-emerald-400 text-sm">
+                                {successMessage}
+                            </div>
+                        )}
+
                         {/* Submit */}
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || !name.trim() || !email.trim() || !password || !confirmPassword}
                             className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? "Creando cuenta..." : "Crear cuenta"}

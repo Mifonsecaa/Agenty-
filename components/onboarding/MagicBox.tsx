@@ -1,5 +1,5 @@
 "use client";
-import { Plus, Mic, ArrowUp, Sparkles, X, FileText, Image as ImageIcon, File } from "lucide-react";
+import { Plus, Mic, ArrowUp, Sparkles, X, FileText, Image as ImageIcon, File, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,18 @@ const PLACEHOLDER_PHRASES = [
     "Por ejemplo: 'Vendo zapatos online y quiero responder dudas'",
     "Por ejemplo: 'Soy abogado y necesito calificar leads legales'",
     "Describe tu caso de uso ideal aquí..."
+];
+
+const DOC_LOADING_PHRASES = [
+    "Escaneando documento...",
+    "Extrayendo precios y servicios...",
+    "Construyendo base de conocimiento...",
+];
+
+const TEXT_LOADING_PHRASES = [
+    "Analizando tu negocio...",
+    "Diseñando personalidad del agente...",
+    "Generando configuración inicial...",
 ];
 
 interface MagicBoxProps {
@@ -25,6 +37,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const fileMenuRef = useRef<HTMLDivElement>(null);
     const [fileAccept, setFileAccept] = useState<string>("");
+    const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
 
     // --- Efecto Typewriter para el Placeholder ---
     const [placeholderText, setPlaceholderText] = useState("");
@@ -57,6 +70,19 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
         return () => clearTimeout(timer);
     }, [placeholderText, isDeleting, phraseIndex]);
 
+    useEffect(() => {
+        if (!isLoading) {
+            setLoadingPhraseIndex(0);
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setLoadingPhraseIndex((prev) => prev + 1);
+        }, 1800);
+
+        return () => clearInterval(interval);
+    }, [isLoading]);
+
     // Cerrar menú al hacer clic fuera
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -73,6 +99,12 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, [showFileMenu]);
+
+    useEffect(() => {
+        if (isLoading && showFileMenu) {
+            setShowFileMenu(false);
+        }
+    }, [isLoading, showFileMenu]);
 
     // Manejar botón Plus
     const handleFileMenuClick = () => {
@@ -110,7 +142,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 };
 
                 mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+                    void new Blob(chunks, { type: 'audio/webm' });
                     // Aquí podrías enviar el audio a un servicio de transcripción
                     setText(prev => prev + " [Audio grabado - pendiente transcripción]");
                     stream.getTracks().forEach(track => track.stop());
@@ -131,6 +163,10 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
 
     const [isImproving, setIsImproving] = useState(false);
 
+    const hasAttachedFiles = attachedFiles.length > 0;
+    const loadingPhrases = hasAttachedFiles ? DOC_LOADING_PHRASES : TEXT_LOADING_PHRASES;
+    const loadingMessage = loadingPhrases[loadingPhraseIndex % loadingPhrases.length];
+
     const handleImproveWithAI = async () => {
         if (!text || text.length < 5 || isImproving) return;
         setIsImproving(true);
@@ -142,7 +178,10 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 body: JSON.stringify({ text }),
             });
 
-            if (!res.ok) throw new Error("Error improving text");
+            if (!res.ok) {
+                toast.error("No se pudo mejorar el texto en este momento.");
+                return;
+            }
 
             const data = await res.json();
             if (data.success && data.improved) {
@@ -160,7 +199,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
     return (
         <div className="relative w-full max-w-3xl mx-auto group z-20">
             {/* Contenedor principal estilo Glassmorphism */}
-            <div className="relative flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] p-6 sm:p-8 shadow-2xl transition-all duration-500 ease-out focus-within:border-white/30 focus-within:bg-white/[0.08] focus-within:shadow-[0_0_40px_rgba(255,255,255,0.05)]">
+            <div className="relative flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px] p-6 sm:p-8 shadow-2xl transition-all duration-500 ease-out focus-within:border-white/30 focus-within:bg-white/8 focus-within:shadow-[0_0_40px_rgba(255,255,255,0.05)]">
 
                 {/* Input Area */}
                 <textarea
@@ -169,6 +208,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                     placeholder={placeholderText}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
+                    disabled={isLoading}
                 />
 
                 {/* Archivos adjuntos */}
@@ -181,9 +221,10 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                                 ) : (
                                     <FileText size={16} className="text-purple-400" />
                                 )}
-                                <span className="max-w-[150px] truncate">{file.name}</span>
+                                <span className="max-w-37.5 truncate">{file.name}</span>
                                 <button
                                     onClick={() => removeFile(index)}
+                                    disabled={isLoading}
                                     className="opacity-0 group-hover/file:opacity-100 transition-opacity hover:text-red-400"
                                 >
                                     <X size={14} />
@@ -219,7 +260,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                         {showFileMenu && (
                             <div
                                 ref={fileMenuRef}
-                                className="absolute top-full left-0 mt-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200"
+                                className="absolute top-full left-0 mt-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden z-50 min-w-50 animate-in fade-in slide-in-from-top-2 duration-200"
                             >
                                 <div className="p-2">
                                     <button
@@ -294,13 +335,22 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                         </button>
                     </div>
                 </div>
+
+                {isLoading && (
+                    <div className="mt-4 px-2" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/80">
+                            <Loader2 size={14} className="animate-spin text-emerald-300" />
+                            <span>{loadingMessage}</span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* AI Badge - Now a functional button */}
             <button
                 onClick={handleImproveWithAI}
                 disabled={isImproving || !text || text.length < 5}
-                className={`absolute -right-3 -top-4 bg-gradient-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
+                className={`absolute -right-3 -top-4 bg-linear-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
                 title="Mejorar con IA"
             >
                 <Sparkles size={18} className={`text-white transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />

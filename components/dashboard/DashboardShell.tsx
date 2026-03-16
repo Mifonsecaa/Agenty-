@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from 'next-auth/react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     Bot,
@@ -20,12 +20,19 @@ import {
     PanelLeftOpen,
     User,
     CreditCard,
-    Sparkles
+    Sparkles,
+    Share2
 } from 'lucide-react';
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AgentyProvider, useAgenty } from "@/context/AgentyContext";
+
+type DashboardNotification = {
+    id: string;
+    title: string;
+    subtitle: string;
+};
 
 interface Agent {
     id: string;
@@ -52,6 +59,7 @@ export default function DashboardShell({ children, initialAgents, userName, user
 }
 
 function DashboardContent({ children, userName, userEmail }: { children: React.ReactNode, userName?: string | null, userEmail?: string | null }) {
+    const router = useRouter();
     const pathname = usePathname();
     const { agents, activeAgent, switchAgent, refreshAgents } = useAgenty();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -59,6 +67,14 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
     const [isMounted, setIsMounted] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+    const [handoffCount, setHandoffCount] = useState(0);
+    const [notifications, setNotifications] = useState<DashboardNotification[]>([
+        {
+            id: "welcome-dashboard",
+            title: "¡Bienvenido al nuevo Dashboard!",
+            subtitle: "Explora las nuevas funciones de Agenty.ai",
+        },
+    ]);
 
     const profileRef = useRef<HTMLDivElement>(null);
     const notificationsRef = useRef<HTMLDivElement>(null);
@@ -81,6 +97,38 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        if (!activeAgent?.id) {
+            setHandoffCount(0);
+            return;
+        }
+
+        let cancelled = false;
+
+        const fetchHandoffCount = async () => {
+            try {
+                const res = await fetch(`/api/chats?businessId=${activeAgent.id}`);
+                const data = await res.json();
+                if (!res.ok || !data?.success || cancelled) return;
+
+                const count = Array.isArray(data.chats)
+                    ? data.chats.filter((chat: any) => chat?.status === "handoff").length
+                    : 0;
+                setHandoffCount(count);
+            } catch {
+                // No bloqueamos UI por error de métrica de badge
+            }
+        };
+
+        fetchHandoffCount();
+        const interval = setInterval(fetchHandoffCount, 15000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [activeAgent?.id]);
+
     const toggleCollapse = () => {
         const newState = !isCollapsed;
         setIsCollapsed(newState);
@@ -96,7 +144,10 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         
         try {
             const res = await fetch(`/api/business?id=${agentId}`, { method: "DELETE" });
-            if (!res.ok) throw new Error("Failed to delete");
+            if (!res.ok) {
+                console.error("Error deleting agent: request failed");
+                return;
+            }
             await refreshAgents();
         } catch (error) {
             console.error("Error deleting agent:", error);
@@ -107,8 +158,9 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
         { href: '/dashboard/builder', label: 'Playground', icon: Bot },
         { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: Database },
+        { href: '/dashboard/connections', label: 'Conexiones', icon: Share2 },
         { href: '/dashboard/tools', label: 'Tools Store', icon: Blocks },
-        { href: '/dashboard/inbox', label: 'Live Inbox', icon: MessageSquare, badge: 3 },
+        { href: '/dashboard/inbox', label: 'Live Inbox', icon: MessageSquare, badge: handoffCount || undefined },
     ];
 
     if (!isMounted) return null;
@@ -119,7 +171,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
             <motion.aside
                 initial={false}
                 animate={{ width: isCollapsed ? 80 : 256 }}
-                className="flex-shrink-0 flex flex-col bg-[#050505] relative z-20 border-r border-white/5"
+                className="shrink-0 flex flex-col bg-[#050505] relative z-20 border-r border-white/5"
             >
                 {/* Workspace / Agent Switcher */}
                 <div className="h-16 flex items-center px-4 relative">
@@ -128,11 +180,11 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                         className={`w-full flex items-center rounded-lg hover:bg-white/5 transition-colors group ${isCollapsed ? 'justify-center p-2' : 'justify-between px-2 py-2'}`}
                     >
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
+                            <div className="w-8 h-8 rounded bg-linear-to-tr from-blue-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
                                 <span className="text-xs font-bold text-white">{initial}</span>
                             </div>
                             {!isCollapsed && (
-                                <div className="flex flex-col items-start truncate max-w-[120px]">
+                                <div className="flex flex-col items-start truncate max-w-30">
                                     <span className="font-medium text-sm text-white/90 leading-tight truncate w-full">{agentName}</span>
                                     <span className="text-[10px] text-white/40 font-medium tracking-wider">PLAN PRO</span>
                                 </div>
@@ -150,7 +202,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
-                                className="absolute top-16 left-2 right-2 bg-[#0a0a0a] rounded-xl p-2 z-50 flex flex-col gap-1 max-h-[300px] overflow-y-auto shadow-2xl border border-white/5"
+                                className="absolute top-16 left-2 right-2 bg-[#0a0a0a] rounded-xl p-2 z-50 flex flex-col gap-1 max-h-75 overflow-y-auto shadow-2xl border border-white/5"
                             >
                                 <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest px-2 py-1">Tus Agentes</p>
 
@@ -167,10 +219,10 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                             className="flex items-center gap-3 px-2 py-2.5 flex-1 text-left min-w-0"
                                         >
                                             <div className="w-5 h-5 rounded bg-white/10 flex items-center justify-center shrink-0">
-                                                <span className="text-[9px] font-bold text-white/70 group-hover/item:text-white">{ag.name?.charAt(0).toUpperCase()}</span>
+                                                <span className="text-[9px] font-bold text-white/70 group-hover:item:text-white">{ag.name?.charAt(0).toUpperCase()}</span>
                                             </div>
                                             <div className="flex flex-col truncate w-full pr-6">
-                                                <span className="font-medium text-xs text-white/80 group-hover/item:text-white truncate">{ag.name}</span>
+                                                <span className="font-medium text-xs text-white/80 group-hover:item:text-white truncate">{ag.name}</span>
                                                 <span className="text-[9px] text-white/30 truncate">{ag.objective || 'AI Assistant'}</span>
                                             </div>
                                         </button>
@@ -224,7 +276,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium group relative
                                         ${isActive
                                             ? 'bg-white/10 text-white shadow-sm'
-                                            : 'text-white/50 hover:text-white hover:bg-white/[0.03]'
+                                            : 'text-white/50 hover:text-white hover:bg-white/3'
                                         }
                                         ${isCollapsed && 'justify-center'}
                                     `}
@@ -280,7 +332,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col relative overflow-hidden bg-[#050505]">
                 {/* Topbar */}
-                <header className="h-16 flex-shrink-0 flex items-center justify-between px-8 bg-[#050505]/60 backdrop-blur-md relative z-30 border-b border-white/5">
+                <header className="h-16 shrink-0 flex items-center justify-between px-8 bg-[#050505]/60 backdrop-blur-md relative z-30 border-b border-white/5">
                     <div className="flex items-center gap-4 text-sm text-white/40 font-medium">
                         <span className="text-white/80">{agentName}</span>
                         <span className="w-px h-3 bg-white/10" />
@@ -298,7 +350,9 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                 className="relative p-2 text-white/40 hover:text-white transition-colors group"
                             >
                                 <Bell className="w-5 h-5 transition-transform group-hover:scale-110" />
-                                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-lg shadow-blue-500/40" />
+                                {notifications.length > 0 && (
+                                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-lg shadow-blue-500/40" />
+                                )}
                             </button>
 
                             <AnimatePresence>
@@ -311,19 +365,36 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                     >
                                         <div className="flex items-center justify-between mb-4">
                                             <h4 className="text-xs font-bold text-white/80">Notificaciones</h4>
-                                            <span className="text-[10px] text-blue-400 cursor-pointer hover:underline">Limpiar todo</span>
+                                            <button
+                                                onClick={() => setNotifications([])}
+                                                className="text-[10px] text-blue-400 hover:underline disabled:text-white/20 disabled:no-underline"
+                                                disabled={notifications.length === 0}
+                                            >
+                                                Limpiar todo
+                                            </button>
                                         </div>
                                         <div className="space-y-3">
-                                            <div className="flex gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group">
-                                                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                                                    <Sparkles className="w-4 h-4 text-blue-400" />
+                                            {notifications.map((notification) => (
+                                                <div
+                                                    key={notification.id}
+                                                    className="flex gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group"
+                                                    onClick={() => {
+                                                        setIsNotificationsOpen(false);
+                                                        router.push('/dashboard');
+                                                    }}
+                                                >
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                                                        <Sparkles className="w-4 h-4 text-blue-400" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-white/90 font-medium">{notification.title}</p>
+                                                        <p className="text-[10px] text-white/40">{notification.subtitle}</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-xs text-white/90 font-medium">¡Bienvenido al nuevo Dashboard!</p>
-                                                    <p className="text-[10px] text-white/40">Explora las nuevas funciones de Agenty.ai</p>
-                                                </div>
-                                            </div>
-                                            <p className="text-center py-4 text-[10px] text-white/20 italic">No hay más notificaciones</p>
+                                            ))}
+                                            {notifications.length === 0 && (
+                                                <p className="text-center py-4 text-[10px] text-white/20 italic">No hay notificaciones pendientes</p>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )}
@@ -334,7 +405,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                         <div className="relative" ref={profileRef}>
                             <button
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                                className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 ring-1 ring-white/10 hover:ring-white/30 transition-all cursor-pointer overflow-hidden"
+                                className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 ring-1 ring-white/10 hover:ring-white/30 transition-all cursor-pointer overflow-hidden"
                             >
                                 <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white">
                                     {(userName || "U").charAt(0).toUpperCase()}
@@ -355,11 +426,23 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                         </div>
 
                                         <div className="space-y-0.5">
-                                            <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-medium group">
+                                            <button
+                                                onClick={() => {
+                                                    setIsProfileOpen(false);
+                                                    router.push('/dashboard/settings');
+                                                }}
+                                                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-medium group"
+                                            >
                                                 <User className="w-3.5 h-3.5" />
                                                 <span>Mi Perfil</span>
                                             </button>
-                                            <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-medium group">
+                                            <button
+                                                onClick={() => {
+                                                    setIsProfileOpen(false);
+                                                    router.push('/pricing');
+                                                }}
+                                                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-all text-xs font-medium group"
+                                            >
                                                 <CreditCard className="w-3.5 h-3.5" />
                                                 <span>Facturación</span>
                                             </button>
@@ -382,7 +465,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                 {/* Dynamic Page Content */}
                 <div className="flex-1 overflow-y-auto p-10 relative scrollbar-thin scrollbar-thumb-white/5 scrollbar-track-transparent">
                     {/* Decorative background glow */}
-                    <div className="absolute top-0 left-1/4 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px] pointer-events-none" />
+                    <div className="absolute top-0 left-1/4 -translate-y-1/2 w-150 h-150 bg-blue-500/5 rounded-full blur-[120px] pointer-events-none" />
                     <div className="relative z-10 max-w-6xl mx-auto">
                         {children}
                     </div>

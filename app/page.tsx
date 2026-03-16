@@ -1,20 +1,35 @@
 "use client";
-import { useState, Suspense, useCallback } from "react";
+import { useState, Suspense, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import MagicBox from "../components/onboarding/MagicBox";
-import ParticleBackground from "../components/ui/ParticleBackground";
-import { InteractiveDemo } from "@/components/InteractiveDemo";
 import { SearchParamsHandler } from "@/components/SearchParamsHandler";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle, PlayCircle, MessageSquare, Clock, Users } from "lucide-react";
 
+const ParticleBackground = dynamic(() => import("../components/ui/ParticleBackground"), {
+    ssr: false,
+});
+
+const InteractiveDemo = dynamic(
+    () => import("@/components/InteractiveDemo").then((mod) => mod.InteractiveDemo),
+    { ssr: false },
+);
+
 export default function HomePage() {
     const router = useRouter();
+    const shouldReduceMotion = useReducedMotion();
+    const [hasHydrated, setHasHydrated] = useState(false);
+    const reduceMotionSafe = hasHydrated && Boolean(shouldReduceMotion);
     // Search params moved to SearchParamsHandler
     const [loading, setLoading] = useState(false);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
     const [isDemoOpen, setIsDemoOpen] = useState(false);
+
+    useEffect(() => {
+        setHasHydrated(true);
+    }, []);
 
     const loadingPhrases = [
         "Analizando tu modelo de negocio...",
@@ -116,7 +131,7 @@ export default function HomePage() {
     };
 
     return (
-        <>
+        <MotionConfig reducedMotion="user">
             <Suspense fallback={null}>
                 <SearchParamsHandler onDemoOpen={handleSetIsDemoOpen} />
             </Suspense>
@@ -126,9 +141,9 @@ export default function HomePage() {
                 <ParticleBackground />
 
                 <motion.div
-                    initial={{ opacity: 0, y: 30 }}
+                    initial={reduceMotionSafe ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 0.8, ease: "easeOut" }}
                     className="text-center mb-16 max-w-3xl relative z-10"
                 >
                     <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-8 leading-tight">
@@ -148,18 +163,18 @@ export default function HomePage() {
                 </motion.div>
 
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    initial={reduceMotionSafe ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 0.8, delay: 0.2, ease: "easeOut" }}
                     className="relative z-10 w-full"
                 >
                     <MagicBox onSubmit={handleMagicSubmit} isLoading={loading} />
 
                     {/* Trust Badges - Social Proof MVP */}
                     <motion.div
-                        initial={{ opacity: 0 }}
+                        initial={reduceMotionSafe ? { opacity: 1 } : { opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        transition={{ duration: 1, delay: 0.8 }}
+                        transition={reduceMotionSafe ? { duration: 0 } : { duration: 1, delay: 0.8 }}
                         className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 mt-6 text-white/40 text-sm font-medium"
                     >
                         <div className="flex items-center gap-2">
@@ -174,9 +189,9 @@ export default function HomePage() {
                 </motion.div>
 
                 <motion.div
-                    initial={{ opacity: 0 }}
+                    initial={reduceMotionSafe ? { opacity: 1 } : { opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: 1, delay: 0.6 }}
+                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 1, delay: 0.6 }}
                     className="mt-12 flex flex-wrap justify-center gap-4 md:gap-6 text-white/30 text-xs md:text-sm font-medium uppercase tracking-widest relative z-10"
                 >
                     <span>Fast setup</span>
@@ -188,10 +203,10 @@ export default function HomePage() {
                 
                 {/* Features Section */}
                 <motion.div
-                    initial={{ opacity: 0, y: 40 }}
+                    initial={reduceMotionSafe ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    transition={{ duration: 0.8 }}
+                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 0.8 }}
                     className="mt-32 w-full max-w-6xl relative z-10 px-4"
                 >
                     <div className="text-center mb-16">
@@ -236,9 +251,9 @@ export default function HomePage() {
 
                 {/* Logo Cloud Preview */}
                 <motion.div
-                    initial={{ opacity: 0 }}
+                    initial={reduceMotionSafe ? { opacity: 1 } : { opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: 1, delay: 1 }}
+                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 1, delay: 1 }}
                     className="mt-24 w-full max-w-5xl mx-auto relative z-10 pt-10"
                 >
                     <p className="text-center text-sm text-white/30 mb-8 font-semibold uppercase tracking-widest">
@@ -260,13 +275,13 @@ export default function HomePage() {
                             <div className="relative w-12 h-12 mb-8 flex justify-center items-center">
                                 <motion.div
                                     className="absolute w-full h-full border border-white/20 rounded-full"
-                                    animate={{ rotate: 360 }}
-                                    transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                                    animate={reduceMotionSafe ? { rotate: 0 } : { rotate: 360 }}
+                                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 8, repeat: Infinity, ease: "linear" }}
                                 />
                                 <motion.div
                                     className="absolute w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
-                                    animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                                    animate={reduceMotionSafe ? { scale: 1, opacity: 0.6 } : { scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+                                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: "easeInOut" }}
                                 />
                                 <SparklesIcon size={16} className="text-white relative z-10" />
                             </div>
@@ -291,6 +306,6 @@ export default function HomePage() {
                 )}
             </main>
             {isDemoOpen && <InteractiveDemo onClose={handleCloseDemo} />}
-        </>
+        </MotionConfig>
     );
 }

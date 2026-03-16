@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url: `${baseUrl}/api/webhooks/telegram`,
+          url: `${baseUrl}/api/telegram/webhook?businessId=${businessId}`,
           allowed_updates: ["message", "callback_query"],
         }),
       });

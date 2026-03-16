@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeAgent } from "@/services/agent-execution";
 import { sendInstagramMessage } from "@/services/instagram-sender";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
 // ─── Webhook Verification (GET) ───────────────────────────────────────────────
@@ -65,7 +65,6 @@ export async function POST(req: NextRequest) {
           select: {
             id: true,
             instagramAccessToken: true,
-            instagramAccountId: true,
           },
         });
 

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Bot, Save, Play, TerminalSquare, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
+import { Bot, Save, Play, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { toast } from "sonner";
 import Image from 'next/image';
@@ -165,17 +165,21 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 body: JSON.stringify(fullAgentConfig)
             });
 
-            if (!res.ok) throw new Error("Error generating expert prompt");
+            if (!res.ok) {
+                toast.error("No se pudo generar el prompt estricto");
+                return;
+            }
 
             const data = await res.json();
             if (data.success && data.prompt) {
                 setSystemPrompt(data.prompt);
+                toast.success("Prompt generado correctamente");
             } else {
-                alert(data.error || "No se pudo generar el prompt estricto");
+                toast.error(data.error || "No se pudo generar el prompt estricto");
             }
         } catch (error) {
             console.error(error);
-            alert("Hubo un error al contactar al motor de magia de prompts.");
+            toast.error("Hubo un error al contactar al motor de magia de prompts.");
         } finally {
             setIsGeneratingPrompt(false);
         }
@@ -184,6 +188,10 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
     const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if (!input.trim() || isTyping) return;
+        if (!activeAgent) {
+            toast.error("Selecciona un agente antes de probar el chat");
+            return;
+        }
 
         const userMsg = input.trim();
         const currentMessages = [...messages, { role: "user", text: userMsg }];
@@ -208,11 +216,16 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: reqMessages,
-                    provider: aiProvider
+                    provider: aiProvider,
+                    agentId: activeAgent?.id,
+                    systemPrompt,
                 })
             });
 
-            if (!res.ok) throw new Error("Error en la respuesta del servidor");
+            if (!res.ok) {
+                setMessages(prev => [...prev, { role: "assistant", text: "Hubo un error al procesar tu mensaje. Revisa tu consola." }]);
+                return;
+            }
 
             const data = await res.json();
             setMessages(prev => [...prev, { role: "assistant", text: data.content }]);

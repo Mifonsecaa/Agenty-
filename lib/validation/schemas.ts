@@ -38,9 +38,16 @@ export const knowledgeQuerySchema = z.object({
 
 export const knowledgeCreateSchema = z.object({
   businessId: z.string().min(1, "El businessId es requerido"),
-  text: z.string().min(1, "El contenido es requerido"),
-  name: z.string().min(1, "El nombre es requerido"),
+  text: z.string().min(1, "El contenido es requerido").optional(),
+  name: z.string().min(1, "El nombre es requerido").optional(),
+  url: z.string().url("La URL no es válida").optional(),
   type: z.string().optional(),
+}).refine((data) => {
+  if (data.url) return true;
+  return Boolean(data.text && data.name);
+}, {
+  message: "Debes enviar URL o contenido con nombre",
+  path: ["text"],
 });
 
 // ============ CHAT ============

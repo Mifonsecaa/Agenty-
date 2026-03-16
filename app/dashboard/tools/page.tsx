@@ -2,12 +2,25 @@
 import { useState, useEffect } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
+import { useRouter } from "next/navigation";
+
+type ToolCard = {
+    id: number;
+    slug: "google-calendar" | "payments" | "shopify" | "email";
+    name: string;
+    description: string;
+    icon: React.ReactNode;
+    status: "connected" | "disconnected";
+    category: string;
+};
 
 export default function ToolsStore() {
-    const { activeAgent } = useAgenty();
-    const [tools, setTools] = useState([
+    const router = useRouter();
+    const { activeAgent, saveAgent, updateActiveAgentConfig } = useAgenty();
+    const [tools, setTools] = useState<ToolCard[]>([
         {
             id: 1,
+            slug: "google-calendar",
             name: "Google Calendar",
             description: "Permite a tu agente revisar disponibilidad y agendar citas automáticamente.",
             icon: <Calendar className="w-6 h-6 text-blue-400" />,
@@ -16,6 +29,7 @@ export default function ToolsStore() {
         },
         {
             id: 2,
+            slug: "payments",
             name: "MercadoPago / Wompi",
             description: "Genera links de pago y verifica si el cliente ya pagó la orden.",
             icon: <CreditCard className="w-6 h-6 text-emerald-400" />,
@@ -24,6 +38,7 @@ export default function ToolsStore() {
         },
         {
             id: 3,
+            slug: "shopify",
             name: "Shopify Inventory",
             description: "Conecta tu catálogo para que el agente vea el stock en tiempo real.",
             icon: <ShoppingBag className="w-6 h-6 text-purple-400" />,
@@ -32,6 +47,7 @@ export default function ToolsStore() {
         },
         {
             id: 4,
+            slug: "email",
             name: "Gmail / Outlook",
             description: "Envía correos electrónicos con cotizaciones a petición del cliente.",
             icon: <Mail className="w-6 h-6 text-rose-400" />,
@@ -39,6 +55,8 @@ export default function ToolsStore() {
             category: "Productividad"
         }
     ]);
+    const [savingToolId, setSavingToolId] = useState<number | null>(null);
+    const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
@@ -52,6 +70,70 @@ export default function ToolsStore() {
             })));
         }
     }, [activeAgent]);
+
+    const handleToggleTool = async (toolId: number) => {
+        if (!activeAgent || savingToolId !== null) return;
+
+        setStatusMessage(null);
+        setSavingToolId(toolId);
+
+        const previousTools = tools;
+        const nextTools: ToolCard[] = previousTools.map((tool) => {
+            if (tool.id !== toolId) return tool;
+            return {
+                ...tool,
+                status: tool.status === "connected" ? "disconnected" : "connected",
+            };
+        });
+
+        // Optimistic update para respuesta inmediata en UI
+        setTools(nextTools);
+
+        const recommendedTools = nextTools
+            .filter((tool) => tool.status === "connected")
+            .map((tool) => tool.id);
+
+        const currentConfig = activeAgent.config || {};
+        const mergedConfig = {
+            ...currentConfig,
+            recommendedTools,
+        };
+
+        const saved = await saveAgent(activeAgent.id, activeAgent.name, mergedConfig);
+
+        if (!saved) {
+            // Rollback si falla persistencia
+            setTools(previousTools);
+            setStatusMessage({ type: "error", text: "No se pudo actualizar la herramienta. Intenta de nuevo." });
+            setSavingToolId(null);
+            return;
+        }
+
+        updateActiveAgentConfig({
+            config: mergedConfig,
+        });
+
+        setStatusMessage({ type: "success", text: "Herramientas actualizadas correctamente." });
+        setSavingToolId(null);
+    };
+
+    const handlePrimaryAction = (tool: ToolCard) => {
+        if (tool.status === "connected") {
+            const configTargetBySlug: Record<ToolCard["slug"], string> = {
+                "google-calendar": "/dashboard/settings?tab=integrations&tool=google-calendar",
+                "payments": "/dashboard/settings?tab=integrations&tool=payments",
+                "shopify": "/dashboard/knowledge",
+                "email": "/dashboard/settings?tab=integrations&tool=email",
+            };
+
+            const target = configTargetBySlug[tool.slug];
+            setStatusMessage({ type: "success", text: `Abriendo configuración de ${tool.name}...` });
+            router.push(target);
+            return;
+        }
+
+        handleToggleTool(tool.id);
+    };
 
 
     return (
@@ -79,7 +161,7 @@ export default function ToolsStore() {
                         </div>
 
                         <h3 className="text-xl font-bold mb-2 relative z-10">{tool.name}</h3>
-                        <p className="text-sm text-white/50 mb-6 min-h-[40px] relative z-10">
+                        <p className="text-sm text-white/50 mb-6 min-h-10 relative z-10">
                             {tool.description}
                         </p>
 
@@ -99,10 +181,25 @@ export default function ToolsStore() {
                             <button className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${tool.status === 'connected'
                                 ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
                                 : 'bg-white text-black hover:bg-white/90'
-                                }`}>
-                                {tool.status === "connected" ? "Configurar" : "Conectar"}
+                                } ${savingToolId === tool.id ? 'opacity-70 cursor-wait' : ''}`}
+                                onClick={() => handlePrimaryAction(tool)}
+                                disabled={savingToolId !== null}
+                            >
+                                {savingToolId === tool.id
+                                    ? (tool.status === "connected" ? "Guardando..." : "Conectando...")
+                                    : (tool.status === "connected" ? "Configurar" : "Conectar")}
                             </button>
                         </div>
+
+                        {tool.status === "connected" && (
+                            <button
+                                onClick={() => handleToggleTool(tool.id)}
+                                disabled={savingToolId !== null}
+                                className="mt-3 text-xs text-white/40 hover:text-red-400 transition-colors disabled:opacity-50"
+                            >
+                                Desactivar
+                            </button>
+                        )}
 
                         {/* Glowing background effect */}
                         {tool.status === "connected" && (
@@ -111,6 +208,12 @@ export default function ToolsStore() {
                     </div>
                 ))}
             </div>
+
+            {statusMessage && (
+                <p className={`text-sm ${statusMessage.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                    {statusMessage.text}
+                </p>
+            )}
         </div>
     );
 }
