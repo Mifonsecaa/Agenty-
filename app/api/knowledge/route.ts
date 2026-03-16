@@ -3,9 +3,19 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { ingestionService } from "@/lib/rag/ingestion";
+import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag/queue";
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
+
+function stripHtmlToText(html: string) {
+    return html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
 
 
 export async function POST(req: Request) {
@@ -22,18 +32,37 @@ export async function POST(req: Request) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, name, type } = validation.data!;
+        let { businessId, text, name, type, url } = validation.data!;
+
+        if (url && !text) {
+            try {
+                const response = await fetch(url, { method: "GET" });
+                if (!response.ok) {
+                    return NextResponse.json({ error: "No se pudo leer la URL" }, { status: 422 });
+                }
+                const html = await response.text();
+                text = stripHtmlToText(html);
+                name = name || new URL(url).hostname;
+                type = type || "text/html";
+            } catch (urlError) {
+                return NextResponse.json({ error: "No se pudo extraer contenido de la URL" }, { status: 422 });
+            }
+        }
 
         if (type === "application/pdf") {
             try {
+                if (!text) {
+                    return NextResponse.json({ error: "El PDF no contiene datos para procesar" }, { status: 400 });
+                }
                 console.log("[API Knowledge] Cargando pdf-parse...");
                 const pdf = require("pdf-parse");
                 const buffer = Buffer.from(text, "base64");
                 console.log(`[API Knowledge] Buffer creado, tamaño: ${buffer.length}`);
                 const data = await pdf(buffer);
                 // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
-                text = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-                console.log(`[API Knowledge] PDF procesado: ${name} (${text.length} caracteres)`);
+                const parsedText = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+                text = parsedText;
+                console.log(`[API Knowledge] PDF procesado: ${name} (${parsedText.length} caracteres)`);
             } catch (pdfError: any) {
                 console.error("[API Knowledge] Error parseando PDF:", pdfError);
                 return NextResponse.json({
@@ -54,17 +83,54 @@ export async function POST(req: Request) {
 
         if (!business) {
             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
-        }        // Ingerir el texto en la base de datos vectorial
-        const chunkCount = await ingestionService.ingestText(businessId, text, {
-            fileName: name || "document",
-            fileType: type || "txt"
+        }
+
+        const safeText = (text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+        if (!safeText.trim()) {
+            return NextResponse.json({ error: "No hay texto válido para procesar" }, { status: 400 });
+        }
+
+        const enqueue = await enqueueKnowledgeIngestion({
+            businessId,
+            text: safeText,
+            metadata: {
+                fileName: name || "document",
+                fileType: type || "txt",
+                source: url ? "website" : "manual_ingestion",
+                url: url || null,
+            },
+        });
+
+        if (enqueue.missingQueueTable) {
+            // Fallback temporal para no romper el flujo si la migración aún no está aplicada.
+            const chunkCount = await ingestionService.ingestText(businessId, safeText, {
+                fileName: name || "document",
+                fileType: type || "txt"
+            });
+
+            return NextResponse.json({
+                success: true,
+                message: `Documento procesado en ${chunkCount} fragmentos (modo compatibilidad).`,
+                chunkCount,
+                mode: "sync_fallback",
+            });
+        }
+
+        // Kickoff best-effort para procesar rápido en entornos sin worker dedicado.
+        void processKnowledgeQueueBatch(1).catch((queueError) => {
+            console.error("[API Knowledge] Queue kickoff error:", queueError);
         });
 
         return NextResponse.json({
             success: true,
-            message: `Documento procesado en ${chunkCount} fragmentos.`,
-            chunkCount
-        });
+            queued: true,
+            deduplicated: enqueue.deduplicated,
+            jobId: enqueue.job.id,
+            status: enqueue.job.status,
+            message: enqueue.deduplicated
+                ? "Este documento ya está en proceso o fue procesado recientemente."
+                : "Documento encolado para ingesta asíncrona.",
+        }, { status: 202 });
 
     } catch (error: any) {
         console.error("[API Knowledge] Error fatal:", error);
@@ -144,7 +210,7 @@ export async function DELETE(req: Request) {
         }
 
         const body = await req.json();
-        const { businessId, itemId } = body;
+        const { businessId, itemId, itemIds } = body;
 
         if (!businessId) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
@@ -162,9 +228,23 @@ export async function DELETE(req: Request) {
              return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
+        if (Array.isArray(itemIds) && itemIds.length > 0) {
+            const cleanItemIds = itemIds.filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0);
+            if (cleanItemIds.length === 0) {
+                return NextResponse.json({ error: "itemIds inválido" }, { status: 400 });
+            }
+
+            const result = await ingestionService.deleteKnowledgeItems(cleanItemIds, businessId);
+            return NextResponse.json({
+                success: true,
+                message: `${result.count} elemento(s) eliminado(s).`,
+                deletedCount: result.count,
+            });
+        }
+
         if (itemId) {
-            await ingestionService.deleteKnowledgeItem(itemId, businessId);
-             return NextResponse.json({ success: true, message: "Elemento eliminado." });
+            const result = await ingestionService.deleteKnowledgeItem(itemId, businessId);
+             return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
         } else {
             // Peligroso: Si no se envía itemId, borra todo.
             // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.

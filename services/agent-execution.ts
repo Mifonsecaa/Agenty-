@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/prisma';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendWhatsAppMessage } from '@/services/whatsapp-sender';
+import { aiService } from '@/lib/ai';
 
 // 🔑 Asegúrate de que la API Key exista para que la app no explote silenciosamente
 if (!process.env.GEMINI_API_KEY) {
@@ -15,6 +16,24 @@ export interface IncomingMessage {
     text: string;
     contactId: string;
     businessId: string;
+}
+
+export interface ExecuteAgentInput {
+    businessId: string;
+    platform: 'whatsapp' | 'instagram' | 'telegram';
+    userId: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+}
+
+export async function executeAgent(input: ExecuteAgentInput): Promise<string> {
+    const response = await aiService.generateResponse(
+        input.businessId,
+        [{ role: 'user', content: input.message }],
+        {}
+    );
+
+    return typeof response === 'string' ? response : String(response || '');
 }
 
 // Esta es la función principal que orquesta todo

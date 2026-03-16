@@ -84,6 +84,28 @@ export class IngestionService {
         });
     }
 
+    async deleteKnowledgeItem(itemId: string, businessId: string) {
+        return await prisma.knowledgeItem.deleteMany({
+            where: {
+                id: itemId,
+                businessId,
+            }
+        });
+    }
+
+    async deleteKnowledgeItems(itemIds: string[], businessId: string) {
+        if (itemIds.length === 0) {
+            return { count: 0 };
+        }
+
+        return await prisma.knowledgeItem.deleteMany({
+            where: {
+                businessId,
+                id: { in: itemIds },
+            }
+        });
+    }
+
     async ingestStructuredKnowledge(businessId: string, item: { content: string, tags: string[], relevance: number }, metadata: any = {}) {
         console.log(`[Ingestion] Ingesting Structured Knowledge Chunk for business ${businessId} (Content size: ${item.content.length}, tags: ${item.tags.join(',')})`);
 

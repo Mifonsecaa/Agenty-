@@ -291,6 +291,9 @@ export const createBookingTool = (businessId: string, customerPhone?: string) =>
                 const fullDateText = parsedDate ? formatSpanishLongDate(parsedDate) : "";
 
                 if (action === "CHECK") {
+                    if (!parsedDate) {
+                        return "No pude interpretar la fecha. Dime una fecha como 'mañana', 'pasado mañana', 'lunes', '15', '15/03', '15 de marzo' o '2026-03-15'.";
+                    }
                     console.log(`[BookingTool] CHECK requested. businessId=${businessId}, rawDate=${date}, parsedDate=${parsedDate}`);
                     const result = await reservationService.checkAvailability(businessId, parsedDate);
                     if (!result.available) {
@@ -304,6 +307,9 @@ export const createBookingTool = (businessId: string, customerPhone?: string) =>
                 }
 
                 if (action === "CREATE") {
+                    if (!parsedDate) {
+                        return "No pude interpretar la fecha. Dime una fecha como 'mañana', 'pasado mañana', 'lunes', '15', '15/03', '15 de marzo' o '2026-03-15'.";
+                    }
                     console.log(
                         `[BookingTool] CREATE requested. businessId=${businessId}, customerPhone=${customerPhone || "missing"}, rawDate=${date}, parsedDate=${parsedDate}, rawTime=${time || "missing"}, parsedTime=${parsedTime || "invalid"}, details=${details || ""}`,
                     );

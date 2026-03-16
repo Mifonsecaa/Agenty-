@@ -65,7 +65,6 @@ export async function POST(req: NextRequest) {
           select: {
             id: true,
             instagramAccessToken: true,
-            instagramAccountId: true,
           },
         });
 

@@ -20,15 +20,32 @@ export const createKnowledgeTool = (businessId: string) => {
 
                 // 1. Generar embedding para la consulta
                 const queryEmbedding = await embeddings.embedQuery(query);
-                const vectorString = `[${queryEmbedding.join(",")}]`;
+
+                const parseVectorText = (value: string | null): number[] | null => {
+                    if (!value) return null;
+                    const trimmed = value.trim();
+                    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+                    const nums = trimmed
+                        .slice(1, -1)
+                        .split(",")
+                        .map((n) => Number(n.trim()))
+                        .filter((n) => Number.isFinite(n));
+                    return nums.length ? nums : null;
+                };
 
                 // 2. Búsqueda semántica en JS vanilla (Fallback sin PGVector)
                 console.log("[KnowledgeTool] Fetching all items for JS cosine similarity...");
-                
-                const allItems = await prisma.knowledgeItem.findMany({
-                    where: { businessId: businessId },
-                    select: { content: true, metadata: true, embedding: true }
-                });
+
+                const allItems = await prisma.$queryRaw<Array<{
+                    content: string;
+                    metadata: unknown;
+                    embedding: string | null;
+                }>>`
+                    SELECT content, metadata, embedding::text AS embedding
+                    FROM "KnowledgeItem"
+                    WHERE "businessId" = ${businessId}
+                    LIMIT 500
+                `;
 
                 if (!allItems || allItems.length === 0) {
                      return "No hay información en la base de conocimientos.";
@@ -44,7 +61,7 @@ export const createKnowledgeTool = (businessId: string) => {
 
                 const results = allItems
                     .map(item => {
-                        const embedding = item.embedding as number[];
+                        const embedding = parseVectorText(item.embedding);
                         if (!embedding || !Array.isArray(embedding)) return { ...item, similarity: 0 };
                         return {
                             ...item,
@@ -63,7 +80,9 @@ export const createKnowledgeTool = (businessId: string) => {
                     .filter(r => r.similarity > 0.3) // Filtro de calidad mínimo
                     .map(r => {
                         let text = `- ${r.content}`;
-                        const meta = r.metadata || {};
+                        const meta = (r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata))
+                            ? (r.metadata as Record<string, unknown>)
+                            : {};
                         if (meta.fileUrl) {
                             text += `\n\n[FILE AVAILABLE]: This content is associated with a file. If the user asks for the document, image, or file related to this, you MUST include this tag at the end of your response: [MEDIA_URL: ${meta.fileUrl}]`;
                         }
