@@ -59,6 +59,21 @@ model Business {
   id           String        @id @default(cuid())
   name         String
   phone        String?       @unique
+
+  // Telegram Integration
+  telegramBotToken    String?
+  telegramBotUsername String?
+
+  // WhatsApp Integration
+  whatsappPhoneNumberId String?
+  whatsappAccessToken   String?
+  whatsappWebhookVerifyToken String?
+
+  // Instagram Integration
+  instagramPageId      String?
+  instagramAppSecret   String?
+  instagramAccessToken String?
+
   config       Json
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -144,7 +159,7 @@ model KnowledgeItem {
   id         String   @id @default(cuid())
   businessId String
   content    String
-  embedding  Unsupported("vector(1536)")?
+  embedding  Unsupported("vector")?
   metadata   Json     @default("{}")
   createdAt  DateTime @default(now())
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)

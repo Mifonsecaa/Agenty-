@@ -1,145 +1,145 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Content } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma'; // <-- RUTA CORREGIDA
 import OpenAI from 'openai';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { aiService } from '@/lib/ai';
+import type { ChatMessage } from '@/lib/ai';
+import { prisma } from '@/lib/prisma';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
-const formatHistoryForGemini = (messages: { role: string, content: string }[]): Content[] => {
-  let processedMessages = [...messages];
-  if (processedMessages.length > 0 && processedMessages[0].role === 'assistant') {
-    processedMessages.shift();
+type Provider = 'openai' | 'github' | 'gemini';
+
+type IncomingMessage = {
+  role: string;
+  content: string;
+};
+
+function normalizeMessages(messages: IncomingMessage[]): ChatMessage[] {
+  return messages
+    .filter((m) => ['user', 'assistant', 'system'].includes(m.role))
+    .map((m) => ({ role: m.role as ChatMessage['role'], content: m.content }));
+}
+
+async function generateDemoReply(messages: ChatMessage[], provider: Provider, systemPrompt: string) {
+  const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+
+  if (provider === 'openai') {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemPrompt }, ...nonSystemMessages],
+      temperature: 0.7,
+      max_tokens: 180,
+    });
+    return response.choices[0].message.content || 'No pude generar una respuesta.';
   }
-  return processedMessages.map(msg => ({
+
+  if (provider === 'github') {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) throw new Error('Falta GITHUB_TOKEN');
+
+    const client = new OpenAI({
+      baseURL: 'https://models.inference.ai.azure.com',
+      apiKey: token,
+    });
+
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'system', content: systemPrompt }, ...nonSystemMessages],
+      temperature: 0.7,
+      max_tokens: 220,
+    });
+    return response.choices[0].message.content || 'No pude generar una respuesta.';
+  }
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const history = nonSystemMessages.slice(0, -1).map((msg) => ({
     role: msg.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: msg.content }],
   }));
-};
+  const lastMessage = nonSystemMessages[nonSystemMessages.length - 1]?.content || '';
+  const chat = model.startChat({
+    history,
+    systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
+    generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
+  });
+  const result = await chat.sendMessage(lastMessage);
+  return result.response.text();
+}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { messages, provider, isDemo, demoContext } = body;
+    const {
+      messages,
+      provider = 'openai',
+      isDemo = false,
+      demoContext = '',
+      agentId,
+      systemPrompt,
+    } = body as {
+      messages: IncomingMessage[];
+      provider?: Provider;
+      isDemo?: boolean;
+      demoContext?: string;
+      agentId?: string;
+      systemPrompt?: string;
+    };
 
-    if (!messages || !provider) {
-      return new NextResponse('Faltan mensajes o el proveedor', { status: 400 });
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: 'Faltan mensajes' }, { status: 400 });
     }
 
-    let systemPrompt = "Eres un asistente de IA genérico. Sé amable y servicial.";
+    const normalizedMessages = normalizeMessages(messages);
+    if (normalizedMessages.length === 0) {
+      return NextResponse.json({ error: 'Mensajes inválidos' }, { status: 400 });
+    }
 
-    // Lógica para la Demo Pública vs. Agentes Privados
     if (isDemo) {
-      if (demoContext && demoContext.trim().length > 0) {
-        systemPrompt = `
-        Eres un asistente virtual experto en ventas y atención al cliente. 
-        El usuario te está poniendo a prueba simulando el siguiente negocio:
-        "${demoContext}"
-        
-        REGLAS DE LA PRUEBA VIRTUAL:
-        - Asume ESTA personalidad inmediatamente.
-        - Responde natural, súper amable y MUY corto (máximo 2-3 oraciones breves).
-        - Nunca digas que eres AgentyBot, ahora eres el negocio.
-        `;
-      } else {
-        systemPrompt = `
-        Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai.
-        Tu misión es convencer a emprendedores y dueños de negocio de que Agenty es la solución definitiva para automatizar sus reservas y atención al cliente en WhatsApp.
-        
-        REGLAS:
-        - Responde corto, máximo 2 o 3 oraciones.
-        - Sé ultra amable, usa emojis modernos (✨, 🚀, 🤖).
-        - Si preguntan precios, diles que empiecen totalmente GRATIS.
-        - Muéstrales cómo tú mismo (AgentyBot) eres prueba de que funciona, conversando de forma natural.
-        - Termina los mensajes invitándolos a registrarse y "crear su primer agente".
-        `;
+      let demoSystemPrompt =
+        "Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai. Responde corto, útil y amigable.";
+
+      if (demoContext?.trim()) {
+        demoSystemPrompt = `Eres un asistente virtual experto en atención al cliente. Actúa como este negocio: \"${demoContext}\". Responde en 2-3 oraciones, natural y directo.`;
       }
-    } else {
-      // Find the specific config instead of blindly grabbing the first business 
-      // Note: For the builder, we pass the custom prompt directly in the messages payload via the Builder context,
-      // so we don't strictly *need* to pull Prisma here anymore, but keeping as fallback.
-      const business = await prisma.business.findFirst();
-      if (business && business.config) {
-        const config = business.config as any;
-        systemPrompt = config.systemPrompt || `Eres un asistente virtual para ${config.name || 'un negocio'}. Sé amable y conciso.`;
-      }
+
+      const content = await generateDemoReply(normalizedMessages, provider, demoSystemPrompt);
+      return NextResponse.json({ role: 'assistant', content });
     }
 
-    let aiResponse;
-    let finalMessages = messages;
-
-    // Si inyectamos contexto, debemos borrar del historial el primer mensaje del bot 
-    // ("Soy AgentyBot...") para que la IA no entre en conflicto de personalidad.
-    if (isDemo && demoContext && demoContext.trim().length > 0) {
-      finalMessages = messages.filter((m: any) => !(m.role === 'assistant' && m.content.includes('AgentyBot')));
+    // Playground privado: siempre requiere sesión y agentId explícito para alinear test mode al agente activo.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
-    if (provider === 'openai') {
-      if (!process.env.OPENAI_API_KEY) throw new Error("Falta la clave de API de OpenAI.");
-
-      const payloadMessages = isDemo
-        ? [{ role: 'system', content: systemPrompt }, ...finalMessages]
-        // If NOT demo (e.g. Builder), the Builder ALREADY injects {role: 'system', content: ...} as the first message
-        // To avoid duplicating system prompts and confusing OpenAI, we just pass the messages as-is if the first is 'system'.
-        : (finalMessages[0]?.role === 'system' ? finalMessages : [{ role: 'system', content: systemPrompt }, ...finalMessages]);
-
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: payloadMessages,
-        temperature: 0.7,
-        max_tokens: 150,
-      });
-      aiResponse = response.choices[0].message;
-    }
-    else if (provider === 'github') {
-      const token = process.env.GITHUB_TOKEN;
-      if (!token) throw new Error("Falta la clave de API de GitHub (GITHUB_TOKEN).");
-
-      const client = new OpenAI({
-        baseURL: "https://models.inference.ai.azure.com",
-        apiKey: token
-      });
-
-      const payloadMessages = isDemo
-          ? [{ role: 'system', content: systemPrompt }, ...finalMessages]
-          : (finalMessages[0]?.role === 'system' ? finalMessages : [{ role: 'system', content: systemPrompt }, ...finalMessages]);
-
-      const response = await client.chat.completions.create({
-        messages: payloadMessages,
-        model: "gpt-4o",
-        temperature: 0.7,
-        max_tokens: 300
-      });
-
-      aiResponse = response.choices[0].message;
-    }
-    else if (provider === 'gemini') {
-      if (!process.env.GEMINI_API_KEY) throw new Error("Falta la clave de API de Gemini.");
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const history = formatHistoryForGemini(finalMessages);
-      const lastMessage = history.pop();
-      const chat = model.startChat({
-        history: history,
-        generationConfig: { maxOutputTokens: 150, temperature: 0.7 },
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
-        systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
-      });
-      const result = await chat.sendMessage(lastMessage?.parts[0].text || '');
-      aiResponse = { role: 'assistant', content: result.response.text() };
-    }
-    else {
-      throw new Error("Proveedor de IA no válido.");
+    if (!agentId) {
+      return NextResponse.json({ error: 'agentId es requerido en modo privado' }, { status: 400 });
     }
 
-    return NextResponse.json(aiResponse);
+    const business = await prisma.business.findFirst({
+      where: {
+        id: agentId,
+        user: { email: session.user.email },
+      },
+      select: { id: true, name: true, config: true },
+    });
 
+    if (!business) {
+      return NextResponse.json({ error: 'Negocio no encontrado o sin acceso' }, { status: 404 });
+    }
+
+    const conversationMessages = normalizedMessages.filter((m) => m.role !== 'system');
+    const content = await aiService.generateResponse(business.id, conversationMessages, {
+      provider,
+      systemPrompt,
+    });
+
+    return NextResponse.json({ role: 'assistant', content });
   } catch (error: any) {
-    console.error('Error en la API de chat:', error.message);
-    return new NextResponse(JSON.stringify({ error: `Error del servidor: ${error.message}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    console.error('[API Chat] Error:', error);
+    return NextResponse.json({ error: `Error del servidor: ${error.message || 'desconocido'}` }, { status: 500 });
   }
 }

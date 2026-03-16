@@ -7,21 +7,6 @@ import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, 
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
 
-function htmlToPlainText(html: string): string {
-    const noScripts = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ");
-
-    return noScripts
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\s+/g, " ")
-        .trim();
-}
-
 
 export async function POST(req: Request) {
     try {
@@ -31,50 +16,13 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-
-        let normalizedBody: any = { ...body };
-        if (body?.url && !body?.text) {
-            const targetUrl = String(body.url);
-            const urlObj = new URL(targetUrl);
-            if (!["http:", "https:"].includes(urlObj.protocol)) {
-                return NextResponse.json({ error: "Solo se permiten URLs http/https" }, { status: 400 });
-            }
-
-            const pageRes = await fetch(targetUrl, {
-                headers: {
-                    "User-Agent": "AgentyBot/1.0 (+knowledge-sync)",
-                },
-            });
-
-            if (!pageRes.ok) {
-                return NextResponse.json({ error: `No se pudo descargar la URL (${pageRes.status})` }, { status: 422 });
-            }
-
-            const html = await pageRes.text();
-            const extractedText = htmlToPlainText(html);
-            if (!extractedText) {
-                return NextResponse.json({ error: "No se pudo extraer texto útil de la URL" }, { status: 422 });
-            }
-
-            normalizedBody = {
-                ...body,
-                text: extractedText,
-                name: body.name || urlObj.hostname,
-                type: body.type || "text/html",
-            };
-        }
-
-        const validation = validateData<KnowledgeCreateInput>(normalizedBody, knowledgeCreateSchema);
+        const validation = validateData<KnowledgeCreateInput>(body, knowledgeCreateSchema);
         
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, name, type, url } = validation.data! as KnowledgeCreateInput & { url?: string };
-
-        if (!text || !name) {
-            return NextResponse.json({ error: "Faltan datos de contenido para ingestar conocimiento" }, { status: 400 });
-        }
+        let { businessId, text, name, type } = validation.data!;
 
         if (type === "application/pdf") {
             try {
@@ -83,7 +31,8 @@ export async function POST(req: Request) {
                 const buffer = Buffer.from(text, "base64");
                 console.log(`[API Knowledge] Buffer creado, tamaño: ${buffer.length}`);
                 const data = await pdf(buffer);
-                text = data.text;
+                // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
+                text = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
                 console.log(`[API Knowledge] PDF procesado: ${name} (${text.length} caracteres)`);
             } catch (pdfError: any) {
                 console.error("[API Knowledge] Error parseando PDF:", pdfError);
@@ -108,9 +57,7 @@ export async function POST(req: Request) {
         }        // Ingerir el texto en la base de datos vectorial
         const chunkCount = await ingestionService.ingestText(businessId, text, {
             fileName: name || "document",
-            fileType: type || "txt",
-            source: url ? "website_sync" : "manual_ingestion",
-            sourceUrl: url,
+            fileType: type || "txt"
         });
 
         return NextResponse.json({
@@ -196,12 +143,14 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { businessId, itemId } = await req.json();
+        const body = await req.json();
+        const { businessId, itemId } = body;
 
         if (!businessId) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
         }
 
+        // Verificar propiedad del negocio
         const business = await prisma.business.findFirst({
             where: {
                 id: businessId,
@@ -210,25 +159,22 @@ export async function DELETE(req: Request) {
         });
 
         if (!business) {
-            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
         if (itemId) {
-            await prisma.knowledgeItem.deleteMany({
-                where: {
-                    id: itemId,
-                    businessId,
-                },
-            });
-
-            return NextResponse.json({ success: true, message: "Fragmento eliminado." });
+            await ingestionService.deleteKnowledgeItem(itemId, businessId);
+             return NextResponse.json({ success: true, message: "Elemento eliminado." });
+        } else {
+            // Peligroso: Si no se envía itemId, borra todo.
+            // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.
+            // Asumiremos que si no hay itemId, es un "Limpiar todo".
+            await ingestionService.deleteAllKnowledge(businessId);
+             return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
         }
 
-        await ingestionService.deleteAllKnowledge(businessId);
-
-        return NextResponse.json({ success: true, message: "Conocimiento eliminado." });
-
     } catch (error: any) {
+        console.error("Delete Error:", error);
         return NextResponse.json({ error: "Internal Error" }, { status: 500 });
     }
 }

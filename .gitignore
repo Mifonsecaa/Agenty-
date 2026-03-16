@@ -1,52 +1,31 @@
-<<<<<<< HEAD
-=======
 # Dependencias
->>>>>>> origin/Miguel
 /node_modules
 /.next/
 /out/
 /build
-.env*.local
-.pnp
-.pnp.js
-
-# Testing
-/coverage
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-<<<<<<< HEAD
-# Misc
-.DS_Store
-*.pem
-
-# Prisma
-/prisma/migration_lock.toml
-
-=======
-# Next.js (Aquí está la corrección)
-/.next/
-/out/
-/build
-
-# Variables de Entorno y Secretos (¡Lo que pediste!)
 .env
 .env*.local
 .env.development.local
 .env.test.local
 .env.production.local
-
+.pnp
+.pnp.js
+# Testing
+/coverage
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 # Archivos temporales y de editor
 /tmp
 /out-tsc
 .vscode/
 .idea/
 .DS_Store
->>>>>>> origin/Miguel
-
-# Documentación generada localmente
+*.pem
+# Prisma
+/prisma/migration_lock.toml
+# Documentaci�n generada localmente
 *.md
 !README.md
+.idea/workspace.xml

@@ -22,15 +22,37 @@ export const createKnowledgeTool = (businessId: string) => {
                 const queryEmbedding = await embeddings.embedQuery(query);
                 const vectorString = `[${queryEmbedding.join(",")}]`;
 
-                // 2. Búsqueda semántica en PGVector (Aislamiento por businessId garantizado)
-                // Usamos <=> para distancia de coseno (menor es más similar)
-                const results = await prisma.$queryRawUnsafe<any[]>(`
-          SELECT content, metadata, (1 - (embedding <=> '${vectorString}'::vector)) as similarity
-          FROM "KnowledgeItem"
-          WHERE "businessId" = $1
-          ORDER BY embedding <=> '${vectorString}'::vector
-          LIMIT 4;
-        `, businessId);
+                // 2. Búsqueda semántica en JS vanilla (Fallback sin PGVector)
+                console.log("[KnowledgeTool] Fetching all items for JS cosine similarity...");
+                
+                const allItems = await prisma.knowledgeItem.findMany({
+                    where: { businessId: businessId },
+                    select: { content: true, metadata: true, embedding: true }
+                });
+
+                if (!allItems || allItems.length === 0) {
+                     return "No hay información en la base de conocimientos.";
+                }
+
+                // Función simple de similitud coseno
+                const cosineSimilarity = (a: number[], b: number[]) => {
+                    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+                    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+                    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+                    return dotProduct / (magnitudeA * magnitudeB);
+                };
+
+                const results = allItems
+                    .map(item => {
+                        const embedding = item.embedding as number[];
+                        if (!embedding || !Array.isArray(embedding)) return { ...item, similarity: 0 };
+                        return {
+                            ...item,
+                            similarity: cosineSimilarity(queryEmbedding, embedding)
+                        };
+                    })
+                    .sort((a, b) => b.similarity - a.similarity)
+                    .slice(0, 4);
 
                 if (!results || results.length === 0) {
                     return "No se encontró información relevante en la base de conocimientos. Por favor, intenta ser más específico o informa al usuario que no tienes ese dato exacto.";

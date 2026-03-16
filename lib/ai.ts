@@ -13,8 +13,13 @@ export interface ChatMessage {
     content: string;
 }
 
+export interface GenerateOptions {
+    provider?: 'openai' | 'github' | 'gemini';
+    systemPrompt?: string;
+}
+
 export const aiService = {
-    async generateResponse(businessId: string, messages: ChatMessage[]) {
+    async generateResponse(businessId: string, messages: ChatMessage[], options: GenerateOptions = {}) {
         try {
             console.log(`[AIService] Starting generation for businessId: ${businessId}`);
 
@@ -73,7 +78,7 @@ export const aiService = {
             }
 
             const config = business.config as any;
-            let systemPrompt = config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+            let systemPrompt = options.systemPrompt?.trim() || config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
 
             // Inyectar contexto RAG al prompt
             if (ragContext) {
@@ -89,7 +94,7 @@ export const aiService = {
             }
 
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
-            const provider = config?.aiProvider || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini');
+            const provider = options.provider || config?.aiProvider || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini');
             console.log(`[AIService] Business: ${business.name}, Provider Initial Choice: ${provider}`);
 
             const callOpenAI = async () => {
