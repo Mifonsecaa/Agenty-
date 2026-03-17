@@ -3,6 +3,8 @@ export type KnowledgeItem = {
   content: string;
   metadata?: {
     fileName?: string;
+    fileUrl?: string;
+    fileType?: string;
   };
   createdAt?: string;
 };

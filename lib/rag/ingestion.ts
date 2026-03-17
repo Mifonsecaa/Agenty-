@@ -89,20 +89,7 @@ export class IngestionService {
             where: {
                 id: itemId,
                 businessId,
-            }
-        });
-    }
-
-    async deleteKnowledgeItems(itemIds: string[], businessId: string) {
-        if (itemIds.length === 0) {
-            return { count: 0 };
-        }
-
-        return await prisma.knowledgeItem.deleteMany({
-            where: {
-                businessId,
-                id: { in: itemIds },
-            }
+            },
         });
     }
 

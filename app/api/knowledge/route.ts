@@ -3,18 +3,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { ingestionService } from "@/lib/rag/ingestion";
-import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag/queue";
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
 
-function stripHtmlToText(html: string) {
-    return html
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+function sanitizeFileName(name: string) {
+    return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 
@@ -32,48 +28,9 @@ export async function POST(req: Request) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, name, type, url } = validation.data!;
+        const { businessId } = validation.data!;
 
-        if (url && !text) {
-            try {
-                const response = await fetch(url, { method: "GET" });
-                if (!response.ok) {
-                    return NextResponse.json({ error: "No se pudo leer la URL" }, { status: 422 });
-                }
-                const html = await response.text();
-                text = stripHtmlToText(html);
-                name = name || new URL(url).hostname;
-                type = type || "text/html";
-            } catch (urlError) {
-                return NextResponse.json({ error: "No se pudo extraer contenido de la URL" }, { status: 422 });
-            }
-        }
-
-        if (type === "application/pdf") {
-            try {
-                if (!text) {
-                    return NextResponse.json({ error: "El PDF no contiene datos para procesar" }, { status: 400 });
-                }
-                console.log("[API Knowledge] Cargando pdf-parse...");
-                const pdf = require("pdf-parse");
-                const buffer = Buffer.from(text, "base64");
-                console.log(`[API Knowledge] Buffer creado, tamaño: ${buffer.length}`);
-                const data = await pdf(buffer);
-                // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
-                const parsedText = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-                text = parsedText;
-                console.log(`[API Knowledge] PDF procesado: ${name} (${parsedText.length} caracteres)`);
-            } catch (pdfError: any) {
-                console.error("[API Knowledge] Error parseando PDF:", pdfError);
-                return NextResponse.json({
-                    error: "Failed to parse PDF",
-                    details: pdfError.message || String(pdfError),
-                    stack: pdfError.stack
-                }, { status: 422 });
-            }
-        }
-
-        // Verificar que el negocio pertenece al usuario
+        // Verificar primero que el negocio pertenece al usuario antes de escribir archivos en disco.
         const business = await prisma.business.findFirst({
             where: {
                 id: businessId,
@@ -85,52 +42,61 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
-        const safeText = (text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-        if (!safeText.trim()) {
-            return NextResponse.json({ error: "No hay texto válido para procesar" }, { status: 400 });
+        let { text, name, type } = validation.data!;
+        const safeType = type || "application/octet-stream";
+
+        // Guardar siempre el archivo subido para poder enviarlo por WhatsApp/Telegram.
+        const uploadDir = path.join(process.cwd(), "public", "uploads");
+        await mkdir(uploadDir, { recursive: true });
+
+        const isTextLike = safeType.startsWith("text/") || ["application/json", "text/csv"].includes(safeType) || /\.(txt|md|csv|json)$/i.test(name);
+        const fileBuffer = isTextLike
+            ? Buffer.from(text, "utf-8")
+            : Buffer.from(text, "base64");
+
+        const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
+        const filePath = path.join(uploadDir, uniqueName);
+        await writeFile(filePath, fileBuffer);
+        const fileUrl = `/uploads/${uniqueName}`;
+
+        if (safeType === "application/pdf" || name.toLowerCase().endsWith(".pdf")) {
+            try {
+                console.log("[API Knowledge] Cargando pdf-parse...");
+                const pdf = require("pdf-parse");
+                console.log(`[API Knowledge] Buffer creado, tamaño: ${fileBuffer.length}`);
+                const data = await pdf(fileBuffer);
+                // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
+                text = (data.text || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+                console.log(`[API Knowledge] PDF procesado: ${name} (${text.length} caracteres)`);
+            } catch (pdfError: any) {
+                console.error("[API Knowledge] Error parseando PDF:", pdfError);
+                return NextResponse.json({
+                    error: "Failed to parse PDF",
+                    details: pdfError.message || String(pdfError),
+                    stack: pdfError.stack
+                }, { status: 422 });
+            }
+        } else if (isTextLike) {
+            text = fileBuffer.toString("utf-8");
+        } else if (safeType.startsWith("image/")) {
+            text = `[IMAGEN ADJUNTA: ${name}] El usuario puede solicitar que se le envíe esta imagen.`;
+        } else {
+            text = `[ARCHIVO ADJUNTO: ${name}] Tipo: ${safeType}. El usuario puede solicitar que se le envíe este archivo.`;
         }
 
-        const enqueue = await enqueueKnowledgeIngestion({
-            businessId,
-            text: safeText,
-            metadata: {
-                fileName: name || "document",
-                fileType: type || "txt",
-                source: url ? "website" : "manual_ingestion",
-                url: url || null,
-            },
-        });
-
-        if (enqueue.missingQueueTable) {
-            // Fallback temporal para no romper el flujo si la migración aún no está aplicada.
-            const chunkCount = await ingestionService.ingestText(businessId, safeText, {
-                fileName: name || "document",
-                fileType: type || "txt"
-            });
-
-            return NextResponse.json({
-                success: true,
-                message: `Documento procesado en ${chunkCount} fragmentos (modo compatibilidad).`,
-                chunkCount,
-                mode: "sync_fallback",
-            });
-        }
-
-        // Kickoff best-effort para procesar rápido en entornos sin worker dedicado.
-        void processKnowledgeQueueBatch(1).catch((queueError) => {
-            console.error("[API Knowledge] Queue kickoff error:", queueError);
+        // Ingerir el texto en la base de datos vectorial
+        const chunkCount = await ingestionService.ingestText(businessId, text, {
+            fileName: name || "document",
+            fileType: safeType,
+            fileUrl,
+            source: name || "document"
         });
 
         return NextResponse.json({
             success: true,
-            queued: true,
-            deduplicated: enqueue.deduplicated,
-            jobId: enqueue.job.id,
-            status: enqueue.job.status,
-            message: enqueue.deduplicated
-                ? "Este documento ya está en proceso o fue procesado recientemente."
-                : "Documento encolado para ingesta asíncrona.",
-        }, { status: 202 });
+            message: `Documento procesado en ${chunkCount} fragmentos.`,
+            chunkCount
+        });
 
     } catch (error: any) {
         console.error("[API Knowledge] Error fatal:", error);
@@ -181,7 +147,7 @@ export async function GET(req: Request) {
         const normalizedItems: KnowledgeItem[] = items.map((item) => {
             const metadata = item.metadata;
             const safeMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-                ? metadata as { fileName?: unknown }
+                ? metadata as { fileName?: unknown; fileUrl?: unknown; fileType?: unknown }
                 : undefined;
 
             return {
@@ -189,6 +155,8 @@ export async function GET(req: Request) {
                 content: item.content,
                 metadata: {
                     fileName: typeof safeMetadata?.fileName === "string" ? safeMetadata.fileName : undefined,
+                    fileUrl: typeof safeMetadata?.fileUrl === "string" ? safeMetadata.fileUrl : undefined,
+                    fileType: typeof safeMetadata?.fileType === "string" ? safeMetadata.fileType : undefined,
                 },
                 createdAt: item.createdAt.toISOString(),
             };
@@ -210,7 +178,7 @@ export async function DELETE(req: Request) {
         }
 
         const body = await req.json();
-        const { businessId, itemId, itemIds } = body;
+        const { businessId, itemId } = body;
 
         if (!businessId) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
@@ -228,23 +196,9 @@ export async function DELETE(req: Request) {
              return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
-        if (Array.isArray(itemIds) && itemIds.length > 0) {
-            const cleanItemIds = itemIds.filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0);
-            if (cleanItemIds.length === 0) {
-                return NextResponse.json({ error: "itemIds inválido" }, { status: 400 });
-            }
-
-            const result = await ingestionService.deleteKnowledgeItems(cleanItemIds, businessId);
-            return NextResponse.json({
-                success: true,
-                message: `${result.count} elemento(s) eliminado(s).`,
-                deletedCount: result.count,
-            });
-        }
-
         if (itemId) {
-            const result = await ingestionService.deleteKnowledgeItem(itemId, businessId);
-             return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
+            await ingestionService.deleteKnowledgeItem(itemId, businessId);
+             return NextResponse.json({ success: true, message: "Elemento eliminado." });
         } else {
             // Peligroso: Si no se envía itemId, borra todo.
             // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.

@@ -189,9 +189,23 @@ export const evolutionService = {
                 })
             });
 
-            const data = await response.json();
-            console.log("[EvolutionService] Send Media response:", data);
-            return data;
+            const data = await response.json().catch(() => ({}));
+            const ok = response.ok && !data?.error;
+            if (!ok) {
+                console.error("[EvolutionService] Send Media failed:", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data,
+                });
+            } else {
+                console.log("[EvolutionService] Send Media response:", data);
+            }
+
+            return {
+                ok,
+                data,
+                error: ok ? undefined : (data?.message || data?.error || `${response.status} ${response.statusText}`),
+            };
         } catch (error) {
             console.error("[EvolutionService] Error sending media:", error);
             throw error;

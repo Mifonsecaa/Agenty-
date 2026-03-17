@@ -3,9 +3,18 @@ import { evolutionService } from "@/services/whatsapp/evolution";
 import { transcriptionService } from "@/services/ai/transcription";
 import { prisma } from "@/lib/prisma";
 import { metricsService } from "@/lib/metrics";
+import { extractMediaFromAgentReply } from "@/lib/media-parser";
+
+function detectWhatsAppMediaType(mediaUrl: string): "image" | "video" | "document" {
+    const normalized = mediaUrl.toLowerCase();
+    if (/\.(jpg|jpeg|png|webp|gif)$/i.test(normalized)) return "image";
+    if (/\.(mp4|mov|avi|mkv|webm)$/i.test(normalized)) return "video";
+    return "document";
+}
 
 export async function POST(req: Request) {
     try {
+        const requestOrigin = new URL(req.url).origin;
         const body = await req.json();
         const eventType = body.event || "UNKNOWN";
         const instanceName = body.instance || "UNKNOWN";
@@ -151,7 +160,7 @@ export async function POST(req: Request) {
 
         // 2. Generar respuesta real con el Agente (LangGraph + RAG)
         let aiResponse = "Lo siento, tuve un problema interno.";
-        let mediaUrl: string | null = null;
+        let mediaUrls: string[] = [];
         
         try {
             console.log(`[WhatsApp Webhook] Ejecutando agente para: "${messageText}"`);
@@ -171,18 +180,9 @@ export async function POST(req: Request) {
             const lastMsg = result.messages[result.messages.length - 1];
             aiResponse = lastMsg.content as string;
             
-            // DETECTAR ARCHIVO
-            const mediaMatch = aiResponse.match(/\[MEDIA_URL:\s*(.*?)\]/);
-            if (mediaMatch && mediaMatch[1]) {
-                mediaUrl = mediaMatch[1].trim();
-                aiResponse = aiResponse.replace(/\[MEDIA_URL:\s*.*?\]/, "").trim();
-                
-                // Resolver URL relativa
-                if (mediaUrl.startsWith("/")) {
-                    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3001";
-                    mediaUrl = new URL(mediaUrl, baseUrl).toString();
-                }
-            }
+            const parsedReply = extractMediaFromAgentReply(aiResponse, requestOrigin);
+            aiResponse = parsedReply.cleanText;
+            mediaUrls = parsedReply.mediaUrls;
         } catch (aiErr: any) {
             console.error("[WhatsApp Webhook] Agent Error:", aiErr.message || aiErr);
         }
@@ -207,20 +207,28 @@ export async function POST(req: Request) {
         }
         
         // 4. Enviar archivo si existe
-        if (mediaUrl) {
+        for (const mediaUrl of mediaUrls) {
             console.log(`[Webhook] Enviando archivo: ${mediaUrl}`);
-            const type = mediaUrl.endsWith(".pdf") ? "document" : "image";
-            // Enviamos el medio
-            await evolutionService.sendMedia(instanceName, targetJid, mediaUrl, type, "Aquí tienes el archivo.");
-            
-            // Opcional: Registrar que se envió un archivo en la conversación
-             await prisma.message.create({
-                data: {
-                    conversationId: conversation.id,
-                    role: "agent",
-                    content: `[ARCHIVO ENVIADO: ${mediaUrl}]`
-                }
-            });
+            const type = detectWhatsAppMediaType(mediaUrl);
+            const mediaResult = await evolutionService.sendMedia(instanceName, targetJid, mediaUrl, type, "Aqui tienes el archivo.");
+
+            if (mediaResult?.ok) {
+                await prisma.message.create({
+                    data: {
+                        conversationId: conversation.id,
+                        role: "agent",
+                        content: `[ARCHIVO ENVIADO: ${mediaUrl}]`
+                    }
+                });
+            } else {
+                await prisma.message.create({
+                    data: {
+                        conversationId: conversation.id,
+                        role: "system",
+                        content: `[ERROR ENVIO ARCHIVO WHATSAPP]: ${mediaUrl} - ${mediaResult?.error || "Error desconocido"}`
+                    }
+                });
+            }
         }
 
         // --- REGISTRO DE MÉTRICA: Respuesta Enviada ---

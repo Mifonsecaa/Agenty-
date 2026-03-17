@@ -87,7 +87,7 @@ export const aiService = {
 
             // Inyectar instrucciones para archivos
             if (availableFiles.length > 0) {
-                systemPrompt += `\n\nTIENES ACCESO A LOS SIGUIENTES ARCHIVOS. Si el usuario solicita explícitamente ver el menú, catálogo, horario o documento mencionado, DEBES añadir al final de tu respuesta el comando: [MEDIA_URL: <url_del_archivo>].
+                systemPrompt += `\n\nTIENES ACCESO A LOS SIGUIENTES ARCHIVOS. Si el usuario solicita explícitamente ver el menú, catálogo, horario o documento mencionado, DEBES añadir al final de tu respuesta el comando: [MEDIA_URL: <url_del_archivo>]. No uses markdown de imagen como ![texto](url).
                 
                 Archivos disponibles:
                 ${availableFiles.map(f => `- ${f.description} (URL: ${f.url})`).join("\n")}`;

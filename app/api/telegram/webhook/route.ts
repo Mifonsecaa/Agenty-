@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { aiService } from "@/lib/ai";
 import { transcriptionService } from "@/services/ai/transcription";
+import { sendTelegramMessage, sendTelegramMedia, sendTelegramTyping } from "@/services/telegram-sender";
+import { extractMediaFromAgentReply } from "@/lib/media-parser";
 
 export async function POST(req: Request) {
   try {
+    const requestOrigin = new URL(req.url).origin;
     const { searchParams } = new URL(req.url);
     const businessId = searchParams.get("businessId");
 
@@ -17,6 +20,7 @@ export async function POST(req: Request) {
     }
 
     const chatId = message.chat?.id?.toString();
+    const numericChatId = Number(chatId);
     const username = message.from?.username || message.from?.first_name || "Usuario";
     
     // ---------------------------------------------------------
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
     const audioDuration: number | undefined = voice?.duration ?? audio?.duration ?? videoNote?.duration;
 
     // Si no hay chatId, ni contenido válido (texto/audio), ignoramos
-    if (!chatId || (!baseText && !captionText && !audioFileId)) {
+    if (!chatId || Number.isNaN(numericChatId) || (!baseText && !captionText && !audioFileId)) {
       return NextResponse.json({ ok: true });
     }
 
@@ -80,7 +84,11 @@ export async function POST(req: Request) {
             data: { conversationId: conversation.id, role: "user", content: "[Audio demasiado largo (>60s), no procesado]" },
          });
          
-         await sendTelegramMessage(chatId, "Tu nota de voz supera el límite de 60 segundos. Por favor, envía audios de hasta 1 minuto o resume tu consulta en texto.", TELEGRAM_BOT_TOKEN);
+         await sendTelegramMessage({
+           botToken: TELEGRAM_BOT_TOKEN,
+           chatId: numericChatId,
+           text: "Tu nota de voz supera el límite de 60 segundos. Por favor, envía audios de hasta 1 minuto o resume tu consulta en texto.",
+         });
          return NextResponse.json({ ok: true });
       }
 
@@ -133,29 +141,67 @@ export async function POST(req: Request) {
     // 4. Generar Respuesta IA
     // ---------------------------------------------------------
     // Enviamos "Escribiendo..." para dar feedback inmediato
-    await sendTelegramTyping(chatId, TELEGRAM_BOT_TOKEN);
+    await sendTelegramTyping(TELEGRAM_BOT_TOKEN, numericChatId);
 
     console.log(`[Telegram Webhook] Generating AI response for business ${business.id}...`);
     const aiReply = await aiService.generateResponse(business.id, [
       { role: "user", content: messageText },
     ]);
 
-    const replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    const parsedReply = extractMediaFromAgentReply(replyText, requestOrigin);
+    replyText = parsedReply.cleanText;
+    const mediaUrls = parsedReply.mediaUrls;
 
     // Guardar respuesta del agente
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        role: "agent",
-        content: replyText,
-      },
-    });
+    if (replyText) {
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: "agent",
+          content: replyText,
+        },
+      });
+    }
 
     // ---------------------------------------------------------
     // 5. Enviar Respuesta
     // ---------------------------------------------------------
     console.log(`[Telegram Webhook] Sending reply to ${chatId}: ${replyText}`);
-    await sendTelegramMessage(chatId, replyText, TELEGRAM_BOT_TOKEN);
+    if (replyText) {
+      await sendTelegramMessage({
+        botToken: TELEGRAM_BOT_TOKEN,
+        chatId: numericChatId,
+        text: replyText,
+      });
+    }
+
+    for (const mediaUrl of mediaUrls) {
+      const mediaResult = await sendTelegramMedia({
+        botToken: TELEGRAM_BOT_TOKEN,
+        chatId: numericChatId,
+        mediaUrl,
+        caption: "Aqui tienes el archivo.",
+      });
+
+      if (mediaResult.ok) {
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: "agent",
+            content: `[ARCHIVO ENVIADO: ${mediaUrl}]`,
+          },
+        });
+      } else {
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: "system",
+            content: `[ERROR ENVIO ARCHIVO TELEGRAM]: ${mediaUrl} - ${mediaResult.error || "Error desconocido"}`,
+          },
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -200,32 +246,6 @@ async function getOrCreateCustomerAndConversation(businessId: string, chatId: st
 }
 
 
-async function sendTelegramMessage(chatId: string, text: string, token: string) {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
-    });
-    
-    if (!res.ok) {
-        const errData = await res.json();
-        console.error(`[Telegram Send] Failed: ${res.status} ${res.statusText}`, errData);
-    }
-  } catch(e) { 
-      console.error("[Telegram Send] Network error", e); 
-  }
-}
-
-async function sendTelegramTyping(chatId: string, token: string) {
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, action: "typing" }),
-    });
-  } catch(e) {}
-}
 
 async function fetchTelegramFileBuffer(fileId: string, token: string): Promise<Buffer | null> {
   try {
