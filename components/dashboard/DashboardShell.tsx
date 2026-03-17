@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from 'next-auth/react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
     Bot,
@@ -27,6 +27,8 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AgentyProvider, useAgenty } from "@/context/AgentyContext";
+import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type DashboardNotification = {
     id: string;
@@ -61,6 +63,8 @@ export default function DashboardShell({ children, initialAgents, userName, user
 function DashboardContent({ children, userName, userEmail }: { children: React.ReactNode, userName?: string | null, userEmail?: string | null }) {
     const router = useRouter();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const { agents, activeAgent, switchAgent, refreshAgents } = useAgenty();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -68,6 +72,9 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [handoffCount, setHandoffCount] = useState(0);
+    const [pendingDeleteAgentId, setPendingDeleteAgentId] = useState<string | null>(null);
+    const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+    const [isClearNotificationsConfirmOpen, setIsClearNotificationsConfirmOpen] = useState(false);
     const [notifications, setNotifications] = useState<DashboardNotification[]>([
         {
             id: "welcome-dashboard",
@@ -138,19 +145,35 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
     const agentName = activeAgent?.name || "Mi Negocio";
     const initial = (activeAgent?.name || userName || "U").charAt(0).toUpperCase();
 
-    const handleDeleteAgent = async (e: React.MouseEvent, agentId: string) => {
+    const pendingDeleteAgent = agents.find((ag) => ag.id === pendingDeleteAgentId) || null;
+
+    const openDeleteAgentConfirm = (e: React.MouseEvent, agentId: string) => {
         e.stopPropagation();
-        if (!confirm("¿Estás seguro de eliminar este agente?")) return;
-        
+        if (isDeletingAgent) return;
+        setPendingDeleteAgentId(agentId);
+    };
+
+    const closeDeleteAgentConfirm = () => {
+        if (isDeletingAgent) return;
+        setPendingDeleteAgentId(null);
+    };
+
+    const handleDeleteAgent = async () => {
+        if (!pendingDeleteAgentId || isDeletingAgent) return;
+
+        setIsDeletingAgent(true);
         try {
-            const res = await fetch(`/api/business?id=${agentId}`, { method: "DELETE" });
+            const res = await fetch(`/api/business?id=${pendingDeleteAgentId}`, { method: "DELETE" });
             if (!res.ok) {
                 console.error("Error deleting agent: request failed");
                 return;
             }
             await refreshAgents();
+            setPendingDeleteAgentId(null);
         } catch (error) {
             console.error("Error deleting agent:", error);
+        } finally {
+            setIsDeletingAgent(false);
         }
     };
 
@@ -227,7 +250,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                             </div>
                                         </button>
                                         <button
-                                            onClick={(e) => handleDeleteAgent(e, ag.id)}
+                                            onClick={(e) => openDeleteAgentConfirm(e, ag.id)}
                                             className="absolute right-2 p-1.5 text-white/10 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-all opacity-0 group-hover/btn:opacity-100 z-10"
                                             title="Eliminar Agente"
                                         >
@@ -237,6 +260,20 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                 ))}
 
                                 <div className="my-1 mx-2 h-px bg-white/5" />
+
+                                {pendingDeleteAgent && (
+                                    <ActionConfirmationPanel
+                                        message={copy.shell.deleteAgent(pendingDeleteAgent.name)}
+                                        details={copy.shell.deleteAgentDetails}
+                                        confirmLabel={copy.confirmation.labels.delete}
+                                        cancelLabel={copy.confirmation.cancel}
+                                        isLoading={isDeletingAgent}
+                                        onCancel={closeDeleteAgentConfirm}
+                                        onConfirm={() => {
+                                            void handleDeleteAgent();
+                                        }}
+                                    />
+                                )}
 
                                 <Link
                                     href="/"
@@ -366,13 +403,28 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                                         <div className="flex items-center justify-between mb-4">
                                             <h4 className="text-xs font-bold text-white/80">Notificaciones</h4>
                                             <button
-                                                onClick={() => setNotifications([])}
+                                                onClick={() => setIsClearNotificationsConfirmOpen(true)}
                                                 className="text-[10px] text-blue-400 hover:underline disabled:text-white/20 disabled:no-underline"
                                                 disabled={notifications.length === 0}
                                             >
                                                 Limpiar todo
                                             </button>
                                         </div>
+
+                                        {isClearNotificationsConfirmOpen && (
+                                            <ActionConfirmationPanel
+                                                message={copy.shell.clearNotifications}
+                                                details={copy.confirmation.irreversible}
+                                                confirmLabel={copy.confirmation.labels.cleanup}
+                                                cancelLabel={copy.confirmation.cancel}
+                                                onCancel={() => setIsClearNotificationsConfirmOpen(false)}
+                                                onConfirm={() => {
+                                                    setNotifications([]);
+                                                    setIsClearNotificationsConfirmOpen(false);
+                                                }}
+                                            />
+                                        )}
+
                                         <div className="space-y-3">
                                             {notifications.map((notification) => (
                                                 <div

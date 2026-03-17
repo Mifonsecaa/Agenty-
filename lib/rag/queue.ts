@@ -16,6 +16,9 @@ type QueueJob = {
   payload: EnqueuePayload;
 };
 
+const QUEUE_STATUS_ORDER = ["PENDING", "PROCESSING", "RETRY", "COMPLETED", "FAILED", "DLQ"] as const;
+const ACTIVE_QUEUE_STATUSES = ["PENDING", "PROCESSING", "RETRY"] as const;
+
 const RETRYABLE_ERROR_MATCHERS = [
   "ETIMEDOUT",
   "ECONNRESET",
@@ -56,6 +59,16 @@ function computeNextRetryDate(attempt: number) {
   const expMs = Math.min(baseMs * Math.pow(2, Math.max(0, attempt - 1)), maxMs);
   const jitterMs = Math.floor(Math.random() * 1500);
   return new Date(Date.now() + expMs + jitterMs);
+}
+
+function getAgeBucket(createdAt: Date, nowMs: number) {
+  const ageMs = nowMs - createdAt.getTime();
+  const ageMinutes = ageMs / 60000;
+
+  if (ageMinutes < 5) return "lt5m" as const;
+  if (ageMinutes < 30) return "m5To30" as const;
+  if (ageMinutes < 120) return "m30To120" as const;
+  return "gte120m" as const;
 }
 
 export async function enqueueKnowledgeIngestion(payload: EnqueuePayload) {
@@ -188,5 +201,117 @@ export async function processKnowledgeQueueBatch(limit = 3) {
     results.push(result as unknown as Record<string, unknown>);
   }
   return results;
+}
+
+export async function getKnowledgeQueueSummary(params?: { businessId?: string }) {
+  const model = (prisma as any).knowledgeIngestionJob;
+  const where = params?.businessId ? { businessId: params.businessId } : {};
+
+  try {
+    const grouped = await model.groupBy({
+      by: ["status"],
+      where,
+      _count: { _all: true },
+    });
+
+    const countMap = new Map<string, number>();
+    for (const row of grouped as Array<{ status: string; _count: { _all: number } }>) {
+      countMap.set(row.status, row._count._all || 0);
+    }
+
+    const byStatus = QUEUE_STATUS_ORDER.map((status) => ({
+      status,
+      count: countMap.get(status) || 0,
+    }));
+
+    const activeJobs = await model.findMany({
+      where: {
+        ...where,
+        status: { in: [...ACTIVE_QUEUE_STATUSES] },
+      },
+      select: { createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 2000,
+    });
+
+    const nowMs = Date.now();
+    const ageBuckets = {
+      lt5m: 0,
+      m5To30: 0,
+      m30To120: 0,
+      gte120m: 0,
+    };
+
+    for (const job of activeJobs as Array<{ createdAt: Date }>) {
+      const bucket = getAgeBucket(job.createdAt, nowMs);
+      ageBuckets[bucket] += 1;
+    }
+
+    const totalsAll = byStatus.reduce((sum, row) => sum + row.count, 0);
+    const totalsActive = ACTIVE_QUEUE_STATUSES.reduce((sum, status) => sum + (countMap.get(status) || 0), 0);
+
+    return {
+      businessId: params?.businessId,
+      totals: {
+        all: totalsAll,
+        active: totalsActive,
+        completed: countMap.get("COMPLETED") || 0,
+        failed: countMap.get("FAILED") || 0,
+        dlq: countMap.get("DLQ") || 0,
+      },
+      byStatus,
+      ageBuckets,
+      oldestActiveCreatedAt: activeJobs[0]?.createdAt?.toISOString() || null,
+      missingQueueTable: false,
+    };
+  } catch (error) {
+    if (isMissingQueueTable(error)) {
+      return {
+        businessId: params?.businessId,
+        totals: { all: 0, active: 0, completed: 0, failed: 0, dlq: 0 },
+        byStatus: QUEUE_STATUS_ORDER.map((status) => ({ status, count: 0 })),
+        ageBuckets: { lt5m: 0, m5To30: 0, m30To120: 0, gte120m: 0 },
+        oldestActiveCreatedAt: null,
+        missingQueueTable: true,
+      };
+    }
+    throw error;
+  }
+}
+
+export async function replayKnowledgeJobs(params?: {
+  businessId?: string;
+  jobId?: string;
+  limit?: number;
+}) {
+  const model = (prisma as any).knowledgeIngestionJob;
+  const limit = Math.max(1, Math.min(200, params?.limit ?? 50));
+
+  const candidates = await model.findMany({
+    where: {
+      ...(params?.businessId ? { businessId: params.businessId } : {}),
+      ...(params?.jobId ? { id: params.jobId } : {}),
+      status: { in: ["DLQ", "FAILED"] },
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+    select: { id: true },
+  });
+
+  if (!candidates.length) {
+    return { count: 0, ids: [] as string[] };
+  }
+
+  const ids = candidates.map((job: { id: string }) => job.id);
+  const updated = await model.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "RETRY",
+      nextRunAt: new Date(),
+      finishedAt: null,
+    },
+  });
+
+  return { count: updated.count as number, ids };
 }
 
