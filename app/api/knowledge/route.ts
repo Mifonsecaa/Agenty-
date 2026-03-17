@@ -7,6 +7,8 @@ import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
+import { acquireConcurrencySlot, checkRateLimit } from "@/lib/security/traffic-control";
+import { incrementOpsCounter, recordOpsDuration } from "@/lib/observability/ops-metrics";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 
@@ -21,6 +23,8 @@ function stripHtmlToText(html: string) {
 
 
 export async function POST(req: Request) {
+    const startedAt = Date.now();
+    let releaseConcurrency: (() => void) | null = null;
     try {
         const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
@@ -35,6 +39,38 @@ export async function POST(req: Request) {
         }
 
         let { businessId, text, name, type, url } = validation.data!;
+
+        const rate = await checkRateLimit({
+            scope: "api-knowledge-post",
+            key: `${session.user.email}:${businessId}`,
+            maxRequests: Number(process.env.KNOWLEDGE_POST_RATE_LIMIT_MAX || 12),
+            windowMs: Number(process.env.KNOWLEDGE_POST_RATE_LIMIT_WINDOW_MS || 60000),
+        });
+
+        if (!rate.allowed) {
+            incrementOpsCounter("knowledge.rate_limited");
+            return NextResponse.json(
+                { error: "Demasiadas solicitudes de ingesta. Intenta nuevamente en unos segundos." },
+                {
+                    status: 429,
+                    headers: {
+                        "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)),
+                    },
+                }
+            );
+        }
+
+        const concurrencySlot = await acquireConcurrencySlot({
+            scope: "api-knowledge-business",
+            key: businessId,
+            maxConcurrent: Number(process.env.KNOWLEDGE_POST_MAX_CONCURRENT || 2),
+        });
+
+        if (!concurrencySlot) {
+            incrementOpsCounter("knowledge.concurrency_rejected");
+            return NextResponse.json({ error: "Servidor ocupado procesando conocimiento. Intenta de nuevo." }, { status: 503 });
+        }
+        releaseConcurrency = concurrencySlot;
 
         if (url && !text) {
             try {
@@ -110,6 +146,9 @@ export async function POST(req: Request) {
                 fileType: type || "txt"
             });
 
+            incrementOpsCounter("knowledge.sync_fallback");
+            recordOpsDuration("knowledge.post_latency_ms", Date.now() - startedAt);
+
             return NextResponse.json({
                 success: true,
                 message: `Documento procesado en ${chunkCount} fragmentos (modo compatibilidad).`,
@@ -125,6 +164,9 @@ export async function POST(req: Request) {
             });
         }
 
+        incrementOpsCounter("knowledge.queued");
+        recordOpsDuration("knowledge.post_latency_ms", Date.now() - startedAt);
+
         return NextResponse.json({
             success: true,
             queued: true,
@@ -138,7 +180,11 @@ export async function POST(req: Request) {
 
     } catch (error: any) {
         console.error("[API Knowledge] Error fatal:", error);
+        incrementOpsCounter("knowledge.error");
+        recordOpsDuration("knowledge.error_latency_ms", Date.now() - startedAt);
         return serverErrorResponse("Error al procesar el conocimiento");
+    } finally {
+        releaseConcurrency?.();
     }
 }
 

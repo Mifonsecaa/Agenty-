@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { aiService } from "@/lib/ai";
-import { transcriptionService } from "@/services/ai/transcription";
+import { enqueueAudioTranscription, processAudioTranscriptionInline } from "@/services/ai/transcription-queue";
+import { acquireConcurrencySlot, checkRateLimit } from "@/lib/security/traffic-control";
+import { incrementOpsCounter, recordOpsDuration } from "@/lib/observability/ops-metrics";
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
+  let releaseConcurrency: (() => void) | null = null;
   try {
     const { searchParams } = new URL(req.url);
     const businessId = searchParams.get("businessId");
@@ -64,6 +68,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    const rate = await checkRateLimit({
+      scope: "telegram-webhook-chat",
+      key: `${businessId || "default"}:${chatId}`,
+      maxRequests: Number(process.env.TELEGRAM_RATE_LIMIT_MAX || 25),
+      windowMs: Number(process.env.TELEGRAM_RATE_LIMIT_WINDOW_MS || 60000),
+    });
+
+    if (!rate.allowed) {
+      console.warn(`[Telegram Webhook] Rate limited chatId=${chatId}`);
+      incrementOpsCounter("telegram.rate_limited");
+      return NextResponse.json({ ok: true });
+    }
+
+    const slot = await acquireConcurrencySlot({
+      scope: "telegram-webhook-conversation",
+      key: `${businessId || "default"}:${chatId}`,
+      maxConcurrent: Number(process.env.TELEGRAM_MAX_CONCURRENT_PER_CHAT || 1),
+    });
+
+    if (!slot) {
+      console.warn(`[Telegram Webhook] Concurrency limit reached for chatId=${chatId}`);
+      incrementOpsCounter("telegram.concurrency_rejected");
+      return NextResponse.json({ ok: true });
+    }
+    releaseConcurrency = slot;
+
     let messageText: string = baseText || captionText;
 
     // --- Gestión de Audio ---
@@ -84,28 +114,48 @@ export async function POST(req: Request) {
          return NextResponse.json({ ok: true });
       }
 
-      // Transcribir
-      try {
-        const audioBuffer = await fetchTelegramFileBuffer(audioFileId, TELEGRAM_BOT_TOKEN);
-        if (audioBuffer) {
-           console.log(`[Telegram Webhook] Audio file downloaded (${audioBuffer.byteLength} bytes). Transcribing...`);
-           const transcription = await transcriptionService.transcribeAudio(audioBuffer);
-           if (transcription) {
-             const block = `[NOTA DE VOZ DEL CLIENTE]: ${transcription}`;
-             messageText = messageText ? `${messageText}\n\n${block}` : block;
-             console.log(`[Telegram Webhook] Audio transcribed: "${messageText}"`);
-           } else {
-             messageText = messageText || "[Audio ininteligible]";
-             console.warn("[Telegram Webhook] Empty transcription result.");
-           }
-        } else {
-           messageText = messageText || "[Error descargando audio]";
-           console.error("[Telegram Webhook] Could not download audio file.");
-        }
-      } catch (err) {
-        console.error("[Telegram Webhook] Audio processing error:", err);
-        messageText = messageText || "[Error procesando audio]";
+      const { conversation } = await getOrCreateCustomerAndConversation(business.id, chatId, username);
+      const providerMessageId = String(message.message_id || "");
+      if (!providerMessageId) {
+        return NextResponse.json({ ok: true });
       }
+
+      const enqueue = await enqueueAudioTranscription({
+        businessId: business.id,
+        conversationId: conversation.id,
+        channel: "TELEGRAM",
+        providerMessageId,
+        chatId,
+        telegramFileId: audioFileId,
+        captionText: messageText || "",
+      });
+
+      if (enqueue.missingQueueTable && process.env.TRANSCRIPTION_INLINE_FALLBACK !== "false") {
+        await processAudioTranscriptionInline({
+          businessId: business.id,
+          conversationId: conversation.id,
+          channel: "TELEGRAM",
+          providerMessageId,
+          chatId,
+          telegramFileId: audioFileId,
+          captionText: messageText || "",
+        });
+        incrementOpsCounter("telegram.audio_sync_fallback");
+        recordOpsDuration("telegram.webhook_latency_ms", Date.now() - startedAt);
+        return NextResponse.json({ ok: true, queued: false, mode: "sync_fallback" });
+      }
+
+      if (enqueue.missingQueueTable) {
+        await sendTelegramMessage(chatId, "Tu audio fue recibido, pero la cola de transcripcion aun no esta disponible.", TELEGRAM_BOT_TOKEN);
+        incrementOpsCounter("telegram.audio_queue_unavailable");
+        return NextResponse.json({ ok: true, queued: false, error: "queue_unavailable" });
+      }
+
+      await sendTelegramMessage(chatId, "Recibi tu audio. Lo estoy transcribiendo y te respondo enseguida.", TELEGRAM_BOT_TOKEN);
+
+      incrementOpsCounter(enqueue.deduplicated ? "telegram.audio_queued_deduplicated" : "telegram.audio_queued");
+      recordOpsDuration("telegram.webhook_latency_ms", Date.now() - startedAt);
+      return NextResponse.json({ ok: true, queued: true, deduplicated: enqueue.deduplicated });
     }
 
     console.log(`[Telegram Webhook] Final User Message from ${username}: ${messageText}`);
@@ -157,11 +207,18 @@ export async function POST(req: Request) {
     console.log(`[Telegram Webhook] Sending reply to ${chatId}: ${replyText}`);
     await sendTelegramMessage(chatId, replyText, TELEGRAM_BOT_TOKEN);
 
+    incrementOpsCounter("telegram.success");
+    recordOpsDuration("telegram.webhook_latency_ms", Date.now() - startedAt);
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[Telegram Webhook] Fatal Error:", error);
+    incrementOpsCounter("telegram.error");
+    recordOpsDuration("telegram.error_latency_ms", Date.now() - startedAt);
     // Siempre devolvemos 200 OK a Telegram para evitar reintentos infinitos en caso de error lógico
     return NextResponse.json({ ok: true });
+  } finally {
+    releaseConcurrency?.();
   }
 }
 
@@ -227,37 +284,4 @@ async function sendTelegramTyping(chatId: string, token: string) {
   } catch(e) {}
 }
 
-async function fetchTelegramFileBuffer(fileId: string, token: string): Promise<Buffer | null> {
-  try {
-    // 1) Obtener ruta del archivo
-    const getFileUrl = `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`;
-    const getFileRes = await fetch(getFileUrl);
-    if (!getFileRes.ok) {
-        console.error(`[Telegram Fetch] getFile failed: ${getFileRes.status}`);
-        return null;
-    }
-
-    const fileData: any = await getFileRes.json();
-    if (!fileData.ok || !fileData.result?.file_path) {
-        console.error(`[Telegram Fetch] Invalid file data`, fileData);
-        return null;
-    }
-
-    const filePath: string = fileData.result.file_path;
-    const fileUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
-
-    // 2) Descargar binario
-    const fileRes = await fetch(fileUrl);
-    if (!fileRes.ok) {
-        console.error(`[Telegram Fetch] Download failed: ${fileRes.status}`);
-        return null;
-    }
-
-    const arrayBuffer = await fileRes.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } catch (error) {
-    console.error("[Telegram Fetch] Error:", error);
-    return null;
-  }
-}
 

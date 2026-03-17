@@ -35,6 +35,34 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   });
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const consumeSseDeltas = async (
+    response: Response,
+    onDelta: (delta: string) => void,
+  ) => {
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const evt of events) {
+        const line = evt.split('\n').find((l) => l.startsWith('data: '));
+        if (!line) continue;
+        const payload = JSON.parse(line.slice(6));
+        if (payload.type === 'delta' && payload.delta) {
+          onDelta(payload.delta);
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -54,15 +82,32 @@ export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, provider, isDemo: true, demoContext }),
+        body: JSON.stringify({ messages: newMessages, provider, isDemo: true, demoContext, stream: true }),
       });
 
       setTaskState(prev => ({ ...prev, context: 'completed', understanding: 'completed', generation: 'in_progress' }));
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'La respuesta de la API no fue exitosa');
+      }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'La respuesta de la API no fue exitosa');
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/event-stream')) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+        await consumeSseDeltas(response, (delta) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (!last || last.role !== 'assistant') return prev;
+            next[next.length - 1] = { ...last, content: last.content + delta };
+            return next;
+          });
+        });
+      } else {
+        const data = await response.json();
+        setMessages(prev => [...prev, data]);
+      }
 
-      setMessages(prev => [...prev, data]);
       setTaskState(prev => ({ ...prev, generation: 'completed', response: 'completed' }));
 
     } catch (error: any) {

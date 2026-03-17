@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { useSearchParams } from "next/navigation";
-import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
+import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Platform = "whatsapp" | "telegram" | "instagram";
@@ -251,8 +250,7 @@ function ConnectionModal({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ConnectionsManager({ businessId }: { businessId: string }) {
-  const searchParams = useSearchParams();
-  const copy = getDashboardCopy(searchParams.get("lang") || undefined);
+  const { copy } = useDashboardCopy();
 
   const [status, setStatus] = useState<ConnectionStatus>({ whatsapp: false, telegram: false, instagram: false });
   const [loading, setLoading] = useState(true);

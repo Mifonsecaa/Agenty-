@@ -1,6 +1,59 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { prisma } from "@/lib/prisma";
+import { createHash } from "crypto";
+import { invalidateAiCachesForBusiness } from "@/lib/ai";
+
+type IngestionMetadata = {
+    source?: string;
+    sourceId?: string;
+    fileName?: string;
+    fileType?: string;
+    title?: string;
+    url?: string | null;
+    lang?: string;
+    [key: string]: unknown;
+};
+
+function normalizeContent(value: string) {
+    return value
+        .replace(/\r\n/g, "\n")
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+function hashText(value: string) {
+    return createHash("sha256").update(value).digest("hex");
+}
+
+function estimateTokenCount(value: string) {
+    return Math.max(1, Math.ceil(value.length / 4));
+}
+
+function detectLang(value: string) {
+    return /[\u00C0-\u017F]|\b(el|la|los|las|de|para|con|sin|que|por)\b/i.test(value) ? "es" : "unknown";
+}
+
+function buildSourceId(businessId: string, metadata: IngestionMetadata) {
+    if (typeof metadata.sourceId === "string" && metadata.sourceId.trim()) {
+        return metadata.sourceId.trim();
+    }
+
+    const seed = [
+        metadata.url || "",
+        metadata.fileName || "",
+        metadata.title || "",
+        metadata.source || "manual_ingestion",
+    ].join("|");
+
+    if (!seed.replace(/\|/g, "").trim()) {
+        return `manual:${businessId}`;
+    }
+
+    return `src:${hashText(seed).slice(0, 16)}`;
+}
 
 export class IngestionService {
     private splitter: RecursiveCharacterTextSplitter;
@@ -8,29 +61,87 @@ export class IngestionService {
 
     constructor() {
         this.splitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 600,
-            chunkOverlap: 100,
+            chunkSize: Number(process.env.RAG_CHUNK_SIZE || 700),
+            chunkOverlap: Number(process.env.RAG_CHUNK_OVERLAP || 120),
+            separators: ["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " "],
         });
         this.embeddings = new OpenAIEmbeddings({
             modelName: "text-embedding-3-small",
         });
     }
 
-    async ingestText(businessId: string, text: string, metadata: any = {}) {
+    async ingestText(businessId: string, text: string, metadata: IngestionMetadata = {}) {
         console.log(`[Ingestion] Iniciando ingesta para negocio: ${businessId}`);
         console.log(`[Ingestion] Tamaño del texto: ${text.length} caracteres`);
 
         try {
+            const normalizedText = normalizeContent(text || "");
+            if (!normalizedText) {
+                throw new Error("EMPTY_TEXT_AFTER_NORMALIZATION");
+            }
+
+            const minChunkChars = Number(process.env.RAG_MIN_CHUNK_CHARS || 60);
+            const sourceId = buildSourceId(businessId, metadata);
+
             // 1. Dividir texto en fragmentos (Chunks)
             console.log("[Ingestion] Dividiendo texto en chunks...");
-            const docs = await this.splitter.createDocuments([text]);
+            const docs = await this.splitter.createDocuments([normalizedText]);
             console.log(`[Ingestion] Creados ${docs.length} chunks`);
+
+            const candidateChunks = docs
+                .map((doc) => normalizeContent(doc.pageContent || ""))
+                .filter((chunk) => chunk.length >= minChunkChars);
+
+            if (!candidateChunks.length) {
+                throw new Error("NO_VALID_CHUNKS");
+            }
+
+            // Deduplicacion intra-documento por hash de contenido normalizado.
+            const localDedup = new Set<string>();
+            const dedupedChunks: Array<{ content: string; hash: string }> = [];
+            for (const chunk of candidateChunks) {
+                const contentHash = hashText(chunk);
+                if (localDedup.has(contentHash)) continue;
+                localDedup.add(contentHash);
+                dedupedChunks.push({ content: chunk, hash: contentHash });
+            }
+
+            // Deduplicacion contra chunks ya ingestados para el mismo sourceId.
+            const existing = await prisma.knowledgeItem.findMany({
+                where: {
+                    businessId,
+                    metadata: {
+                        path: ["sourceId"],
+                        equals: sourceId,
+                    },
+                },
+                select: { metadata: true },
+                take: 3000,
+                orderBy: { createdAt: "desc" },
+            });
+
+            const existingHashes = new Set<string>();
+            for (const row of existing) {
+                const meta = row.metadata;
+                if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+                    const hash = (meta as Record<string, unknown>).contentHash;
+                    if (typeof hash === "string" && hash) {
+                        existingHashes.add(hash);
+                    }
+                }
+            }
+
+            const finalChunks = dedupedChunks.filter((chunk) => !existingHashes.has(chunk.hash));
+            if (!finalChunks.length) {
+                console.log("[Ingestion] Todos los chunks ya existian para sourceId. Se omite ingesta.");
+                return 0;
+            }
 
             // 2. Procesar cada fragmento
             let processedItems = 0;
-            for (const doc of docs) {
-                console.log(`[Ingestion] Generando embedding para chunk ${processedItems + 1}/${docs.length}...`);
-                const embedding = await this.embeddings.embedQuery(doc.pageContent);
+            for (const chunk of finalChunks) {
+                console.log(`[Ingestion] Generando embedding para chunk ${processedItems + 1}/${finalChunks.length}...`);
+                const embedding = await this.embeddings.embedQuery(chunk.content);
                 const vectorString = `[${embedding.join(",")}]`;
 
                 // 3. Guardar en la DB con el vector
@@ -39,10 +150,20 @@ export class IngestionService {
                 const knowledgeItem = await prisma.knowledgeItem.create({
                     data: {
                         businessId,
-                        content: doc.pageContent,
+                        content: chunk.content,
                         metadata: {
                             ...metadata,
-                            source: metadata.source || "manual_ingestion"
+                            source: metadata.source || "manual_ingestion",
+                            sourceId,
+                            chunkIndex: processedItems,
+                            contentHash: chunk.hash,
+                            tokenCount: estimateTokenCount(chunk.content),
+                            title: typeof metadata.title === "string" && metadata.title.trim()
+                                ? metadata.title
+                                : (typeof metadata.fileName === "string" ? metadata.fileName : "document"),
+                            fileType: metadata.fileType || metadata.type || "txt",
+                            lang: typeof metadata.lang === "string" ? metadata.lang : detectLang(chunk.content),
+                            ingestedAt: new Date().toISOString(),
                         }
                     }
                 });
@@ -70,8 +191,9 @@ export class IngestionService {
                 processedItems++;
             }
 
-            console.log(`[Ingestion] Ingesta completada con éxito: ${docs.length} items.`);
-            return docs.length;
+            console.log(`[Ingestion] Ingesta completada con éxito: ${processedItems} items.`);
+            invalidateAiCachesForBusiness(businessId);
+            return processedItems;
         } catch (error: any) {
             console.error("[Ingestion] Error durante la ingesta:", error);
             throw error;

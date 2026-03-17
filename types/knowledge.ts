@@ -3,6 +3,15 @@ export type KnowledgeItem = {
   content: string;
   metadata?: {
     fileName?: string;
+    source?: string;
+    sourceId?: string;
+    chunkIndex?: number;
+    contentHash?: string;
+    tokenCount?: number;
+    title?: string;
+    lang?: string;
+    fileType?: string;
+    ingestedAt?: string;
   };
   createdAt?: string;
 };

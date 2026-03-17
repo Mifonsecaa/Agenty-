@@ -3,9 +3,8 @@ import { useState, useEffect } from "react";
 import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { AnimatePresence, motion } from "framer-motion";
-import { useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
+import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
 import type {
     KnowledgeItem,
     KnowledgeListResponse,
@@ -29,8 +28,7 @@ const HEALTH_POLL_MS = 15000;
 
 export default function KnowledgeBase() {
     const { activeAgent } = useAgenty();
-    const searchParams = useSearchParams();
-    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
+    const { copy } = useDashboardCopy();
     const [isDragging, setIsDragging] = useState(false);
     const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success">("idle");
     const [progress, setProgress] = useState(0);

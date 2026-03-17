@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { evolutionService } from "@/services/whatsapp/evolution";
-import { transcriptionService } from "@/services/ai/transcription";
+import { enqueueAudioTranscription, processAudioTranscriptionInline } from "@/services/ai/transcription-queue";
 import { prisma } from "@/lib/prisma";
 import { metricsService } from "@/lib/metrics";
+import { acquireConcurrencySlot, checkRateLimit } from "@/lib/security/traffic-control";
+import { incrementOpsCounter, recordOpsDuration } from "@/lib/observability/ops-metrics";
 
 export async function POST(req: Request) {
+    const startedAt = Date.now();
+    let releaseConcurrency: (() => void) | null = null;
     try {
         const body = await req.json();
         const eventType = body.event || "UNKNOWN";
@@ -34,35 +38,10 @@ export async function POST(req: Request) {
             messageData.body ||
             "";
 
-        // --- PROCESAMIENTO DE AUDIO (WHISPER) ---
-        if (messageData.message?.audioMessage) {
-            console.log(`[Webhook] Audio message from ${pushName} detected. Fetching...`);
-            try {
-                // Fetch base64 audio from Evolution API
-                const base64Audio = await evolutionService.fetchMediaBase64(instanceName, messageData);
-                if (base64Audio) {
-                    const audioBuffer = Buffer.from(base64Audio, 'base64');
-                    console.log(`[Webhook] Audio fetched (${audioBuffer.byteLength} bytes). Transcribing...`);
-                    
-                    const transcription = await transcriptionService.transcribeAudio(audioBuffer);
-                    if (transcription) {
-                        messageText = `[NOTA DE VOZ DEL CLIENTE]: ${transcription}`;
-                        console.log(`[Webhook] Audio transcribed: "${transcription}"`);
-                    } else {
-                        messageText = "[Audio ininteligible]";
-                    }
-                } else {
-                    console.warn("[Webhook] Could not fetch audio base64 from Evolution.");
-                    messageText = "[Error descargando audio]";
-                }
-            } catch (err) {
-                console.error("[Webhook] Audio processing error:", err);
-                messageText = "[Error procesando audio]";
-            }
-        }
+        const isAudioMessage = Boolean(messageData.message?.audioMessage);
 
         // Evitar responder a mensajes propios o vacíos
-        if (messageData.key.fromMe || !messageText || targetJid === body.sender) {
+        if (messageData.key.fromMe || (!messageText && !isAudioMessage) || targetJid === body.sender) {
             return NextResponse.json({ success: true });
         }
 
@@ -80,34 +59,80 @@ export async function POST(req: Request) {
 
         // --- GESTIÓN DE CONTACTO Y CONVERSACIÓN ---
         const customerPhone = targetJid.split('@')[0];
-        let customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
-        if (!customer) {
-            customer = await prisma.customer.create({
-                data: {
-                    phone: customerPhone,
-                    name: pushName
-                }
-            });
-        }
 
-        // Buscar conversación activa o crear nueva
-        let conversation = await prisma.conversation.findFirst({
-            where: {
-                businessId: agent.id,
-                customerId: customer.id,
-                status: { not: "RESOLVED" }
-            }
+        const rate = await checkRateLimit({
+            scope: "whatsapp-webhook-sender",
+            key: `${instanceName}:${customerPhone}`,
+            maxRequests: Number(process.env.WHATSAPP_RATE_LIMIT_MAX || 25),
+            windowMs: Number(process.env.WHATSAPP_RATE_LIMIT_WINDOW_MS || 60000),
         });
 
-        if (!conversation) {
-            conversation = await prisma.conversation.create({
-                data: {
-                    businessId: agent.id,
-                    customerId: customer.id,
-                    channel: "WHATSAPP",
-                    status: "ACTIVE"
-                }
+        if (!rate.allowed) {
+            console.warn(`[WhatsApp Webhook] Rate limited sender=${customerPhone} instance=${instanceName}`);
+            incrementOpsCounter("whatsapp.rate_limited");
+            return NextResponse.json({ success: true, message: "Rate limited" });
+        }
+
+        const slot = await acquireConcurrencySlot({
+            scope: "whatsapp-webhook-conversation",
+            key: `${instanceName}:${customerPhone}`,
+            maxConcurrent: Number(process.env.WHATSAPP_MAX_CONCURRENT_PER_CHAT || 1),
+        });
+
+        if (!slot) {
+            console.warn(`[WhatsApp Webhook] Concurrency limit reached sender=${customerPhone} instance=${instanceName}`);
+            incrementOpsCounter("whatsapp.concurrency_rejected");
+            return NextResponse.json({ success: true, message: "Busy" });
+        }
+        releaseConcurrency = slot;
+
+        const { conversation } = await getOrCreateConversation(agent.id, customerPhone, pushName);
+
+        if (isAudioMessage) {
+            const providerMessageId = String(messageData?.key?.id || "");
+            if (!providerMessageId) {
+                return NextResponse.json({ success: true, message: "Missing provider message id" });
+            }
+
+            const enqueue = await enqueueAudioTranscription({
+                businessId: agent.id,
+                conversationId: conversation.id,
+                channel: "WHATSAPP",
+                providerMessageId,
+                targetJid,
+                instanceName,
+                captionText: messageText || "",
+                messageData,
             });
+
+            if (enqueue.missingQueueTable && process.env.TRANSCRIPTION_INLINE_FALLBACK !== "false") {
+                await processAudioTranscriptionInline({
+                    businessId: agent.id,
+                    conversationId: conversation.id,
+                    channel: "WHATSAPP",
+                    providerMessageId,
+                    targetJid,
+                    instanceName,
+                    captionText: messageText || "",
+                    messageData,
+                });
+
+                incrementOpsCounter("whatsapp.audio_sync_fallback");
+                recordOpsDuration("whatsapp.webhook_latency_ms", Date.now() - startedAt);
+                return NextResponse.json({ success: true, queued: false, mode: "sync_fallback" });
+            }
+
+            if (enqueue.missingQueueTable) {
+                await evolutionService.sendMessage(instanceName, targetJid, "Recibi tu audio, pero la cola de transcripcion no esta disponible temporalmente.");
+                incrementOpsCounter("whatsapp.audio_queue_unavailable");
+                return NextResponse.json({ success: true, queued: false, error: "queue_unavailable" });
+            }
+
+            await evolutionService.sendMessage(instanceName, targetJid, "Recibi tu audio. Lo estoy transcribiendo y te respondo enseguida.");
+
+            incrementOpsCounter(enqueue.deduplicated ? "whatsapp.audio_queued_deduplicated" : "whatsapp.audio_queued");
+            recordOpsDuration("whatsapp.webhook_latency_ms", Date.now() - startedAt);
+            return NextResponse.json({ success: true, queued: true, deduplicated: enqueue.deduplicated });
         }
 
         // Guardar mensaje del USUARIO
@@ -172,10 +197,10 @@ export async function POST(req: Request) {
             aiResponse = lastMsg.content as string;
             
             // DETECTAR ARCHIVO
-            const mediaMatch = aiResponse.match(/\[MEDIA_URL:\s*(.*?)\]/);
+            const mediaMatch = aiResponse.match(/\[MEDIA_URL:\s*(.*?)]/);
             if (mediaMatch && mediaMatch[1]) {
                 mediaUrl = mediaMatch[1].trim();
-                aiResponse = aiResponse.replace(/\[MEDIA_URL:\s*.*?\]/, "").trim();
+                aiResponse = aiResponse.replace(/\[MEDIA_URL:\s*.*?]/, "").trim();
                 
                 // Resolver URL relativa
                 if (mediaUrl.startsWith("/")) {
@@ -227,9 +252,50 @@ export async function POST(req: Request) {
         await metricsService.incrementMetric(instanceName, 'messagesSent');
         await metricsService.incrementMetric(instanceName, 'aiResponses');
 
+        incrementOpsCounter("whatsapp.success");
+        recordOpsDuration("whatsapp.webhook_latency_ms", Date.now() - startedAt);
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error("[WhatsApp Webhook] Critical Error:", error.message || error);
+        incrementOpsCounter("whatsapp.error");
+        recordOpsDuration("whatsapp.error_latency_ms", Date.now() - startedAt);
         return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+    } finally {
+        releaseConcurrency?.();
     }
 }
+
+async function getOrCreateConversation(businessId: string, customerPhone: string, pushName: string) {
+    let customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
+    if (!customer) {
+        customer = await prisma.customer.create({
+            data: {
+                phone: customerPhone,
+                name: pushName,
+            },
+        });
+    }
+
+    let conversation = await prisma.conversation.findFirst({
+        where: {
+            businessId,
+            customerId: customer.id,
+            status: { not: "RESOLVED" },
+        },
+    });
+
+    if (!conversation) {
+        conversation = await prisma.conversation.create({
+            data: {
+                businessId,
+                customerId: customer.id,
+                channel: "WHATSAPP",
+                status: "ACTIVE",
+            },
+        });
+    }
+
+    return { customer, conversation };
+}
+

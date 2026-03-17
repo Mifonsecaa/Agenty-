@@ -18,6 +18,15 @@ enum KnowledgeIngestionJobStatus {
   DLQ
 }
 
+enum AudioTranscriptionJobStatus {
+  PENDING
+  PROCESSING
+  RETRY
+  COMPLETED
+  FAILED
+  DLQ
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -92,6 +101,7 @@ model Business {
   dailyMetrics DailyMetric[]
   knowledgeItems KnowledgeItem[]
   knowledgeIngestionJobs KnowledgeIngestionJob[]
+  audioTranscriptionJobs AudioTranscriptionJob[]
   conversations  Conversation[]
 }
 
@@ -194,6 +204,28 @@ model KnowledgeIngestionJob {
   finishedAt  DateTime?
 
   business    Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@index([status, nextRunAt])
+  @@index([fingerprint])
+}
+
+model AudioTranscriptionJob {
+  id          String                        @id @default(cuid())
+  businessId  String
+  status      AudioTranscriptionJobStatus   @default(PENDING)
+  payload     Json
+  fingerprint String?
+  attempts    Int                           @default(0)
+  maxAttempts Int                           @default(3)
+  lastError   String?
+  createdAt   DateTime                      @default(now())
+  updatedAt   DateTime                      @updatedAt
+  nextRunAt   DateTime                      @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  business    Business                      @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
   @@index([status, nextRunAt])

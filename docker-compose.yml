@@ -1,4 +1,14 @@
 services:
+  redis:
+    container_name: agenty_redis
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
   evolution_api:
     container_name: evolution_api
     image: atendai/evolution-api:v2.1.1
@@ -51,3 +61,4 @@ services:
 volumes:
   evolution_instances:
   postgres_data_v3_clean:
+  redis_data:

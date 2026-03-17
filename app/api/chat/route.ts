@@ -6,6 +6,8 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { aiService } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
+import { acquireConcurrencySlot, buildRequesterKey, checkRateLimit } from '@/lib/security/traffic-control';
+import { incrementOpsCounter, recordOpsDuration } from '@/lib/observability/ops-metrics';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
@@ -16,6 +18,23 @@ type IncomingMessage = {
   role: string;
   content: string;
 };
+
+function streamTextResponse(text: string) {
+  const encoder = new TextEncoder();
+  const chunks = text.match(/.{1,24}(\s|$)/g) || [text];
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', delta: chunk })}\n\n`));
+        await new Promise((resolve) => setTimeout(resolve, 18));
+      }
+
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
+      controller.close();
+    },
+  });
+}
 
 function normalizeMessages(messages: IncomingMessage[]): ChatMessage[] {
   return messages
@@ -70,7 +89,10 @@ async function generateDemoReply(messages: ChatMessage[], provider: Provider, sy
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  let releaseConcurrency: (() => void) | null = null;
   try {
+    const requesterKey = buildRequesterKey(request);
     const body = await request.json();
     const {
       messages,
@@ -79,6 +101,7 @@ export async function POST(request: Request) {
       demoContext = '',
       agentId,
       systemPrompt,
+      stream = false,
     } = body as {
       messages: IncomingMessage[];
       provider?: Provider;
@@ -86,7 +109,28 @@ export async function POST(request: Request) {
       demoContext?: string;
       agentId?: string;
       systemPrompt?: string;
+      stream?: boolean;
     };
+
+    const rate = await checkRateLimit({
+      scope: 'api-chat',
+      key: requesterKey,
+      maxRequests: Number(process.env.CHAT_RATE_LIMIT_MAX || 30),
+      windowMs: Number(process.env.CHAT_RATE_LIMIT_WINDOW_MS || 60000),
+    });
+
+    if (!rate.allowed) {
+      incrementOpsCounter('chat.rate_limited');
+      return NextResponse.json(
+        { error: 'Demasiadas solicitudes. Intenta de nuevo en unos segundos.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'Faltan mensajes' }, { status: 400 });
@@ -98,6 +142,18 @@ export async function POST(request: Request) {
     }
 
     if (isDemo) {
+      const demoConcurrency = await acquireConcurrencySlot({
+        scope: 'api-chat-demo',
+        key: requesterKey,
+        maxConcurrent: Number(process.env.CHAT_DEMO_MAX_CONCURRENT || 2),
+      });
+
+      if (!demoConcurrency) {
+        incrementOpsCounter('chat.concurrency_rejected.demo');
+        return NextResponse.json({ error: 'Servidor ocupado. Intenta nuevamente.' }, { status: 503 });
+      }
+      releaseConcurrency = demoConcurrency;
+
       let demoSystemPrompt =
         "Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai. Responde corto, útil y amigable.";
 
@@ -106,6 +162,19 @@ export async function POST(request: Request) {
       }
 
       const content = await generateDemoReply(normalizedMessages, provider, demoSystemPrompt);
+
+      if (stream) {
+        incrementOpsCounter('chat.success');
+        recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+        return new Response(streamTextResponse(content), {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+          },
+        });
+      }
+
       return NextResponse.json({ role: 'assistant', content });
     }
 
@@ -118,6 +187,18 @@ export async function POST(request: Request) {
     if (!agentId) {
       return NextResponse.json({ error: 'agentId es requerido en modo privado' }, { status: 400 });
     }
+
+    const privateConcurrency = await acquireConcurrencySlot({
+      scope: 'api-chat-agent',
+      key: `${agentId}:${requesterKey}`,
+      maxConcurrent: Number(process.env.CHAT_AGENT_MAX_CONCURRENT || 2),
+    });
+
+    if (!privateConcurrency) {
+      incrementOpsCounter('chat.concurrency_rejected.private');
+      return NextResponse.json({ error: 'Servidor ocupado. Intenta nuevamente.' }, { status: 503 });
+    }
+    releaseConcurrency = privateConcurrency;
 
     const business = await prisma.business.findFirst({
       where: {
@@ -137,9 +218,28 @@ export async function POST(request: Request) {
       systemPrompt,
     });
 
+    if (stream) {
+      incrementOpsCounter('chat.success');
+      recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+      return new Response(streamTextResponse(content || ''), {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
+    }
+
+    incrementOpsCounter('chat.success');
+    recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+
     return NextResponse.json({ role: 'assistant', content });
   } catch (error: any) {
     console.error('[API Chat] Error:', error);
+    incrementOpsCounter('chat.error');
+    recordOpsDuration('chat.error_latency_ms', Date.now() - startedAt);
     return NextResponse.json({ error: `Error del servidor: ${error.message || 'desconocido'}` }, { status: 500 });
+  } finally {
+    releaseConcurrency?.();
   }
 }

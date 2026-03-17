@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
+import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
 
 type ActionConfirmationPanelProps = {
   message: ReactNode;
@@ -24,8 +23,7 @@ export default function ActionConfirmationPanel({
   isLoading = false,
   disabled = false,
 }: ActionConfirmationPanelProps) {
-  const searchParams = useSearchParams();
-  const copy = getDashboardCopy(searchParams.get("lang") || undefined);
+  const { copy } = useDashboardCopy();
   const blocked = isLoading || disabled;
 
   return (
