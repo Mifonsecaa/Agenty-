@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { useRouter } from "next/navigation";
+import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
+import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
 
 type ToolCard = {
     id: number;
@@ -16,6 +18,7 @@ type ToolCard = {
 
 export default function ToolsStore() {
     const router = useRouter();
+    const { copy } = useDashboardCopy();
     const { activeAgent, saveAgent, updateActiveAgentConfig } = useAgenty();
     const [tools, setTools] = useState<ToolCard[]>([
         {
@@ -57,6 +60,7 @@ export default function ToolsStore() {
     ]);
     const [savingToolId, setSavingToolId] = useState<number | null>(null);
     const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [pendingDeactivateToolId, setPendingDeactivateToolId] = useState<number | null>(null);
 
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
@@ -104,7 +108,7 @@ export default function ToolsStore() {
         if (!saved) {
             // Rollback si falla persistencia
             setTools(previousTools);
-            setStatusMessage({ type: "error", text: "No se pudo actualizar la herramienta. Intenta de nuevo." });
+            setStatusMessage({ type: "error", text: copy.tools.updateError });
             setSavingToolId(null);
             return;
         }
@@ -113,7 +117,7 @@ export default function ToolsStore() {
             config: mergedConfig,
         });
 
-        setStatusMessage({ type: "success", text: "Herramientas actualizadas correctamente." });
+        setStatusMessage({ type: "success", text: copy.tools.updateSuccess });
         setSavingToolId(null);
     };
 
@@ -127,13 +131,31 @@ export default function ToolsStore() {
             };
 
             const target = configTargetBySlug[tool.slug];
-            setStatusMessage({ type: "success", text: `Abriendo configuración de ${tool.name}...` });
+            setStatusMessage({ type: "success", text: copy.tools.openingConfig(tool.name) });
             router.push(target);
             return;
         }
 
         handleToggleTool(tool.id);
     };
+
+    const openDeactivateConfirm = (toolId: number) => {
+        if (savingToolId !== null) return;
+        setPendingDeactivateToolId(toolId);
+    };
+
+    const closeDeactivateConfirm = () => {
+        if (savingToolId !== null) return;
+        setPendingDeactivateToolId(null);
+    };
+
+    const confirmDeactivateTool = async () => {
+        if (pendingDeactivateToolId === null) return;
+        await handleToggleTool(pendingDeactivateToolId);
+        setPendingDeactivateToolId(null);
+    };
+
+    const pendingDeactivateTool = tools.find((tool) => tool.id === pendingDeactivateToolId) || null;
 
 
     return (
@@ -193,7 +215,7 @@ export default function ToolsStore() {
 
                         {tool.status === "connected" && (
                             <button
-                                onClick={() => handleToggleTool(tool.id)}
+                                onClick={() => openDeactivateConfirm(tool.id)}
                                 disabled={savingToolId !== null}
                                 className="mt-3 text-xs text-white/40 hover:text-red-400 transition-colors disabled:opacity-50"
                             >
@@ -208,6 +230,20 @@ export default function ToolsStore() {
                     </div>
                 ))}
             </div>
+
+            {pendingDeactivateTool && (
+                <ActionConfirmationPanel
+                    message={copy.tools.deactivateConfirm(pendingDeactivateTool.name)}
+                    details={copy.tools.deactivateDetails}
+                    confirmLabel={copy.confirmation.labels.deactivate}
+                    cancelLabel={copy.confirmation.cancel}
+                    isLoading={savingToolId === pendingDeactivateTool.id}
+                    onCancel={closeDeactivateConfirm}
+                    onConfirm={() => {
+                        void confirmDeactivateTool();
+                    }}
+                />
+            )}
 
             {statusMessage && (
                 <p className={`text-sm ${statusMessage.type === "success" ? "text-emerald-400" : "text-red-400"}`}>

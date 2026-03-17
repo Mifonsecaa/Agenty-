@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
+import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Platform = "whatsapp" | "telegram" | "instagram";
@@ -248,10 +250,13 @@ function ConnectionModal({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ConnectionsManager({ businessId }: { businessId: string }) {
+  const { copy } = useDashboardCopy();
+
   const [status, setStatus] = useState<ConnectionStatus>({ whatsapp: false, telegram: false, instagram: false });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<ModalState>({ platform: null, open: false });
   const [disconnecting, setDisconnecting] = useState<Platform | null>(null);
+  const [pendingDisconnectPlatform, setPendingDisconnectPlatform] = useState<Platform | null>(null);
 
   // Fetch connection status
   useEffect(() => {
@@ -294,17 +299,33 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
       });
       if (res.ok) setStatus((p) => ({ ...p, [platform]: false }));
     } catch (err) {
-      console.error("Error desconectando:", err);
+      console.error(copy.connections.disconnectError, err);
     } finally {
       setDisconnecting(null);
     }
   };
 
+  const openDisconnectConfirm = (platform: Platform) => {
+    if (disconnecting) return;
+    setPendingDisconnectPlatform(platform);
+  };
+
+  const closeDisconnectConfirm = () => {
+    if (disconnecting) return;
+    setPendingDisconnectPlatform(null);
+  };
+
+  const confirmDisconnect = async () => {
+    if (!pendingDisconnectPlatform) return;
+    await handleDisconnect(pendingDisconnectPlatform);
+    setPendingDisconnectPlatform(null);
+  };
+
   return (
     <div className="w-full">
       <div className="mb-6">
-        <h2 className="text-white font-bold text-xl">Canales de Comunicación</h2>
-        <p className="text-slate-400 text-sm mt-1">Conecta tu agente a las plataformas donde están tus clientes.</p>
+        <h2 className="text-white font-bold text-xl">Canales de Comunicacion</h2>
+        <p className="text-slate-400 text-sm mt-1">Conecta tu agente a las plataformas donde estan tus clientes.</p>
       </div>
 
       <div className="grid gap-4">
@@ -323,7 +344,6 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
               }}
             >
               <div className="flex items-center justify-between">
-                {/* Left: icon + info */}
                 <div className="flex items-center gap-4">
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -344,7 +364,6 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
                   </div>
                 </div>
 
-                {/* Right: actions */}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {loading ? (
                     <div className="w-20 h-8 rounded-lg animate-pulse" style={{ background: "rgba(148,163,184,0.1)" }} />
@@ -358,7 +377,7 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
                         Editar
                       </button>
                       <button
-                        onClick={() => handleDisconnect(platform)}
+                        onClick={() => openDisconnectConfirm(platform)}
                         disabled={isDisconnecting}
                         className="px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 transition-all disabled:opacity-50"
                         style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
@@ -378,7 +397,6 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
                 </div>
               </div>
 
-              {/* Connected details */}
               {isConnected && (
                 <div
                   className="mt-4 pt-4 flex items-center gap-2 text-xs text-slate-500"
@@ -396,7 +414,20 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
         })}
       </div>
 
-      {/* Modal */}
+      {pendingDisconnectPlatform && (
+        <ActionConfirmationPanel
+          message={copy.connections.disconnectConfirm(PLATFORMS[pendingDisconnectPlatform].name)}
+          details={copy.connections.disconnectDetails}
+          confirmLabel={copy.confirmation.labels.disconnect}
+          cancelLabel={copy.confirmation.cancel}
+          isLoading={disconnecting === pendingDisconnectPlatform}
+          onCancel={closeDisconnectConfirm}
+          onConfirm={() => {
+            void confirmDisconnect();
+          }}
+        />
+      )}
+
       {modal.open && modal.platform && (
         <ConnectionModal
           platform={modal.platform}
