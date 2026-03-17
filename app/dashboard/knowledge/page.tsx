@@ -3,7 +3,17 @@ import { useState, useEffect } from "react";
 import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { AnimatePresence, motion } from "framer-motion";
-import type { KnowledgeItem, KnowledgeListResponse, KnowledgeJobResponse } from "@/types/knowledge";
+import { useSearchParams } from "next/navigation";
+import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
+import type {
+    KnowledgeItem,
+    KnowledgeListResponse,
+    KnowledgeJobResponse,
+    KnowledgeQueueHealthResponse,
+    KnowledgeJobReplayResponse,
+    KnowledgeJobCleanupResponse,
+} from "@/types/knowledge";
 import { toast } from "sonner";
 
 const KNOWLEDGE_LOADING_PHRASES = [
@@ -15,9 +25,12 @@ const KNOWLEDGE_LOADING_PHRASES = [
 const SHIFT_TIP_STORAGE_KEY = "knowledge.shift_tip_dismissed";
 const JOB_POLL_INTERVAL_MS = 1800;
 const JOB_POLL_TIMEOUT_MS = 120000;
+const HEALTH_POLL_MS = 15000;
 
 export default function KnowledgeBase() {
     const { activeAgent } = useAgenty();
+    const searchParams = useSearchParams();
+    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const [isDragging, setIsDragging] = useState(false);
     const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success">("idle");
     const [progress, setProgress] = useState(0);
@@ -31,6 +44,17 @@ export default function KnowledgeBase() {
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
     const [showShiftTip, setShowShiftTip] = useState(false);
+    const [queueHealth, setQueueHealth] = useState<KnowledgeQueueHealthResponse["data"] | null>(null);
+    const [healthError, setHealthError] = useState<string | null>(null);
+    const [lastHealthAt, setLastHealthAt] = useState<string | null>(null);
+    const [isHealthLoading, setIsHealthLoading] = useState(false);
+    const [isReplayingJobs, setIsReplayingJobs] = useState(false);
+    const [isCleaningJobs, setIsCleaningJobs] = useState(false);
+    const [isSingleDeleting, setIsSingleDeleting] = useState(false);
+    const [cleanupRetentionDays, setCleanupRetentionDays] = useState(14);
+    const [pendingCleanupRetentionDays, setPendingCleanupRetentionDays] = useState(14);
+    const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(null);
+    const [confirmDialog, setConfirmDialog] = useState<null | "single-delete" | "bulk-delete" | "cleanup">(null);
 
     const loadingMessage = KNOWLEDGE_LOADING_PHRASES[loadingPhraseIndex % KNOWLEDGE_LOADING_PHRASES.length];
 
@@ -52,6 +76,22 @@ export default function KnowledgeBase() {
             fetchKnowledge();
         }
     }, [activeAgent]);
+
+    useEffect(() => {
+        if (!activeAgent?.id) {
+            setQueueHealth(null);
+            setHealthError(null);
+            setLastHealthAt(null);
+            return;
+        }
+
+        void fetchQueueHealth({ silent: false });
+        const interval = setInterval(() => {
+            void fetchQueueHealth({ silent: true });
+        }, HEALTH_POLL_MS);
+
+        return () => clearInterval(interval);
+    }, [activeAgent?.id]);
 
     useEffect(() => {
         try {
@@ -92,28 +132,52 @@ export default function KnowledgeBase() {
         }
     };
 
+    const fetchQueueHealth = async ({ silent }: { silent: boolean }) => {
+        if (!activeAgent?.id) return;
+        if (!silent) setIsHealthLoading(true);
+
+        try {
+            const res = await fetch(`/api/knowledge/jobs/health?businessId=${activeAgent.id}`);
+            const data: KnowledgeQueueHealthResponse = await res.json().catch(() => ({ success: false, error: copy.knowledge.healthReadError }));
+
+            if (!res.ok || !data.success || !data.data) {
+                setHealthError(data.error || copy.knowledge.healthFetchError);
+                return;
+            }
+
+            setQueueHealth(data.data);
+            setHealthError(null);
+            setLastHealthAt(new Date().toISOString());
+        } catch (error) {
+            setHealthError(copy.knowledge.healthFetchError);
+        } finally {
+            if (!silent) setIsHealthLoading(false);
+        }
+    };
+
     const waitForJobCompletion = async (jobId: string) => {
         const startedAt = Date.now();
         while (Date.now() - startedAt < JOB_POLL_TIMEOUT_MS) {
             const res = await fetch(`/api/knowledge/jobs/${jobId}`);
-            const data: KnowledgeJobResponse = await res.json().catch(() => ({ success: false, error: "Error leyendo estado del job" }));
+            const data: KnowledgeJobResponse = await res.json().catch(() => ({ success: false, error: copy.knowledge.jobStatusReadError }));
 
             if (!res.ok || !data.success || !data.data) {
-                throw new Error(data.error || "No se pudo consultar el estado del procesamiento");
+                throw new Error(data.error || copy.knowledge.jobStatusFetchError);
             }
 
             if (data.data.status === "COMPLETED") {
+                void fetchQueueHealth({ silent: true });
                 return data.data;
             }
 
             if (data.data.status === "DLQ" || data.data.status === "FAILED") {
-                throw new Error(data.data.lastError || "El procesamiento falló");
+                throw new Error(data.data.lastError || copy.knowledge.jobFailed);
             }
 
             await new Promise((resolve) => setTimeout(resolve, JOB_POLL_INTERVAL_MS));
         }
 
-        throw new Error("Tiempo de espera agotado para el procesamiento del documento");
+        throw new Error(copy.knowledge.jobTimeout);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -145,7 +209,7 @@ export default function KnowledgeBase() {
         ];
         
         if (!validTypes.includes(file.type) && !file.name.endsWith(".txt") && !file.name.endsWith(".md")) {
-            toast.error(`El tipo de archivo "${file.type}" no es soportado. Sube .txt, .md, .csv, .json o PDF.`);
+            toast.error(copy.knowledge.unsupportedFileType(file.type));
             return;
         }
 
@@ -180,17 +244,18 @@ export default function KnowledgeBase() {
 
                     if (data.queued && data.jobId) {
                         setProgress(55);
-                        toast.info(data.message || "Documento en cola, iniciando procesamiento...");
+                        toast.info(data.message || copy.knowledge.uploadQueued);
                         await waitForJobCompletion(data.jobId);
                     }
 
                     setProgress(100);
                     setUploadState("success");
-                    toast.success("Conocimiento cargado correctamente");
+                    toast.success(copy.knowledge.uploadSuccess);
                     setTimeout(() => {
                         setUploadState("idle");
                         setUploadingFileName("");
                         fetchKnowledge();
+                        void fetchQueueHealth({ silent: true });
                     }, 1200);
                 } else {
                     const errorData: KnowledgeListResponse = await res.json().catch(() => ({ error: "Error desconocido", success: false }));
@@ -213,36 +278,51 @@ export default function KnowledgeBase() {
             console.error("Upload error:", error);
             setUploadState("idle");
             setUploadingFileName("");
-            toast.error("No se pudo subir el archivo");
+            toast.error(copy.knowledge.uploadError);
         }
     };
 
-    const handleDelete = async (itemId: string) => {
-        if (!activeAgent?.id) return;
-        if (!confirm("¿Seguro que quieres borrar este conocimiento?")) return;
+    const openSingleDeleteConfirm = (itemId: string) => {
+        setPendingDeleteItemId(itemId);
+        setConfirmDialog("single-delete");
+    };
+
+    const closeConfirmDialog = () => {
+        if (isBulkDeleting || isCleaningJobs || isSingleDeleting) return;
+        setConfirmDialog(null);
+        setPendingDeleteItemId(null);
+    };
+
+    const handleDelete = async () => {
+        if (!activeAgent?.id || !pendingDeleteItemId) return;
+        setIsSingleDeleting(true);
         try {
             const res = await fetch("/api/knowledge", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessId: activeAgent.id, itemId })
+                body: JSON.stringify({ businessId: activeAgent.id, itemId: pendingDeleteItemId })
             });
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                toast.error(data.error || "No se pudo eliminar el fragmento");
+                toast.error(data.error || copy.knowledge.deleteError);
                 return;
             }
 
-            toast.success("Fragmento eliminado");
+            toast.success(copy.knowledge.deleteSuccess);
             setSelectedIds((prev) => {
                 const next = new Set(prev);
-                next.delete(itemId);
+                next.delete(pendingDeleteItemId);
                 return next;
             });
+            closeConfirmDialog();
             fetchKnowledge();
+            void fetchQueueHealth({ silent: true });
         } catch (error) {
             console.error("Delete error:", error);
-            toast.error("No se pudo eliminar el fragmento");
+            toast.error(copy.knowledge.deleteError);
+        } finally {
+            setIsSingleDeleting(false);
         }
     };
 
@@ -286,10 +366,13 @@ export default function KnowledgeBase() {
         setLastSelectedIndex(activeFiles.length > 0 ? activeFiles.length - 1 : null);
     };
 
+    const openBulkDeleteConfirm = () => {
+        if (selectedIds.size === 0 || isBulkDeleting) return;
+        setConfirmDialog("bulk-delete");
+    };
+
     const handleBulkDelete = async () => {
         if (!activeAgent?.id || selectedIds.size === 0 || isBulkDeleting) return;
-
-        if (!confirm(`¿Seguro que quieres borrar ${selectedIds.size} fragmento(s)?`)) return;
 
         setIsBulkDeleting(true);
         try {
@@ -302,7 +385,7 @@ export default function KnowledgeBase() {
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                toast.error(data.error || "No se pudo completar el borrado masivo");
+                toast.error(data.error || copy.knowledge.bulkDeleteError);
                 return;
             }
 
@@ -312,10 +395,12 @@ export default function KnowledgeBase() {
 
             setSelectedIds(new Set());
             setLastSelectedIndex(null);
+            closeConfirmDialog();
             await fetchKnowledge();
+            await fetchQueueHealth({ silent: true });
         } catch (error) {
             console.error("Bulk delete error:", error);
-            toast.error("No se pudo completar el borrado masivo");
+            toast.error(copy.knowledge.bulkDeleteError);
         } finally {
             setIsBulkDeleting(false);
         }
@@ -335,14 +420,14 @@ export default function KnowledgeBase() {
 
         const url = websiteUrl.trim();
         if (!url) {
-            setWebsiteSyncMessage({ type: "error", text: "Ingresa una URL para sincronizar." });
+            setWebsiteSyncMessage({ type: "error", text: copy.knowledge.websiteMissingUrl });
             return;
         }
 
         try {
             new URL(url);
         } catch {
-            setWebsiteSyncMessage({ type: "error", text: "La URL no es válida." });
+            setWebsiteSyncMessage({ type: "error", text: copy.knowledge.websiteInvalidUrl });
             return;
         }
 
@@ -363,25 +448,121 @@ export default function KnowledgeBase() {
 
             const data: KnowledgeListResponse = await res.json().catch(() => ({ success: false, error: "Error desconocido" }));
             if (!res.ok || !data.success) {
-                setWebsiteSyncMessage({ type: "error", text: data.error || "No se pudo sincronizar la URL." });
+                setWebsiteSyncMessage({ type: "error", text: data.error || copy.knowledge.websiteSyncError });
                 return;
             }
 
             if (data.queued && data.jobId) {
-                setWebsiteSyncMessage({ type: "success", text: "URL en cola. Procesando contenido..." });
+                setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteQueued });
                 await waitForJobCompletion(data.jobId);
             }
 
-            setWebsiteSyncMessage({ type: "success", text: "Sitio sincronizado y agregado a la base de conocimiento." });
+            setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteSuccess });
             setWebsiteUrl("");
             await fetchKnowledge();
+            await fetchQueueHealth({ silent: true });
         } catch (error) {
             console.error("Error syncing website:", error);
-            setWebsiteSyncMessage({ type: "error", text: "No se pudo sincronizar la URL." });
+            setWebsiteSyncMessage({ type: "error", text: copy.knowledge.websiteSyncError });
         } finally {
             setIsSyncingWebsite(false);
         }
     };
+
+    const handleReplayQueue = async () => {
+        if (!activeAgent?.id || isReplayingJobs) return;
+
+        setIsReplayingJobs(true);
+        try {
+            const res = await fetch("/api/knowledge/jobs/replay", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ businessId: activeAgent.id, limit: 50 }),
+            });
+
+            const data: KnowledgeJobReplayResponse = await res.json().catch(() => ({
+                success: false,
+                replayedCount: 0,
+                replayedIds: [],
+                error: "Error desconocido",
+            }));
+
+            if (!res.ok || !data.success) {
+                toast.error(data.error || copy.knowledge.replayError);
+                return;
+            }
+
+            toast.success(copy.knowledge.replaySuccess(data.replayedCount));
+            await fetchQueueHealth({ silent: true });
+        } catch (error) {
+            toast.error(copy.knowledge.replayError);
+        } finally {
+            setIsReplayingJobs(false);
+        }
+    };
+
+    const openCleanupConfirm = () => {
+        const retentionDays = Math.max(1, Math.min(365, cleanupRetentionDays || 14));
+        setPendingCleanupRetentionDays(retentionDays);
+        setConfirmDialog("cleanup");
+    };
+
+    const handleCleanupQueue = async () => {
+        if (!activeAgent?.id || isCleaningJobs) return;
+
+        const retentionDays = Math.max(1, Math.min(365, pendingCleanupRetentionDays || 14));
+
+        setIsCleaningJobs(true);
+        try {
+            const res = await fetch("/api/knowledge/jobs/cleanup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ businessId: activeAgent.id, retentionDays }),
+            });
+
+            const data: KnowledgeJobCleanupResponse = await res.json().catch(() => ({
+                success: false,
+                deletedCount: 0,
+                retentionDays,
+                cutoff: new Date().toISOString(),
+                error: "Error desconocido",
+            }));
+
+            if (!res.ok || !data.success) {
+                toast.error(data.error || copy.knowledge.cleanupError);
+                return;
+            }
+
+            toast.success(copy.knowledge.cleanupSuccess(data.deletedCount));
+            await fetchQueueHealth({ silent: true });
+            closeConfirmDialog();
+        } catch (error) {
+            toast.error(copy.knowledge.cleanupError);
+        } finally {
+            setIsCleaningJobs(false);
+        }
+    };
+
+    const confirmDialogMessage =
+        confirmDialog === "bulk-delete"
+            ? copy.knowledge.deleteBulkConfirm(selectedIds.size)
+            : confirmDialog === "single-delete"
+                ? copy.knowledge.deleteFragmentConfirm
+                : copy.knowledge.cleanupConfirm(pendingCleanupRetentionDays);
+
+    const confirmDialogDetails =
+        confirmDialog === "cleanup"
+            ? copy.knowledge.cleanupDetails
+            : undefined;
+
+    const confirmDialogLabel =
+        confirmDialog === "bulk-delete"
+            ? copy.confirmation.labels.bulkDelete
+            : confirmDialog === "single-delete"
+                ? copy.confirmation.labels.delete
+                : copy.confirmation.labels.cleanup;
+
+    const isConfirmDialogLoading = isBulkDeleting || isCleaningJobs || isSingleDeleting;
 
     return (
         <div className="h-full flex flex-col relative z-10 overflow-hidden">
@@ -443,7 +624,7 @@ export default function KnowledgeBase() {
                                     </div>
                                     {uploadingFileName && (
                                         <p className="text-xs text-white/50 mt-2 max-w-55 truncate">
-                                            Procesando: {uploadingFileName}
+                                            {copy.knowledge.processingFilePrefix} {uploadingFileName}
                                         </p>
                                     )}
                                     <div className="w-full max-w-37.5 h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
@@ -535,7 +716,7 @@ export default function KnowledgeBase() {
                                 {selectedIds.size === activeFiles.length && activeFiles.length > 0 ? "Limpiar selección" : "Seleccionar todo"}
                             </button>
                             <button
-                                onClick={handleBulkDelete}
+                                onClick={openBulkDeleteConfirm}
                                 disabled={selectedIds.size === 0 || isBulkDeleting}
                                 className="text-xs px-3 py-1 rounded-full border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1"
                             >
@@ -547,6 +728,92 @@ export default function KnowledgeBase() {
                             </span>
                             </div>
                         </div>
+                    </div>
+
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <p className="text-white/50">Estado cola</p>
+                            <p className={`font-semibold ${queueHealth?.health === "degraded" ? "text-amber-300" : "text-emerald-300"}`}>
+                                {isHealthLoading ? "Cargando..." : queueHealth?.health === "degraded" ? "Degradado" : "OK"}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <p className="text-white/50">Backlog</p>
+                            <p className="font-semibold text-white/85">{queueHealth?.backlog ?? 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <p className="text-white/50">DLQ</p>
+                            <p className="font-semibold text-red-300">{queueHealth?.dlq ?? 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 flex items-center justify-between gap-2">
+                            <div>
+                                <p className="text-white/50">Última lectura</p>
+                                <p className="font-semibold text-white/85">{lastHealthAt ? new Date(lastHealthAt).toLocaleTimeString() : "-"}</p>
+                            </div>
+                            <button
+                                onClick={() => void fetchQueueHealth({ silent: false })}
+                                className="rounded border border-white/10 px-2 py-1 text-[10px] text-white/70 hover:bg-white/10 transition-colors"
+                            >
+                                Refrescar
+                            </button>
+                        </div>
+                    </div>
+
+                    {healthError && (
+                        <p className="mb-3 text-[11px] text-amber-300">{healthError}</p>
+                    )}
+
+                    {confirmDialog && (
+                        <ActionConfirmationPanel
+                            message={confirmDialogMessage}
+                            details={confirmDialogDetails}
+                            confirmLabel={confirmDialogLabel}
+                            cancelLabel={copy.confirmation.cancel}
+                            isLoading={isConfirmDialogLoading}
+                            onCancel={closeConfirmDialog}
+                            onConfirm={() => {
+                                if (confirmDialog === "bulk-delete") {
+                                    void handleBulkDelete();
+                                } else if (confirmDialog === "single-delete") {
+                                    void handleDelete();
+                                } else {
+                                    void handleCleanupQueue();
+                                }
+                            }}
+                        />
+                    )}
+
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <button
+                            onClick={handleReplayQueue}
+                            disabled={!activeAgent?.id || isReplayingJobs}
+                            className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {isReplayingJobs ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            Reintentar DLQ/FAILED
+                        </button>
+
+                        <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+                            <label htmlFor="cleanup-days" className="text-[11px] text-white/60">Retención (días)</label>
+                            <input
+                                id="cleanup-days"
+                                type="number"
+                                min={1}
+                                max={365}
+                                value={cleanupRetentionDays}
+                                onChange={(e) => setCleanupRetentionDays(Number(e.target.value || 14))}
+                                className="w-16 rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-white focus:outline-none"
+                            />
+                        </div>
+
+                        <button
+                            onClick={openCleanupConfirm}
+                            disabled={!activeAgent?.id || isCleaningJobs}
+                            className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {isCleaningJobs ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            Limpiar jobs antiguos
+                        </button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
@@ -587,7 +854,7 @@ export default function KnowledgeBase() {
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <button
-                                        onClick={() => handleDelete(file.id)}
+                                        onClick={() => openSingleDeleteConfirm(file.id)}
                                         className="p-2 text-white/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                                     >
                                         <Trash2 className="w-4 h-4" />
@@ -596,6 +863,7 @@ export default function KnowledgeBase() {
                             </div>
                         ))}
                     </div>
+
                 </div>
             </div>
         </div>

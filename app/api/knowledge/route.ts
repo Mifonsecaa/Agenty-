@@ -8,6 +8,8 @@ import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, 
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
 
+const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
+
 function stripHtmlToText(html: string) {
     return html
         .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -117,9 +119,11 @@ export async function POST(req: Request) {
         }
 
         // Kickoff best-effort para procesar rápido en entornos sin worker dedicado.
-        void processKnowledgeQueueBatch(1).catch((queueError) => {
-            console.error("[API Knowledge] Queue kickoff error:", queueError);
-        });
+        if (ENABLE_INLINE_QUEUE_KICKOFF) {
+            void processKnowledgeQueueBatch(1).catch((queueError) => {
+                console.error("[API Knowledge] Queue kickoff error:", queueError);
+            });
+        }
 
         return NextResponse.json({
             success: true,
