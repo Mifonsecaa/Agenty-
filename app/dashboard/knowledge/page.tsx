@@ -204,7 +204,8 @@ export default function KnowledgeBase() {
         // Check file size
         const MAX_SIZE_MB = 10;
         if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-            toast.error(copy.knowledge.fileTooLarge || `El archivo es demasiado grande (max ${MAX_SIZE_MB}MB).`);
+            // Le agregamos (as any) para que TypeScript no bloquee la compilación
+            toast.error((copy.knowledge as any).fileTooLarge || `El archivo es demasiado grande (max ${MAX_SIZE_MB}MB).`);
             return;
         }
 
