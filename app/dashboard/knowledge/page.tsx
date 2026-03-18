@@ -201,8 +201,8 @@ export default function KnowledgeBase() {
     const handleUpload = async (file: File) => {
         if (!activeAgent?.id || uploadState === "uploading") return;
 
-        // Check file size (limit to 3MB to avoid Vercel 4.5MB body limit with base64 overhead)
-        const MAX_SIZE_MB = 3;
+        // Check file size
+        const MAX_SIZE_MB = 10;
         if (file.size > MAX_SIZE_MB * 1024 * 1024) {
             toast.error(copy.knowledge.fileTooLarge || `El archivo es demasiado grande (max ${MAX_SIZE_MB}MB).`);
             return;
