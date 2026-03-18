@@ -41,6 +41,35 @@ async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
     }
 }
 
+function extractSpreadsheetText(buffer: Buffer) {
+    const XLSX = require("xlsx");
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const selectedSheets = workbook.SheetNames.slice(0, 4);
+    const blocks: string[] = [];
+
+    for (const sheetName of selectedSheets) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
+
+        const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(sheet, {
+            header: 1,
+            raw: false,
+            blankrows: false,
+        });
+
+        const limitedRows = rows.slice(0, 220);
+        const lines = limitedRows
+            .map((row) => row.map((cell) => (cell ?? "").toString().trim()).join(" | ").trim())
+            .filter(Boolean);
+
+        if (lines.length > 0) {
+            blocks.push(`[HOJA: ${sheetName}]\n${lines.join("\n")}`);
+        }
+    }
+
+    return blocks.join("\n\n");
+}
+
 function stripHtmlToText(html: string) {
     return html
         .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -86,6 +115,12 @@ export async function POST(req: Request) {
         }
 
         const isTextLike = safeType.startsWith("text/") || ["application/json", "text/csv"].includes(safeType) || /\.(txt|md|csv|json)$/i.test(name || "");
+        const isSpreadsheet =
+            [
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel.sheet.macroEnabled.12",
+            ].includes(safeType) ||
+            /\.(xlsx|xlsm)$/i.test(name || "");
         if (!url && name) {
             uploadedBuffer = isTextLike
                 ? Buffer.from(text || "", "utf-8")
@@ -129,6 +164,14 @@ export async function POST(req: Request) {
             }
             const visualDescription = await describeImageForKnowledge(uploadedBuffer, safeType);
             text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+        } else if (isSpreadsheet) {
+            if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
+                return NextResponse.json({ error: "El archivo Excel no contiene datos para procesar" }, { status: 400 });
+            }
+            const extractedText = extractSpreadsheetText(uploadedBuffer);
+            text = extractedText
+                ? `[EXCEL: ${name || "archivo"}]\n${extractedText}`
+                : `[EXCEL: ${name || "archivo"}] Archivo subido sin celdas legibles.`;
         } else if (isTextLike) {
             text = text || "";
         } else {

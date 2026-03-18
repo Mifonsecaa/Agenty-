@@ -19,7 +19,7 @@ const dashboardCopyByLocale = {
     deleteAgentDetails: "Esta accion es irreversible.",
   },
   knowledge: {
-    unsupportedFileType: (type: string) => `El tipo de archivo \"${type}\" no es soportado. Sube .txt, .md, .csv, .json o PDF.`,
+    unsupportedFileType: (type: string) => `El tipo de archivo \"${type}\" no es soportado. Sube .txt, .md, .csv, .json, .xlsx, .xlsm, imagenes o PDF.`,
     uploadQueued: "Documento en cola, iniciando procesamiento...",
     uploadSuccess: "Conocimiento cargado correctamente",
     uploadError: "No se pudo subir el archivo",
@@ -79,7 +79,7 @@ const dashboardCopyByLocale = {
       deleteAgentDetails: "This action is irreversible.",
     },
     knowledge: {
-      unsupportedFileType: (type: string) => `File type \"${type}\" is not supported. Upload .txt, .md, .csv, .json, or PDF.`,
+      unsupportedFileType: (type: string) => `File type \"${type}\" is not supported. Upload .txt, .md, .csv, .json, .xlsx, .xlsm, images, or PDF.`,
       uploadQueued: "Document queued, starting processing...",
       uploadSuccess: "Knowledge uploaded successfully",
       uploadError: "Could not upload file",
