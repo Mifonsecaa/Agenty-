@@ -20,6 +20,7 @@ const dashboardCopyByLocale = {
   },
   knowledge: {
     unsupportedFileType: (type: string) => `El tipo de archivo \"${type}\" no es soportado. Sube .txt, .md, .csv, .json o PDF.`,
+    fileTooLarge: "El archivo es demasiado grande (max 3MB). Intenta comprimirlo o usar texto plano.",
     uploadQueued: "Documento en cola, iniciando procesamiento...",
     uploadSuccess: "Conocimiento cargado correctamente",
     uploadError: "No se pudo subir el archivo",
@@ -80,6 +81,7 @@ const dashboardCopyByLocale = {
     },
     knowledge: {
       unsupportedFileType: (type: string) => `File type \"${type}\" is not supported. Upload .txt, .md, .csv, .json, or PDF.`,
+      fileTooLarge: "File is too large (max 3MB). Please compress it or use plain text.",
       uploadQueued: "Document queued, starting processing...",
       uploadSuccess: "Knowledge uploaded successfully",
       uploadError: "Could not upload file",
@@ -129,4 +131,3 @@ export function getDashboardCopy(locale?: DashboardLocale | string) {
   if (locale === "en") return dashboardCopyByLocale.en;
   return dashboardCopyByLocale.es;
 }
-
