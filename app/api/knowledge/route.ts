@@ -51,15 +51,17 @@ function extractSpreadsheetText(buffer: Buffer) {
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) continue;
 
-        const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(sheet, {
+        // Corrección de TypeScript: Se elimina el tipado genérico y se hace el cast al final
+        const rows = XLSX.utils.sheet_to_json(sheet, {
             header: 1,
             raw: false,
             blankrows: false,
-        });
+        }) as any[][];
 
         const limitedRows = rows.slice(0, 220);
         const lines = limitedRows
-            .map((row) => row.map((cell) => (cell ?? "").toString().trim()).join(" | ").trim())
+            // Se añaden tipos 'any' explícitos para evitar errores de implicit-any
+            .map((row: any[]) => row.map((cell: any) => (cell ?? "").toString().trim()).join(" | ").trim())
             .filter(Boolean);
 
         if (lines.length > 0) {
@@ -79,7 +81,6 @@ function stripHtmlToText(html: string) {
         .trim();
 }
 
-
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions);
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const validation = validateData<KnowledgeCreateInput>(body, knowledgeCreateSchema);
-        
+
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
@@ -163,7 +164,7 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "La imagen no contiene datos para procesar" }, { status: 400 });
             }
             const visualDescription = await describeImageForKnowledge(uploadedBuffer, safeType);
-            text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+            text = `\n${visualDescription}`;
         } else if (isSpreadsheet) {
             if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
                 return NextResponse.json({ error: "El archivo Excel no contiene datos para procesar" }, { status: 400 });
@@ -176,7 +177,7 @@ export async function POST(req: Request) {
             text = text || "";
         } else {
             // Para archivos no textuales no-imagen guardamos un rastro recuperable.
-            text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`; 
+            text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`;
         }
 
         // Verificar que el negocio pertenece al usuario
@@ -257,7 +258,7 @@ export async function GET(req: Request) {
 
         const { searchParams } = new URL(req.url);
         const validation = validateData<KnowledgeQueryInput>({ businessId: searchParams.get("businessId") }, knowledgeQuerySchema);
-        
+
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
@@ -337,7 +338,7 @@ export async function DELETE(req: Request) {
         });
 
         if (!business) {
-             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
         if (Array.isArray(itemIds) && itemIds.length > 0) {
@@ -356,13 +357,13 @@ export async function DELETE(req: Request) {
 
         if (itemId) {
             const result = await ingestionService.deleteKnowledgeItem(itemId, businessId);
-             return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
+            return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
         } else {
             // Peligroso: Si no se envía itemId, borra todo.
             // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.
             // Asumiremos que si no hay itemId, es un "Limpiar todo".
             await ingestionService.deleteAllKnowledge(businessId);
-             return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
+            return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
         }
 
     } catch (error: any) {
