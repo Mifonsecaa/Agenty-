@@ -10,11 +10,11 @@ function isSpreadsheetFile(fileName: string) {
 }
 
 function mapSheetPreview(sheet: any, XLSX: any) {
-  const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(sheet, {
+  const rows = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
     raw: false,
     blankrows: false,
-  });
+  }) as Array<Array<string | number | boolean | null>>;
 
   const header = (rows[0] || []).map((cell: string | number | boolean | null, idx: number) => {
     const value = (cell ?? "").toString().trim();
