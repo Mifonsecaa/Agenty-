@@ -284,11 +284,18 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ businessId, ...formData }),
     });
+    const data = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Error al guardar");
+      const message = data?.details ? `${data.error || "Error al guardar"} ${data.details}` : (data?.error || "Error al guardar");
+      throw new Error(message);
     }
+
     setStatus((p) => ({ ...p, [platform]: true }));
+
+    if (platform === "telegram" && data?.webhookUrl) {
+      console.log(`[Telegram] Webhook configurado en: ${data.webhookUrl} (${data?.webhookSource || "unknown"})`);
+    }
   };
 
   const handleDisconnect = async (platform: Platform) => {

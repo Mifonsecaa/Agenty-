@@ -1,7 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
-import { OpenAIEmbeddings } from "@langchain/openai";
+import { createHash } from "crypto";
 import { prisma } from './prisma';
+import { retrieveRagContext } from '@/lib/rag/retriever';
 
 console.log("[AIService] Module Loading...");
 
@@ -16,6 +17,117 @@ export interface ChatMessage {
 export interface GenerateOptions {
     provider?: 'openai' | 'github' | 'gemini';
     systemPrompt?: string;
+    businessSnapshot?: {
+        id: string;
+        name: string;
+        config: unknown;
+    };
+}
+
+type CacheEntry<T> = {
+    value: T;
+    expiresAt: number;
+    lastAccessAt: number;
+};
+
+const RESPONSE_CACHE_TTL_MS = Number(process.env.AI_RESPONSE_CACHE_TTL_MS || 45000);
+const RESPONSE_CACHE_MAX_ENTRIES = Number(process.env.AI_RESPONSE_CACHE_MAX_ENTRIES || 300);
+
+const responseCache = new Map<string, CacheEntry<string>>();
+const responseKeysByBusiness = new Map<string, Set<string>>();
+const businessCache = new Map<string, CacheEntry<{ id: string; name: string; config: unknown }>>();
+const BUSINESS_CACHE_TTL_MS = Number(process.env.AI_BUSINESS_CACHE_TTL_MS || 45000);
+
+function nowMs() {
+    return Date.now();
+}
+
+function pruneExpired<T>(cache: Map<string, CacheEntry<T>>) {
+    const now = nowMs();
+    for (const [key, entry] of cache.entries()) {
+        if (entry.expiresAt <= now) {
+            cache.delete(key);
+        }
+    }
+}
+
+function enforceMaxEntries<T>(cache: Map<string, CacheEntry<T>>, maxEntries: number) {
+    if (cache.size <= maxEntries) return;
+    const entriesByLastAccess = Array.from(cache.entries()).sort((a, b) => a[1].lastAccessAt - b[1].lastAccessAt);
+    const toDelete = cache.size - maxEntries;
+    for (let i = 0; i < toDelete; i++) {
+        const key = entriesByLastAccess[i]?.[0];
+        if (key) cache.delete(key);
+    }
+}
+
+function getCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    const now = nowMs();
+    if (entry.expiresAt <= now) {
+        cache.delete(key);
+        return null;
+    }
+    entry.lastAccessAt = now;
+    return entry.value;
+}
+
+function setCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number, maxEntries: number) {
+    const now = nowMs();
+    cache.set(key, {
+        value,
+        expiresAt: now + ttlMs,
+        lastAccessAt: now,
+    });
+    pruneExpired(cache);
+    enforceMaxEntries(cache, maxEntries);
+}
+
+function registerCacheKey(index: Map<string, Set<string>>, businessId: string, key: string) {
+    if (!businessId) return;
+    const set = index.get(businessId) || new Set<string>();
+    set.add(key);
+    index.set(businessId, set);
+}
+
+async function getBusinessSnapshot(businessId: string) {
+    const cached = getCacheValue(businessCache, businessId);
+    if (cached) {
+        return cached;
+    }
+
+    const business = await prisma.business.findUnique({
+        where: { id: businessId },
+        select: { id: true, name: true, config: true },
+    });
+
+    if (!business) {
+        return null;
+    }
+
+    setCacheValue(businessCache, businessId, business, BUSINESS_CACHE_TTL_MS, 500);
+    return business;
+}
+
+function clearCacheByBusiness(cache: Map<string, CacheEntry<any>>, index: Map<string, Set<string>>, businessId: string) {
+    const keys = index.get(businessId);
+    if (!keys) return;
+    for (const key of keys.values()) {
+        cache.delete(key);
+    }
+    index.delete(businessId);
+}
+
+function buildCacheKey(parts: unknown[]) {
+    return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+}
+
+function compactMessagesForKey(messages: ChatMessage[]) {
+    return messages.slice(-6).map((m) => ({
+        role: m.role,
+        content: m.content.slice(0, 300),
+    }));
 }
 
 export const aiService = {
@@ -24,9 +136,7 @@ export const aiService = {
             console.log(`[AIService] Starting generation for businessId: ${businessId}`);
 
             // 1. Obtener la configuración del negocio
-            const business = await prisma.business.findUnique({
-                where: { id: businessId }
-            });
+            const business = options.businessSnapshot || await getBusinessSnapshot(businessId);
 
             if (!business) {
                 console.error(`[AIService] Business NOT FOUND in DB for ID: ${businessId}`);
@@ -40,38 +150,10 @@ export const aiService = {
             try {
                 const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
                 if (lastUserMessage && process.env.OPENAI_API_KEY) {
-                    const embeddings = new OpenAIEmbeddings({ 
-                        openAIApiKey: process.env.OPENAI_API_KEY, 
-                        modelName: "text-embedding-3-small" 
-                    });
-                    
-                    const queryVector = await embeddings.embedQuery(lastUserMessage);
-                    const vectorStr = `[${queryVector.join(",")}]`;
-
-                    // Búsqueda vectorial
-                    const items = await prisma.$queryRaw`
-                        SELECT content, metadata
-                        FROM "KnowledgeItem"
-                        WHERE "businessId" = ${businessId}
-                        ORDER BY embedding <-> ${vectorStr}::vector
-                        LIMIT 3;
-                    ` as any[];
-
-                    if (items && items.length > 0) {
-                        ragContext = items.map(item => {
-                            const meta = item.metadata || {};
-                            let text = item.content;
-                            if (meta.fileUrl) {
-                                availableFiles.push({ 
-                                    url: meta.fileUrl, 
-                                    description: `Documento: ${meta.source || item.name || 'Archivo adjunto'}` 
-                                });
-                                text += `\n[ESTE FRAGMENTO CONTIENE UN ARCHIVO: ${meta.fileUrl}]`;
-                            }
-                            return text;
-                        }).join("\n\n");
-                        console.log(`[AIService] RAG Context retrieved: ${items.length} items`);
-                    }
+                    const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
+                    ragContext = retrieval.ragContext;
+                    availableFiles = retrieval.availableFiles;
+                    console.log(`[AIService] RAG retrieval selected ${retrieval.selected.length} chunks`);
                 }
             } catch (ragError) {
                 console.error("[AIService] Error en RAG retrieval:", ragError);
@@ -87,7 +169,7 @@ export const aiService = {
 
             // Inyectar instrucciones para archivos
             if (availableFiles.length > 0) {
-                systemPrompt += `\n\nTIENES ACCESO A LOS SIGUIENTES ARCHIVOS. Si el usuario solicita explícitamente ver el menú, catálogo, horario o documento mencionado, DEBES añadir al final de tu respuesta el comando: [MEDIA_URL: <url_del_archivo>]. No uses markdown de imagen como ![texto](url).
+                systemPrompt += `\n\nTIENES ACCESO A LOS SIGUIENTES ARCHIVOS. Si el usuario solicita explícitamente ver el menú, catálogo, horario o documento mencionado, DEBES añadir al final de tu respuesta el comando: [MEDIA_URL: <url_del_archivo>].
                 
                 Archivos disponibles:
                 ${availableFiles.map(f => `- ${f.description} (URL: ${f.url})`).join("\n")}`;
@@ -96,6 +178,19 @@ export const aiService = {
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
             const provider = options.provider || config?.aiProvider || (process.env.OPENAI_API_KEY ? 'openai' : 'gemini');
             console.log(`[AIService] Business: ${business.name}, Provider Initial Choice: ${provider}`);
+
+            const responseCacheKey = buildCacheKey([
+                "response",
+                businessId,
+                provider,
+                systemPrompt,
+                compactMessagesForKey(messages),
+            ]);
+            const cachedResponse = getCacheValue(responseCache, responseCacheKey);
+            if (cachedResponse) {
+                console.log("[AIService] Response cache hit");
+                return cachedResponse;
+            }
 
             const callOpenAI = async () => {
                 if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
@@ -144,25 +239,44 @@ export const aiService = {
                 return result.response.text();
             };
 
+            let finalResponse = "";
             if (provider === 'openai') {
-                return await callOpenAI();
+                finalResponse = (await callOpenAI()) || "";
             } else if (provider === 'github') {
-                return await callGitHub();
+                finalResponse = (await callGitHub()) || "";
             } else {
                 try {
-                    return await callGemini();
+                    finalResponse = (await callGemini()) || "";
                 } catch (geminiErr: any) {
                     console.error("[AIService] Gemini failed, checking for OpenAI fallback...", geminiErr.message || geminiErr);
                     if (process.env.OPENAI_API_KEY) {
                         console.log("[AIService] FALLBACK TO OPENAI TRIGGERED");
-                        return await callOpenAI();
+                        finalResponse = (await callOpenAI()) || "";
+                    } else {
+                        throw geminiErr;
                     }
-                    throw geminiErr;
                 }
             }
+
+            setCacheValue(
+                responseCache,
+                responseCacheKey,
+                finalResponse,
+                RESPONSE_CACHE_TTL_MS,
+                RESPONSE_CACHE_MAX_ENTRIES
+            );
+            registerCacheKey(responseKeysByBusiness, businessId, responseCacheKey);
+
+            return finalResponse;
         } catch (error: any) {
             console.error("[AIService] FINAL CRITICAL ERROR:", error.message || error);
             return "Lo siento, tuve un problema técnico al procesar tu mensaje. ¿Podrías repetirlo?";
         }
     }
 };
+
+export function invalidateAiCachesForBusiness(businessId: string) {
+    clearCacheByBusiness(responseCache, responseKeysByBusiness, businessId);
+    businessCache.delete(businessId);
+}
+

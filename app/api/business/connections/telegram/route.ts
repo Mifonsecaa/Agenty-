@@ -7,9 +7,85 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 
+type ResolvedWebhookBase = {
+  baseUrl: string | null;
+  source: string;
+};
+
+function normalizeBaseUrl(raw?: string | null) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const url = new URL(withProtocol);
+    // Telegram requiere HTTPS para webhooks.
+    if (url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveWebhookBaseUrl(req: NextRequest): Promise<ResolvedWebhookBase> {
+  const envCandidates: Array<{ value?: string | null; source: string }> = [
+    { value: process.env.PUBLIC_BASE_URL, source: "PUBLIC_BASE_URL" },
+    { value: process.env.WEBHOOK_BASE_URL, source: "WEBHOOK_BASE_URL" },
+    { value: process.env.NEXTAUTH_URL, source: "NEXTAUTH_URL" },
+    { value: process.env.VERCEL_URL, source: "VERCEL_URL" },
+  ];
+
+  for (const candidate of envCandidates) {
+    const normalized = normalizeBaseUrl(candidate.value);
+    if (normalized) {
+      return { baseUrl: normalized, source: candidate.source };
+    }
+  }
+
+  const requestOrigin = normalizeBaseUrl(req.nextUrl.origin);
+  if (requestOrigin && !requestOrigin.includes("localhost") && !requestOrigin.includes("127.0.0.1")) {
+    return { baseUrl: requestOrigin, source: "request_origin" };
+  }
+
+  const ngrokApiBases = [
+    process.env.NGROK_API_URL,
+    "http://127.0.0.1:4040",
+    "http://localhost:4040",
+    "http://host.docker.internal:4040",
+  ].filter(Boolean) as string[];
+
+  for (const ngrokApiBase of ngrokApiBases) {
+    try {
+      const apiUrl = ngrokApiBase.endsWith("/api/tunnels") ? ngrokApiBase : `${ngrokApiBase.replace(/\/$/, "")}/api/tunnels`;
+      const res = await fetch(apiUrl, { cache: "no-store" });
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const tunnels = Array.isArray(data?.tunnels) ? data.tunnels : [];
+
+      const httpsTunnel = tunnels.find((t: any) => {
+        const publicUrl = typeof t?.public_url === "string" ? t.public_url : "";
+        return publicUrl.startsWith("https://");
+      });
+
+      if (httpsTunnel?.public_url) {
+        const normalized = normalizeBaseUrl(httpsTunnel.public_url);
+        if (normalized) {
+          return { baseUrl: normalized, source: `ngrok:${ngrokApiBase}` };
+        }
+      }
+    } catch {
+      // Intentamos el siguiente endpoint de ngrok.
+    }
+  }
+
+  return { baseUrl: null, source: "not_found" };
+}
+
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -22,7 +98,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const business = await prisma.business.findFirst({
-      where: { id: businessId, userId: (session.user as any).id },
+      where: {
+        id: businessId,
+        user: { email: session.user.email },
+      },
     });
 
     if (!business) {
@@ -41,8 +120,41 @@ export async function POST(req: NextRequest) {
     }
 
     const resolvedUsername = testData.result?.username || botUsername;
+    const resolved = await resolveWebhookBaseUrl(req);
 
-    // Save to database
+    if (!resolved.baseUrl) {
+      return NextResponse.json(
+        {
+          error: "No se encontró un túnel HTTPS activo de ngrok ni una URL pública configurada.",
+          details: "Inicia ngrok y vuelve a intentar. Opcional: define PUBLIC_BASE_URL en .env.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const webhookUrl = `${resolved.baseUrl}/api/telegram/webhook?businessId=${businessId}`;
+    const webhookRes = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: ["message", "callback_query"],
+      }),
+    });
+    const webhookData = await webhookRes.json().catch(() => ({}));
+
+    if (!webhookData.ok) {
+      return NextResponse.json(
+        {
+          error: "No se pudo registrar el webhook en Telegram.",
+          details: webhookData?.description || "Error desconocido al registrar webhook",
+          webhookUrl,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Save to database only after webhook registration succeeds.
     await prisma.business.update({
       where: { id: businessId },
       data: {
@@ -51,29 +163,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Register webhook with Telegram
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL;
-    if (baseUrl) {
-      const webhookRes = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: `${baseUrl}/api/telegram/webhook?businessId=${businessId}`,
-          allowed_updates: ["message", "callback_query"],
-        }),
-      });
-      const webhookData = await webhookRes.json();
-
-      if (!webhookData.ok) {
-        console.warn("[Telegram] Webhook registration failed:", webhookData.description);
-        // Still save the token — user might be on localhost
-      }
-    }
-
     return NextResponse.json({
       success: true,
       message: `Bot @${resolvedUsername} conectado exitosamente`,
       botUsername: resolvedUsername,
+      webhookUrl,
+      webhookSource: resolved.source,
     });
   } catch (error) {
     console.error("[POST /connections/telegram]", error);
@@ -83,7 +178,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -94,7 +189,10 @@ export async function DELETE(req: NextRequest) {
 
   try {
     const business = await prisma.business.findFirst({
-      where: { id: businessId, userId: (session.user as any).id },
+      where: {
+        id: businessId,
+        user: { email: session.user.email },
+      },
       select: { telegramBotToken: true },
     });
 

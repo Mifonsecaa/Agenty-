@@ -6,6 +6,8 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { aiService } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
+import { acquireConcurrencySlot, buildRequesterKey, checkRateLimit } from '@/lib/security/traffic-control';
+import { incrementOpsCounter, recordOpsDuration } from '@/lib/observability/ops-metrics';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
@@ -16,6 +18,55 @@ type IncomingMessage = {
   role: string;
   content: string;
 };
+
+const STREAM_CHUNK_SIZE = Math.max(8, Number(process.env.CHAT_STREAM_CHUNK_SIZE || 64));
+const STREAM_DELAY_MS = Math.max(0, Number(process.env.CHAT_STREAM_DELAY_MS || 0));
+
+function normalizeProvider(value: unknown): Provider {
+  return value === 'openai' || value === 'github' || value === 'gemini' ? value : 'openai';
+}
+
+function okAssistantResponse(content: string, stream: boolean) {
+  if (stream) {
+    return new Response(streamTextResponse(content || ''), {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
+    });
+  }
+
+  return NextResponse.json({ role: 'assistant', content });
+}
+
+function streamTextResponse(text: string) {
+  const encoder = new TextEncoder();
+  const safeText = text || '';
+
+  // Fixed-size chunking is cheaper than regex splitting on large responses.
+  const chunks: string[] = [];
+  for (let i = 0; i < safeText.length; i += STREAM_CHUNK_SIZE) {
+    chunks.push(safeText.slice(i, i + STREAM_CHUNK_SIZE));
+  }
+  if (chunks.length === 0) {
+    chunks.push('');
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', delta: chunk })}\n\n`));
+        if (STREAM_DELAY_MS > 0) {
+          await new Promise((resolve) => setTimeout(resolve, STREAM_DELAY_MS));
+        }
+      }
+
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
+      controller.close();
+    },
+  });
+}
 
 function normalizeMessages(messages: IncomingMessage[]): ChatMessage[] {
   return messages
@@ -70,15 +121,41 @@ async function generateDemoReply(messages: ChatMessage[], provider: Provider, sy
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  let releaseConcurrency: (() => void) | null = null;
   try {
+    const requesterKey = buildRequesterKey(request);
+
+    // Apply traffic control before parsing body to reduce work on abusive bursts.
+    const rate = await checkRateLimit({
+      scope: 'api-chat',
+      key: requesterKey,
+      maxRequests: Number(process.env.CHAT_RATE_LIMIT_MAX || 30),
+      windowMs: Number(process.env.CHAT_RATE_LIMIT_WINDOW_MS || 60000),
+    });
+
+    if (!rate.allowed) {
+      incrementOpsCounter('chat.rate_limited');
+      return NextResponse.json(
+        { error: 'Demasiadas solicitudes. Intenta de nuevo en unos segundos.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
+
     const body = await request.json();
     const {
       messages,
-      provider = 'openai',
+      provider: rawProvider = 'openai',
       isDemo = false,
       demoContext = '',
       agentId,
       systemPrompt,
+      stream = false,
     } = body as {
       messages: IncomingMessage[];
       provider?: Provider;
@@ -86,7 +163,9 @@ export async function POST(request: Request) {
       demoContext?: string;
       agentId?: string;
       systemPrompt?: string;
+      stream?: boolean;
     };
+    const provider = normalizeProvider(rawProvider);
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'Faltan mensajes' }, { status: 400 });
@@ -98,6 +177,18 @@ export async function POST(request: Request) {
     }
 
     if (isDemo) {
+      const demoConcurrency = await acquireConcurrencySlot({
+        scope: 'api-chat-demo',
+        key: requesterKey,
+        maxConcurrent: Number(process.env.CHAT_DEMO_MAX_CONCURRENT || 2),
+      });
+
+      if (!demoConcurrency) {
+        incrementOpsCounter('chat.concurrency_rejected.demo');
+        return NextResponse.json({ error: 'Servidor ocupado. Intenta nuevamente.' }, { status: 503 });
+      }
+      releaseConcurrency = demoConcurrency;
+
       let demoSystemPrompt =
         "Eres 'AgentyBot', el asistente virtual experto de ventas para Agenty.ai. Responde corto, útil y amigable.";
 
@@ -106,7 +197,9 @@ export async function POST(request: Request) {
       }
 
       const content = await generateDemoReply(normalizedMessages, provider, demoSystemPrompt);
-      return NextResponse.json({ role: 'assistant', content });
+      incrementOpsCounter('chat.success');
+      recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+      return okAssistantResponse(content, stream);
     }
 
     // Playground privado: siempre requiere sesión y agentId explícito para alinear test mode al agente activo.
@@ -118,6 +211,18 @@ export async function POST(request: Request) {
     if (!agentId) {
       return NextResponse.json({ error: 'agentId es requerido en modo privado' }, { status: 400 });
     }
+
+    const privateConcurrency = await acquireConcurrencySlot({
+      scope: 'api-chat-agent',
+      key: `${agentId}:${requesterKey}`,
+      maxConcurrent: Number(process.env.CHAT_AGENT_MAX_CONCURRENT || 2),
+    });
+
+    if (!privateConcurrency) {
+      incrementOpsCounter('chat.concurrency_rejected.private');
+      return NextResponse.json({ error: 'Servidor ocupado. Intenta nuevamente.' }, { status: 503 });
+    }
+    releaseConcurrency = privateConcurrency;
 
     const business = await prisma.business.findFirst({
       where: {
@@ -137,9 +242,15 @@ export async function POST(request: Request) {
       systemPrompt,
     });
 
-    return NextResponse.json({ role: 'assistant', content });
+    incrementOpsCounter('chat.success');
+    recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+    return okAssistantResponse(content || '', stream);
   } catch (error: any) {
     console.error('[API Chat] Error:', error);
+    incrementOpsCounter('chat.error');
+    recordOpsDuration('chat.error_latency_ms', Date.now() - startedAt);
     return NextResponse.json({ error: `Error del servidor: ${error.message || 'desconocido'}` }, { status: 500 });
+  } finally {
+    releaseConcurrency?.();
   }
 }
