@@ -1,8 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
-import { OpenAIEmbeddings } from "@langchain/openai";
 import { createHash } from "crypto";
 import { prisma } from './prisma';
+import { retrieveRagContext } from '@/lib/rag/retriever';
 
 console.log("[AIService] Module Loading...");
 
@@ -17,21 +17,12 @@ export interface ChatMessage {
 export interface GenerateOptions {
     provider?: 'openai' | 'github' | 'gemini';
     systemPrompt?: string;
+    businessSnapshot?: {
+        id: string;
+        name: string;
+        config: unknown;
+    };
 }
-
-type RagCacheValue = {
-    ragContext: string;
-    availableFiles: { url: string; description: string }[];
-};
-
-type RagCandidate = {
-    content: string;
-    metadata: Record<string, unknown>;
-    distance: number;
-    vectorScore: number;
-    lexicalScore: number;
-    combinedScore: number;
-};
 
 type CacheEntry<T> = {
     value: T;
@@ -39,19 +30,13 @@ type CacheEntry<T> = {
     lastAccessAt: number;
 };
 
-const RAG_CACHE_TTL_MS = Number(process.env.AI_RAG_CACHE_TTL_MS || 120000);
 const RESPONSE_CACHE_TTL_MS = Number(process.env.AI_RESPONSE_CACHE_TTL_MS || 45000);
-const RAG_CACHE_MAX_ENTRIES = Number(process.env.AI_RAG_CACHE_MAX_ENTRIES || 500);
 const RESPONSE_CACHE_MAX_ENTRIES = Number(process.env.AI_RESPONSE_CACHE_MAX_ENTRIES || 300);
-const RAG_RETRIEVAL_CANDIDATES = Number(process.env.RAG_RETRIEVAL_CANDIDATES || 10);
-const RAG_RETRIEVAL_TOP_K = Number(process.env.RAG_RETRIEVAL_TOP_K || 4);
-const RAG_CONTEXT_MAX_CHARS = Number(process.env.RAG_CONTEXT_MAX_CHARS || 2600);
-const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.6);
 
-const ragCache = new Map<string, CacheEntry<RagCacheValue>>();
 const responseCache = new Map<string, CacheEntry<string>>();
-const ragKeysByBusiness = new Map<string, Set<string>>();
 const responseKeysByBusiness = new Map<string, Set<string>>();
+const businessCache = new Map<string, CacheEntry<{ id: string; name: string; config: unknown }>>();
+const BUSINESS_CACHE_TTL_MS = Number(process.env.AI_BUSINESS_CACHE_TTL_MS || 45000);
 
 function nowMs() {
     return Date.now();
@@ -106,6 +91,25 @@ function registerCacheKey(index: Map<string, Set<string>>, businessId: string, k
     index.set(businessId, set);
 }
 
+async function getBusinessSnapshot(businessId: string) {
+    const cached = getCacheValue(businessCache, businessId);
+    if (cached) {
+        return cached;
+    }
+
+    const business = await prisma.business.findUnique({
+        where: { id: businessId },
+        select: { id: true, name: true, config: true },
+    });
+
+    if (!business) {
+        return null;
+    }
+
+    setCacheValue(businessCache, businessId, business, BUSINESS_CACHE_TTL_MS, 500);
+    return business;
+}
+
 function clearCacheByBusiness(cache: Map<string, CacheEntry<any>>, index: Map<string, Set<string>>, businessId: string) {
     const keys = index.get(businessId);
     if (!keys) return;
@@ -126,46 +130,34 @@ function compactMessagesForKey(messages: ChatMessage[]) {
     }));
 }
 
-function normalizeForMatch(value: string) {
-    return value
-        .toLowerCase()
-        .replace(/[^a-z0-9\u00C0-\u017F\s]/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-}
+async function loadBusinessKnowledgeFiles(businessId: string) {
+    const rows = await prisma.knowledgeItem.findMany({
+        where: { businessId },
+        select: { metadata: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 120,
+    });
 
-function extractTerms(value: string) {
-    return normalizeForMatch(value)
-        .split(" ")
-        .filter((term) => term.length >= 3)
-        .slice(0, 20);
-}
+    const seen = new Set<string>();
+    const files: Array<{ url: string; description: string }> = [];
 
-function lexicalOverlapScore(queryTerms: string[], content: string) {
-    if (!queryTerms.length || !content) return 0;
-    const normalized = normalizeForMatch(content);
-    let hits = 0;
-    for (const term of queryTerms) {
-        if (normalized.includes(term)) hits += 1;
+    for (const row of rows) {
+        const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+            ? row.metadata as Record<string, unknown>
+            : {};
+
+        const fileUrl = typeof metadata.fileUrl === "string" ? metadata.fileUrl : "";
+        if (!fileUrl || seen.has(fileUrl)) continue;
+        seen.add(fileUrl);
+
+        const fileName = typeof metadata.fileName === "string" ? metadata.fileName : "Archivo adjunto";
+        const fileType = typeof metadata.fileType === "string" ? metadata.fileType : "archivo";
+        files.push({ url: fileUrl, description: `${fileName} (${fileType})` });
+
+        if (files.length >= 12) break;
     }
-    return hits / queryTerms.length;
-}
 
-function capContextByChars(chunks: string[], maxChars: number) {
-    let used = 0;
-    const selected: string[] = [];
-    for (const chunk of chunks) {
-        if (!chunk.trim()) continue;
-        const next = chunk.length + 2;
-        if (selected.length > 0 && used + next > maxChars) break;
-        if (selected.length === 0 && chunk.length > maxChars) {
-            selected.push(chunk.slice(0, maxChars));
-            break;
-        }
-        selected.push(chunk);
-        used += next;
-    }
-    return selected;
+    return files;
 }
 
 export const aiService = {
@@ -174,9 +166,7 @@ export const aiService = {
             console.log(`[AIService] Starting generation for businessId: ${businessId}`);
 
             // 1. Obtener la configuración del negocio
-            const business = await prisma.business.findUnique({
-                where: { id: businessId }
-            });
+            const business = options.businessSnapshot || await getBusinessSnapshot(businessId);
 
             if (!business) {
                 console.error(`[AIService] Business NOT FOUND in DB for ID: ${businessId}`);
@@ -187,101 +177,26 @@ export const aiService = {
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
             
+            const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
+            const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
+            const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
+
             try {
-                const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
-                if (lastUserMessage && process.env.OPENAI_API_KEY) {
-                    const ragKey = buildCacheKey(["rag", businessId, lastUserMessage]);
-                    const cachedRag = getCacheValue(ragCache, ragKey);
+                if (lastUserMessage) {
+                    const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
+                    ragContext = retrieval.ragContext;
+                    availableFiles = retrieval.availableFiles;
+                    console.log(`[AIService] RAG retrieval selected ${retrieval.selected.length} chunks`);
+                }
 
-                    if (cachedRag) {
-                        ragContext = cachedRag.ragContext;
-                        availableFiles = cachedRag.availableFiles;
-                        console.log("[AIService] RAG cache hit");
-                    } else {
-                        const embeddings = new OpenAIEmbeddings({ 
-                            openAIApiKey: process.env.OPENAI_API_KEY, 
-                            modelName: "text-embedding-3-small" 
-                        });
-                        
-                        const queryVector = await embeddings.embedQuery(lastUserMessage);
-                        const vectorStr = `[${queryVector.join(",")}]`;
-                        const queryTerms = extractTerms(lastUserMessage);
-
-                        const candidatesLimit = Math.max(4, Math.min(20, RAG_RETRIEVAL_CANDIDATES));
-                        const finalTopK = Math.max(1, Math.min(8, RAG_RETRIEVAL_TOP_K));
-
-                        // Búsqueda vectorial + distancia para reranking liviano.
-                        const items = await prisma.$queryRaw`
-                            SELECT content, metadata, (embedding <-> ${vectorStr}::vector) AS distance
-                            FROM "KnowledgeItem"
-                            WHERE "businessId" = ${businessId}
-                              AND embedding IS NOT NULL
-                            ORDER BY embedding <-> ${vectorStr}::vector
-                            LIMIT ${candidatesLimit};
-                        ` as Array<{ content: string; metadata: unknown; distance: number }>;
-
-                        if (items && items.length > 0) {
-                            const ranked = items
-                                .map((item) => {
-                                    const metadata = (item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata))
-                                        ? (item.metadata as Record<string, unknown>)
-                                        : {};
-                                    const distance = Number(item.distance ?? 2);
-                                    const vectorScore = Math.max(0, 1 - distance);
-                                    const lexicalScore = lexicalOverlapScore(queryTerms, item.content || "");
-                                    const combinedScore = vectorScore * 0.72 + lexicalScore * 0.28;
-
-                                    return {
-                                        content: item.content,
-                                        metadata,
-                                        distance,
-                                        vectorScore,
-                                        lexicalScore,
-                                        combinedScore,
-                                    } as RagCandidate;
-                                })
-                                .filter((item) => item.vectorScore >= RAG_MIN_VECTOR_SIMILARITY || item.lexicalScore >= 0.28)
-                                .sort((a, b) => b.combinedScore - a.combinedScore)
-                                .slice(0, finalTopK);
-
-                            const seenChunkHashes = new Set<string>();
-                            const contextChunks: string[] = [];
-
-                            for (const item of ranked) {
-                                const hash = typeof item.metadata.contentHash === "string"
-                                    ? item.metadata.contentHash
-                                    : buildCacheKey(["rag-content", item.content.slice(0, 200)]);
-                                if (seenChunkHashes.has(hash)) continue;
-                                seenChunkHashes.add(hash);
-
-                                const fileUrl = typeof item.metadata.fileUrl === "string" ? item.metadata.fileUrl : "";
-                                const fileDescription = typeof item.metadata.title === "string"
-                                    ? item.metadata.title
-                                    : (typeof item.metadata.source === "string" ? item.metadata.source : "Archivo adjunto");
-
-                                let text = item.content;
-                                if (fileUrl) {
-                                    availableFiles.push({
-                                        url: fileUrl,
-                                        description: `Documento: ${fileDescription}`,
-                                    });
-                                    text += `\n[ESTE FRAGMENTO CONTIENE UN ARCHIVO: ${fileUrl}]`;
-                                }
-
-                                contextChunks.push(text);
-                            }
-
-                            ragContext = capContextByChars(contextChunks, Math.max(800, RAG_CONTEXT_MAX_CHARS)).join("\n\n");
-                            setCacheValue(
-                                ragCache,
-                                ragKey,
-                                { ragContext, availableFiles },
-                                RAG_CACHE_TTL_MS,
-                                RAG_CACHE_MAX_ENTRIES
-                            );
-                            registerCacheKey(ragKeysByBusiness, businessId, ragKey);
-                            console.log(`[AIService] RAG Context retrieved: ${items.length} candidates, ${contextChunks.length} selected`);
-                        }
+                // Garantiza acceso a adjuntos aunque no hayan quedado en top-k del retriever.
+                const allKnowledgeFiles = await loadBusinessKnowledgeFiles(businessId);
+                if (allKnowledgeFiles.length > 0) {
+                    const seenUrls = new Set(availableFiles.map((f) => f.url));
+                    for (const file of allKnowledgeFiles) {
+                        if (seenUrls.has(file.url)) continue;
+                        availableFiles.push(file);
+                        seenUrls.add(file.url);
                     }
                 }
             } catch (ragError) {
@@ -302,6 +217,16 @@ export const aiService = {
                 
                 Archivos disponibles:
                 ${availableFiles.map(f => `- ${f.description} (URL: ${f.url})`).join("\n")}`;
+            }
+
+            // Regla anti-alucinación para datos sensibles (precios, horarios, políticas).
+            systemPrompt += "\n\nREGLA CRITICA: nunca inventes precios, horarios, stock o condiciones comerciales. Si no aparecen en la base de conocimiento/contexto, responde explícitamente que no tienes ese dato confirmado y ofrece escalar o pedir verificación.";
+
+            const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
+
+            // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
+            if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
+                return "No tengo ese dato confirmado en la base de conocimiento en este momento. Si quieres, te ayudo a verificarlo o a escalarlo con el negocio.";
             }
 
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
@@ -387,6 +312,32 @@ export const aiService = {
                 }
             }
 
+            // Cuando el usuario pide explícitamente un archivo/menu, forzamos etiqueta MEDIA_URL
+            // para que el canal (Telegram/WhatsApp) envíe el adjunto real.
+            if (asksForDocument && availableFiles.length > 0 && !/\[MEDIA_URL:\s*[^\]]+\]/i.test(finalResponse)) {
+                const asksImage = /(imagen|im[aá]genes|foto|fotos|jpg|jpeg|png|webp|gif)/i.test(lastUserMessage);
+                const prioritized = asksImage
+                    ? [...availableFiles].sort((a, b) => {
+                        const scoreA = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(a.description) ? 1 : 0;
+                        const scoreB = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(b.description) ? 1 : 0;
+                        return scoreB - scoreA;
+                    })
+                    : availableFiles;
+
+                const filesToShare = asksForEverything
+                    ? prioritized.slice(0, 5)
+                    : prioritized.slice(0, 1);
+
+                const mediaTags = filesToShare
+                    .filter((file) => Boolean(file.url))
+                    .map((file) => `[MEDIA_URL: ${file.url}]`)
+                    .join("\n");
+
+                if (mediaTags) {
+                    finalResponse = `${finalResponse.trim()}\n\n${mediaTags}`;
+                }
+            }
+
             setCacheValue(
                 responseCache,
                 responseCacheKey,
@@ -405,7 +356,7 @@ export const aiService = {
 };
 
 export function invalidateAiCachesForBusiness(businessId: string) {
-    clearCacheByBusiness(ragCache, ragKeysByBusiness, businessId);
     clearCacheByBusiness(responseCache, responseKeysByBusiness, businessId);
+    businessCache.delete(businessId);
 }
 

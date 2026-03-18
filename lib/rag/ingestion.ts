@@ -3,6 +3,7 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "crypto";
 import { invalidateAiCachesForBusiness } from "@/lib/ai";
+import { invalidateRagRetrieverCacheForBusiness } from "@/lib/rag/retriever";
 
 type IngestionMetadata = {
     source?: string;
@@ -137,11 +138,17 @@ export class IngestionService {
                 return 0;
             }
 
+            console.log(`[Ingestion] Generando embeddings batch para ${finalChunks.length} chunks...`);
+            const embeddings = await this.embeddings.embedDocuments(finalChunks.map((chunk) => chunk.content));
+            if (embeddings.length !== finalChunks.length) {
+                throw new Error("EMBEDDING_BATCH_SIZE_MISMATCH");
+            }
+
             // 2. Procesar cada fragmento
             let processedItems = 0;
-            for (const chunk of finalChunks) {
+            for (const [index, chunk] of finalChunks.entries()) {
                 console.log(`[Ingestion] Generando embedding para chunk ${processedItems + 1}/${finalChunks.length}...`);
-                const embedding = await this.embeddings.embedQuery(chunk.content);
+                const embedding = embeddings[index];
                 const vectorString = `[${embedding.join(",")}]`;
 
                 // 3. Guardar en la DB con el vector
@@ -193,6 +200,7 @@ export class IngestionService {
 
             console.log(`[Ingestion] Ingesta completada con éxito: ${processedItems} items.`);
             invalidateAiCachesForBusiness(businessId);
+            invalidateRagRetrieverCacheForBusiness(businessId);
             return processedItems;
         } catch (error: any) {
             console.error("[Ingestion] Error durante la ingesta:", error);

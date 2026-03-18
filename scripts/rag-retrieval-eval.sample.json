@@ -1,0 +1,17 @@
+[
+  {
+    "id": "faq-hours",
+    "query": "Cual es el horario de atencion?",
+    "expected": {
+      "mustContainAny": ["horario", "atencion", "abierto"]
+    }
+  },
+  {
+    "id": "faq-prices",
+    "query": "Cuanto cuesta el servicio premium?",
+    "expected": {
+      "mustContainAny": ["precio", "costo", "premium"]
+    }
+  }
+]
+

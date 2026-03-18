@@ -1,0 +1,362 @@
+[
+  {
+    "id": "generated-1",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "comercial",
+        "florida",
+        "plaza",
+        "fabricato"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkzul001rwgfkcis62be6"
+    }
+  },
+  {
+    "id": "generated-2",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "todos",
+        "nuestros",
+        "precios",
+        "incluyen"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkzjc001pwgfk4860po8z"
+    }
+  },
+  {
+    "id": "generated-3",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "concepto",
+        "propina",
+        "reparten",
+        "totalidad"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkz8j001nwgfktravndjc"
+    }
+  },
+  {
+    "id": "generated-4",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "2222",
+        "advertencia",
+        "propina",
+        "informa"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkz0h001lwgfkr8k6w1hq"
+    }
+  },
+  {
+    "id": "generated-5",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "deliciosa",
+        "fusión",
+        "tempura",
+        "japonesa"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkysd001jwgfkojnwjja9"
+    }
+  },
+  {
+    "id": "generated-6",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "chocolate",
+        "cheesecake",
+        "marmoleado",
+        "acompañado"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkyk0001hwgfkchqyqj80"
+    }
+  },
+  {
+    "id": "generated-7",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "postres",
+        "banano",
+        "tempura",
+        "crujiente"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkycr001fwgfkzjme0d04"
+    }
+  },
+  {
+    "id": "generated-8",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "vino",
+        "tinto",
+        "moras",
+        "cerveza"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdky4x001dwgfkvhs7kfsh"
+    }
+  },
+  {
+    "id": "generated-9",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "bebidas",
+        "agua",
+        "botella",
+        "gaseosa"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkxpy001bwgfk3589zhvq"
+    }
+  },
+  {
+    "id": "generated-10",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "sarkurry",
+        "servidos",
+        "arroz",
+        "blanco"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkxhl0019wgfkffu3re7e"
+    }
+  },
+  {
+    "id": "generated-11",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "aguacate",
+        "zanahoria",
+        "crispi",
+        "caramelizada"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkx9w0017wgfkzei9xi45"
+    }
+  },
+  {
+    "id": "generated-12",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "apanado",
+        "apanar",
+        "trozos",
+        "tofu"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkx1k0015wgfkra3h6cm8"
+    }
+  },
+  {
+    "id": "generated-13",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "bento",
+        "tangerine",
+        "tofu",
+        "apanado"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkwu10013wgfk3szaac2q"
+    }
+  },
+  {
+    "id": "generated-14",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "solo",
+        "servidos",
+        "elección",
+        "arroz"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkwlp0011wgfky0098ch2"
+    }
+  },
+  {
+    "id": "generated-15",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "pollo",
+        "sarkurry",
+        "trozos",
+        "bañados"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkwdv000zwgfksh1cwi4a"
+    }
+  },
+  {
+    "id": "generated-16",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "relleno",
+        "camarones",
+        "tempura",
+        "bañados"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkw2z000xwgfkbzdw0ili"
+    }
+  },
+  {
+    "id": "generated-17",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "sushi",
+        "familiar",
+        "volcano",
+        "salmón"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkvvm000vwgfkzj5fwf7t"
+    }
+  },
+  {
+    "id": "generated-18",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "golden",
+        "california",
+        "bocados",
+        "principiantes"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkvl3000twgfk2vrew6v0"
+    }
+  },
+  {
+    "id": "generated-19",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "aguacate",
+        "palmitos",
+        "cangrejo",
+        "semillas"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkvct000rwgfk70o811ct"
+    }
+  },
+  {
+    "id": "generated-20",
+    "query": "Que informacion importante hay sobre menu-restaurante.pdf?",
+    "expected": {
+      "sourceIds": [],
+      "contentHashes": [],
+      "mustContainAny": [
+        "relleno",
+        "langostinos",
+        "tempura",
+        "bañados"
+      ]
+    },
+    "notes": {
+      "title": "menu-restaurante.pdf",
+      "knowledgeItemId": "cmmtdkv47000pwgfk8cthvrp6"
+    }
+  }
+]

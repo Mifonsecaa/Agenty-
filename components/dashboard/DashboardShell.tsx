@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from 'next-auth/react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
     Bot,
@@ -28,7 +28,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AgentyProvider, useAgenty } from "@/context/AgentyContext";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type DashboardNotification = {
     id: string;
@@ -63,7 +63,8 @@ export default function DashboardShell({ children, initialAgents, userName, user
 function DashboardContent({ children, userName, userEmail }: { children: React.ReactNode, userName?: string | null, userEmail?: string | null }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { copy, locale, setDashboardLocale } = useDashboardCopy();
+    const searchParams = useSearchParams();
+    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const { agents, activeAgent, switchAgent, refreshAgents } = useAgenty();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -379,18 +380,6 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                     </div>
 
                     <div className="flex items-center gap-5">
-                        <div className="hidden sm:flex items-center gap-2 text-[11px] text-white/50">
-                            <span>Idioma</span>
-                            <select
-                                value={locale}
-                                onChange={(e) => setDashboardLocale(e.target.value as "es" | "en")}
-                                className="bg-[#0a0a0a] border border-white/10 rounded-md px-2 py-1 text-white/80 focus:outline-none"
-                            >
-                                <option value="es">ES</option>
-                                <option value="en">EN</option>
-                            </select>
-                        </div>
-
                         {/* Notifications */}
                         <div className="relative" ref={notificationsRef}>
                             <button

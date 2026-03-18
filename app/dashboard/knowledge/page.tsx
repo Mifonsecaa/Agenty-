@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2, Loader2 } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { AnimatePresence, motion } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 import type {
     KnowledgeItem,
     KnowledgeListResponse,
@@ -28,7 +29,8 @@ const HEALTH_POLL_MS = 15000;
 
 export default function KnowledgeBase() {
     const { activeAgent } = useAgenty();
-    const { copy } = useDashboardCopy();
+    const searchParams = useSearchParams();
+    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const [isDragging, setIsDragging] = useState(false);
     const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success">("idle");
     const [progress, setProgress] = useState(0);
@@ -201,12 +203,13 @@ export default function KnowledgeBase() {
 
         const businessId = activeAgent.id;
 
-        // Validación de tipos de archivo
-        const validTypes = [
-            "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"
-        ];
-        
-        if (!validTypes.includes(file.type) && !file.name.endsWith(".txt") && !file.name.endsWith(".md")) {
+        const isTextLike = file.type.startsWith("text/") ||
+            ["application/json", "text/csv"].includes(file.type) ||
+            /\.(txt|md|csv|json)$/i.test(file.name);
+        const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+        const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+
+        if (!isTextLike && !isImage && !isPdf) {
             toast.error(copy.knowledge.unsupportedFileType(file.type));
             return;
         }
@@ -221,8 +224,8 @@ export default function KnowledgeBase() {
                 let content = e.target?.result as string;
                 setProgress(40);
 
-                // Si es PDF, el contenido será un DataURL (base64), lo limpiamos un poco
-                if (file.type === "application/pdf") {
+                // Para binarios (PDF/imagen) enviamos base64.
+                if (!isTextLike) {
                     content = content.split(",")[1];
                 }
 
@@ -266,11 +269,8 @@ export default function KnowledgeBase() {
                 }
             };
 
-            if (file.type === "application/pdf") {
-                reader.readAsDataURL(file);
-            } else {
-                reader.readAsText(file);
-            }
+            if (isTextLike) reader.readAsText(file);
+            else reader.readAsDataURL(file);
 
         } catch (error) {
             console.error("Upload error:", error);

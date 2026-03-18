@@ -60,6 +60,30 @@ export async function GET(req: Request) {
     }
 
     const model = (prisma as any).knowledgeIngestionJob;
+    if (!model || typeof model.groupBy !== "function" || typeof model.findMany !== "function") {
+      const fallbackSummary = {
+        totals: { all: 0, active: 0, completed: 0, failed: 0, dlq: 0 },
+        ageBuckets: { lt5m: 0, m5To30: 0, m30To120: 0, gte120m: 0 },
+        oldestActiveCreatedAt: null as string | null,
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          businessId,
+          health: "degraded",
+          backlog: 0,
+          dlq: 0,
+          failed: 0,
+          oldestActiveCreatedAt: null,
+          ageBuckets: fallbackSummary.ageBuckets,
+          totals: fallbackSummary.totals,
+          reason: "knowledge_queue_model_unavailable",
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    }
+
     const where = businessId ? { businessId } : {};
 
     const grouped = await model.groupBy({

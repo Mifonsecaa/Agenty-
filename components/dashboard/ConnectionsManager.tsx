@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
+import { useSearchParams } from "next/navigation";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Platform = "whatsapp" | "telegram" | "instagram";
@@ -250,7 +251,8 @@ function ConnectionModal({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ConnectionsManager({ businessId }: { businessId: string }) {
-  const { copy } = useDashboardCopy();
+  const searchParams = useSearchParams();
+  const copy = getDashboardCopy(searchParams.get("lang") || undefined);
 
   const [status, setStatus] = useState<ConnectionStatus>({ whatsapp: false, telegram: false, instagram: false });
   const [loading, setLoading] = useState(true);
@@ -282,11 +284,18 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ businessId, ...formData }),
     });
+    const data = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Error al guardar");
+      const message = data?.details ? `${data.error || "Error al guardar"} ${data.details}` : (data?.error || "Error al guardar");
+      throw new Error(message);
     }
+
     setStatus((p) => ({ ...p, [platform]: true }));
+
+    if (platform === "telegram" && data?.webhookUrl) {
+      console.log(`[Telegram] Webhook configurado en: ${data.webhookUrl} (${data?.webhookSource || "unknown"})`);
+    }
   };
 
   const handleDisconnect = async (platform: Platform) => {

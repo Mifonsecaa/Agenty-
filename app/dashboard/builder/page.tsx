@@ -85,34 +85,6 @@ export default function BuilderPlayground() {
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
     const [fullAgentConfig, setFullAgentConfig] = useState<any>(null); // To store all fields to pass to the magic prompt generator
 
-    const consumeSseDeltas = async (
-        response: Response,
-        onDelta: (delta: string) => void,
-    ) => {
-        if (!response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            const events = buffer.split("\n\n");
-            buffer = events.pop() || "";
-
-            for (const evt of events) {
-                const line = evt.split("\n").find((l) => l.startsWith("data: "));
-                if (!line) continue;
-                const payload = JSON.parse(line.slice(6));
-                if (payload.type === "delta" && payload.delta) {
-                    onDelta(payload.delta);
-                }
-            }
-        }
-    };
-
     // Auto-scroll al final del chat
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -247,7 +219,6 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     provider: aiProvider,
                     agentId: activeAgent?.id,
                     systemPrompt,
-                    stream: true,
                 })
             });
 
@@ -256,22 +227,8 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 return;
             }
 
-            const contentType = res.headers.get('content-type') || '';
-            if (contentType.includes('text/event-stream')) {
-                setMessages(prev => [...prev, { role: "assistant", text: "" }]);
-                await consumeSseDeltas(res, (delta) => {
-                    setMessages((prev) => {
-                        const next = [...prev];
-                        const last = next[next.length - 1];
-                        if (!last || last.role !== "assistant") return prev;
-                        next[next.length - 1] = { ...last, text: `${last.text}${delta}` };
-                        return next;
-                    });
-                });
-            } else {
-                const data = await res.json();
-                setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
-            }
+            const data = await res.json();
+            setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
 
         } catch (error) {
             console.error("Error enviando mensaje al chat:", error);

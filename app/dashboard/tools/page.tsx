@@ -2,9 +2,9 @@
 import { useState, useEffect } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
-import { useDashboardCopy } from "@/components/dashboard/useDashboardCopy";
+import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type ToolCard = {
     id: number;
@@ -18,7 +18,8 @@ type ToolCard = {
 
 export default function ToolsStore() {
     const router = useRouter();
-    const { copy } = useDashboardCopy();
+    const searchParams = useSearchParams();
+    const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const { activeAgent, saveAgent, updateActiveAgentConfig } = useAgenty();
     const [tools, setTools] = useState<ToolCard[]>([
         {

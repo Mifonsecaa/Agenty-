@@ -10,6 +10,21 @@ function hasValidWorkerToken(req: Request) {
   return incoming === workerToken;
 }
 
+function getKnowledgeJobModel() {
+  const model = (prisma as any).knowledgeIngestionJob;
+  if (!model) return null;
+
+  if (
+    typeof model.findMany !== "function" ||
+    typeof model.findUnique !== "function" ||
+    typeof model.updateMany !== "function"
+  ) {
+    return null;
+  }
+
+  return model;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -18,6 +33,18 @@ export async function POST(req: Request) {
     const limit = typeof body.limit === "number" ? body.limit : undefined;
 
     const workerAuthorized = hasValidWorkerToken(req);
+    const model = getKnowledgeJobModel();
+
+    if (!model) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Knowledge queue model unavailable",
+          reason: "knowledge_queue_model_unavailable",
+        },
+        { status: 503 }
+      );
+    }
 
     if (!workerAuthorized) {
       const session = await getServerSession(authOptions);
@@ -44,7 +71,6 @@ export async function POST(req: Request) {
       }
 
       if (jobId && !businessId) {
-        const model = (prisma as any).knowledgeIngestionJob;
         const job = await model.findUnique({ where: { id: jobId }, select: { businessId: true } });
         if (!job) {
           return NextResponse.json({ error: "Job not found" }, { status: 404 });
@@ -61,7 +87,6 @@ export async function POST(req: Request) {
       }
     }
 
-    const model = (prisma as any).knowledgeIngestionJob;
     const safeLimit = Math.max(1, Math.min(200, limit ?? 50));
     const candidates = await model.findMany({
       where: {

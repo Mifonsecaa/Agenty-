@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { supabase } from "@/lib/supabase";
 
 /**
  * Guarda las credenciales de WhatsApp para un negocio específico.
@@ -12,23 +12,27 @@ export async function saveWhatsAppCredentials(userId: string, accessToken: strin
     // como el Phone Number ID y el Business ID desde la API de Meta.
     // Por ahora, guardaremos solo el token.
 
-    const business = await prisma.business.findFirst({
-      where: { userId },
-    });
+    const { data: business, error: findError } = await supabase
+      .from('Business')
+      .select('*')
+      .eq('userId', userId)
+      .single();
 
-    if (!business) {
+    if (findError || !business) {
       throw new Error(`No se encontró un negocio para el usuario ${userId}`);
     }
 
-    await prisma.business.update({
-      where: { id: business.id },
-      data: {
+    const { error: updateError } = await supabase
+      .from('Business')
+      .update({
         whatsappAccessToken: accessToken,
         // En un paso futuro, llenaríamos estos campos:
         // whatsappPhoneNumberId: "obtenido_de_la_api_de_meta",
         // whatsappBusinessId: "obtenido_de_la_api_de_meta",
-      },
-    });
+      })
+      .eq('id', business.id);
+
+    if (updateError) throw updateError;
 
     console.log(`Credenciales de WhatsApp guardadas para el negocio: ${business.name}`);
     return { success: true };
