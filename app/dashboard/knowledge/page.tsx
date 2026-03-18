@@ -215,8 +215,14 @@ export default function KnowledgeBase() {
             /\.(txt|md|csv|json)$/i.test(file.name);
         const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
         const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+        const isSpreadsheet =
+            [
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel.sheet.macroEnabled.12",
+            ].includes(file.type) ||
+            /\.(xlsx|xlsm)$/i.test(file.name);
 
-        if (!isTextLike && !isImage && !isPdf) {
+        if (!isTextLike && !isImage && !isPdf && !isSpreadsheet) {
             toast.error(copy.knowledge.unsupportedFileType(file.type));
             return;
         }
@@ -231,7 +237,7 @@ export default function KnowledgeBase() {
                 let content = e.target?.result as string;
                 setProgress(40);
 
-                // Para binarios (PDF/imagen) enviamos base64.
+                // Para binarios (PDF/imagen/excel) enviamos base64.
                 if (!isTextLike) {
                     content = content.split(",")[1];
                 }
@@ -654,7 +660,7 @@ export default function KnowledgeBase() {
                                         <UploadCloud className="w-6 h-6 text-blue-400" />
                                     </div>
                                     <p className="text-sm font-medium text-white/90">Haz clic o arrastra un archivo</p>
-                                    <p className="text-xs text-white/40 mt-1">PDF, TXT, DOCX. Max 50MB</p>
+                                    <p className="text-xs text-white/40 mt-1">PDF, TXT, XLSX, XLSM e imagenes. Max 50MB</p>
                                 </>
                             )}
                         </div>

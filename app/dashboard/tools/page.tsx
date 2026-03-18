@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Calendar, CreditCard, ShoppingBag, Mail, Blocks } from "lucide-react";
+import { Calendar, CreditCard, ShoppingBag, Mail, Blocks, FileSpreadsheet } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
@@ -8,13 +8,142 @@ import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type ToolCard = {
     id: number;
-    slug: "google-calendar" | "payments" | "shopify" | "email";
+    slug: "google-calendar" | "payments" | "shopify" | "email" | "knowledge-excel-viewer";
     name: string;
     description: string;
     icon: React.ReactNode;
     status: "connected" | "disconnected";
     category: string;
 };
+
+type ExcelKnowledgeFile = {
+    fileUrl: string;
+    fileName: string;
+    fileType: string;
+};
+
+type SpreadsheetPreview = {
+    success: boolean;
+    data?: {
+        fileName: string;
+        fileUrl: string;
+        sheets: Array<{
+            name: string;
+            rowCount: number;
+            headers: string[];
+            rows: string[][];
+        }>;
+    };
+    error?: string;
+};
+
+function isSpreadsheetFile(fileName: string, fileType?: string) {
+    if (/\.(xlsx|xlsm)$/i.test(fileName)) return true;
+    return [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ].includes(fileType || "");
+}
+
+function ExcelViewerModal({
+    files,
+    loadingFiles,
+    loadingPreview,
+    preview,
+    selectedFile,
+    onClose,
+    onSelectFile,
+}: {
+    files: ExcelKnowledgeFile[];
+    loadingFiles: boolean;
+    loadingPreview: boolean;
+    preview: SpreadsheetPreview["data"] | null;
+    selectedFile: string | null;
+    onClose: () => void;
+    onSelectFile: (file: ExcelKnowledgeFile) => void;
+}) {
+    return (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center">
+            <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/15 bg-[#090b12]">
+                <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                        Visor Excel (.xlsx / .xlsm)
+                    </h3>
+                    <button onClick={onClose} className="text-white/60 hover:text-white">Cerrar</button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 min-h-[65vh]">
+                    <aside className="border-r border-white/10 p-4 overflow-y-auto">
+                        <p className="text-xs text-white/50 mb-3">Archivos subidos por el usuario</p>
+                        {loadingFiles ? (
+                            <p className="text-sm text-white/60">Cargando archivos...</p>
+                        ) : files.length === 0 ? (
+                            <p className="text-sm text-white/60">No hay archivos Excel en tu base de conocimiento.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {files.map((file) => (
+                                    <button
+                                        key={file.fileUrl}
+                                        onClick={() => onSelectFile(file)}
+                                        className={`w-full text-left rounded-lg px-3 py-2 border transition-colors ${selectedFile === file.fileUrl ? "border-emerald-400/60 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                                    >
+                                        <p className="text-sm text-white truncate">{file.fileName}</p>
+                                        <p className="text-[11px] text-white/50 truncate">{file.fileType || "spreadsheet"}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </aside>
+
+                    <section className="lg:col-span-2 p-4 overflow-y-auto">
+                        {loadingPreview ? (
+                            <p className="text-sm text-white/60">Cargando previsualizacion...</p>
+                        ) : !preview ? (
+                            <p className="text-sm text-white/60">Selecciona un archivo para abrir el visor.</p>
+                        ) : (
+                            <div className="space-y-4">
+                                <h4 className="text-sm text-white/80">{preview.fileName}</h4>
+                                {preview.sheets.map((sheet) => (
+                                    <div key={sheet.name} className="border border-white/10 rounded-xl overflow-hidden">
+                                        <div className="px-3 py-2 text-xs bg-white/5 text-white/70 flex justify-between">
+                                            <span>Hoja: {sheet.name}</span>
+                                            <span>{sheet.rowCount} filas</span>
+                                        </div>
+                                        <div className="overflow-auto">
+                                            <table className="min-w-full text-xs">
+                                                <thead className="bg-white/5">
+                                                    <tr>
+                                                        {sheet.headers.slice(0, 18).map((header, idx) => (
+                                                            <th key={`${sheet.name}-h-${idx}`} className="px-2 py-1 text-left text-white/70 whitespace-nowrap border-b border-white/10">
+                                                                {header}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sheet.rows.slice(0, 80).map((row, rowIdx) => (
+                                                        <tr key={`${sheet.name}-r-${rowIdx}`} className="border-b border-white/5">
+                                                            {sheet.headers.slice(0, 18).map((_, colIdx) => (
+                                                                <td key={`${sheet.name}-c-${rowIdx}-${colIdx}`} className="px-2 py-1 text-white/80 whitespace-nowrap">
+                                                                    {row[colIdx] || ""}
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </section>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function ToolsStore() {
     const router = useRouter();
@@ -57,11 +186,26 @@ export default function ToolsStore() {
             icon: <Mail className="w-6 h-6 text-rose-400" />,
             status: "disconnected",
             category: "Productividad"
+        },
+        {
+            id: 5,
+            slug: "knowledge-excel-viewer",
+            name: "Visor Excel KB",
+            description: "Visualiza en modo lectura archivos .xlsx y .xlsm que tu usuario sube a la base de conocimiento.",
+            icon: <FileSpreadsheet className="w-6 h-6 text-emerald-300" />,
+            status: "connected",
+            category: "Knowledge"
         }
     ]);
     const [savingToolId, setSavingToolId] = useState<number | null>(null);
     const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [pendingDeactivateToolId, setPendingDeactivateToolId] = useState<number | null>(null);
+    const [excelViewerOpen, setExcelViewerOpen] = useState(false);
+    const [excelFiles, setExcelFiles] = useState<ExcelKnowledgeFile[]>([]);
+    const [loadingExcelFiles, setLoadingExcelFiles] = useState(false);
+    const [selectedExcelFileUrl, setSelectedExcelFileUrl] = useState<string | null>(null);
+    const [excelPreview, setExcelPreview] = useState<SpreadsheetPreview["data"] | null>(null);
+    const [loadingExcelPreview, setLoadingExcelPreview] = useState(false);
 
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
@@ -71,7 +215,9 @@ export default function ToolsStore() {
         if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
             setTools(prevTools => prevTools.map(tool => ({
                 ...tool,
-                status: config.recommendedTools.includes(tool.id) ? "connected" : "disconnected"
+                status: tool.slug === "knowledge-excel-viewer"
+                    ? "connected"
+                    : (config.recommendedTools.includes(tool.id) ? "connected" : "disconnected")
             })));
         }
     }, [activeAgent]);
@@ -123,12 +269,18 @@ export default function ToolsStore() {
     };
 
     const handlePrimaryAction = (tool: ToolCard) => {
+        if (tool.slug === "knowledge-excel-viewer") {
+            void openExcelViewer();
+            return;
+        }
+
         if (tool.status === "connected") {
             const configTargetBySlug: Record<ToolCard["slug"], string> = {
                 "google-calendar": "/dashboard/settings?tab=integrations&tool=google-calendar",
                 "payments": "/dashboard/settings?tab=integrations&tool=payments",
                 "shopify": "/dashboard/knowledge",
                 "email": "/dashboard/settings?tab=integrations&tool=email",
+                "knowledge-excel-viewer": "/dashboard/tools",
             };
 
             const target = configTargetBySlug[tool.slug];
@@ -138,6 +290,74 @@ export default function ToolsStore() {
         }
 
         handleToggleTool(tool.id);
+    };
+
+    const openExcelViewer = async () => {
+        if (!activeAgent?.id) return;
+
+        setExcelViewerOpen(true);
+        setLoadingExcelFiles(true);
+        setExcelPreview(null);
+        setSelectedExcelFileUrl(null);
+
+        try {
+            const res = await fetch(`/api/knowledge?businessId=${activeAgent.id}`);
+            const data = await res.json();
+
+            const items = data?.data?.items || data?.items || [];
+            const seen = new Set<string>();
+            const files: ExcelKnowledgeFile[] = [];
+
+            for (const item of items) {
+                const fileUrl = item?.metadata?.fileUrl;
+                const fileName = item?.metadata?.fileName || "archivo.xlsx";
+                const fileType = item?.metadata?.fileType || "";
+
+                if (!fileUrl || seen.has(fileUrl)) continue;
+                if (!isSpreadsheetFile(fileName, fileType)) continue;
+                seen.add(fileUrl);
+                files.push({ fileUrl, fileName, fileType });
+            }
+
+            setExcelFiles(files);
+            if (files[0]) {
+                void loadExcelPreview(files[0]);
+            }
+        } catch (error) {
+            console.error("[ToolsStore] Error loading excel files:", error);
+            setStatusMessage({ type: "error", text: "No se pudieron cargar archivos Excel de la base de conocimiento." });
+        } finally {
+            setLoadingExcelFiles(false);
+        }
+    };
+
+    const loadExcelPreview = async (file: ExcelKnowledgeFile) => {
+        if (!activeAgent?.id) return;
+
+        setSelectedExcelFileUrl(file.fileUrl);
+        setLoadingExcelPreview(true);
+
+        try {
+            const params = new URLSearchParams({
+                businessId: activeAgent.id,
+                fileUrl: file.fileUrl,
+            });
+            const res = await fetch(`/api/knowledge/preview?${params.toString()}`);
+            const data: SpreadsheetPreview = await res.json();
+            if (!res.ok || !data.success || !data.data) {
+                setStatusMessage({ type: "error", text: data.error || "No se pudo abrir el archivo Excel." });
+                setExcelPreview(null);
+                return;
+            }
+
+            setExcelPreview(data.data);
+        } catch (error: any) {
+            console.error("[ToolsStore] Error loading excel preview:", error);
+            setStatusMessage({ type: "error", text: error.message || "No se pudo abrir el archivo Excel." });
+            setExcelPreview(null);
+        } finally {
+            setLoadingExcelPreview(false);
+        }
     };
 
     const openDeactivateConfirm = (toolId: number) => {
@@ -214,7 +434,7 @@ export default function ToolsStore() {
                             </button>
                         </div>
 
-                        {tool.status === "connected" && (
+                        {tool.status === "connected" && tool.slug !== "knowledge-excel-viewer" && (
                             <button
                                 onClick={() => openDeactivateConfirm(tool.id)}
                                 disabled={savingToolId !== null}
@@ -250,6 +470,20 @@ export default function ToolsStore() {
                 <p className={`text-sm ${statusMessage.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
                     {statusMessage.text}
                 </p>
+            )}
+
+            {excelViewerOpen && (
+                <ExcelViewerModal
+                    files={excelFiles}
+                    loadingFiles={loadingExcelFiles}
+                    loadingPreview={loadingExcelPreview}
+                    preview={excelPreview}
+                    selectedFile={selectedExcelFileUrl}
+                    onClose={() => setExcelViewerOpen(false)}
+                    onSelectFile={(file) => {
+                        void loadExcelPreview(file);
+                    }}
+                />
             )}
         </div>
     );
