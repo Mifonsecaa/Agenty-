@@ -1,0 +1,23 @@
+[
+  {"id":"hours-general","query":"Cual es el horario de atencion?","expected":{"mustContainAny":["horario","atencion","abierto"]}},
+  {"id":"location","query":"Donde estan ubicados?","expected":{"mustContainAny":["direccion","ubicacion","mapa"]}},
+  {"id":"contact","query":"Como los contacto por telefono o whatsapp?","expected":{"mustContainAny":["telefono","whatsapp","contacto"]}},
+  {"id":"pricing","query":"Cuales son los precios de los servicios?","expected":{"mustContainAny":["precio","costo","tarifa"]}},
+  {"id":"catalog","query":"Que productos o servicios ofrecen?","expected":{"mustContainAny":["servicio","producto","catalogo"]}},
+  {"id":"booking","query":"Como puedo reservar una cita?","expected":{"mustContainAny":["reserva","turno","cita"]}},
+  {"id":"availability","query":"Tienen disponibilidad para hoy?","expected":{"mustContainAny":["disponibilidad","hoy","agenda"]}},
+  {"id":"payment-methods","query":"Que metodos de pago aceptan?","expected":{"mustContainAny":["pago","efectivo","transferencia","tarjeta"]}},
+  {"id":"promotions","query":"Tienen promociones o descuentos?","expected":{"mustContainAny":["promocion","descuento","oferta"]}},
+  {"id":"delivery","query":"Hacen envios a domicilio?","expected":{"mustContainAny":["envio","domicilio","cobertura"]}},
+  {"id":"returns","query":"Cual es la politica de cambios o devoluciones?","expected":{"mustContainAny":["devolucion","cambio","politica"]}},
+  {"id":"warranty","query":"Ofrecen garantia en sus productos o servicios?","expected":{"mustContainAny":["garantia","cobertura"]}},
+  {"id":"requirements","query":"Que requisitos necesito para contratar?","expected":{"mustContainAny":["requisito","documento","necesario"]}},
+  {"id":"process-time","query":"Cuanto demora el proceso normalmente?","expected":{"mustContainAny":["tiempo","demora","duracion"]}},
+  {"id":"plans","query":"Que planes tienen y que incluye cada uno?","expected":{"mustContainAny":["plan","incluye","beneficio"]}},
+  {"id":"support-hours","query":"En que horarios responden mensajes?","expected":{"mustContainAny":["horario","respuesta","soporte"]}},
+  {"id":"custom-orders","query":"Aceptan pedidos personalizados?","expected":{"mustContainAny":["personalizado","pedido","especial"]}},
+  {"id":"coverage","query":"Que zonas cubren actualmente?","expected":{"mustContainAny":["zona","cobertura","area"]}},
+  {"id":"onboarding","query":"Como es el primer paso para empezar con ustedes?","expected":{"mustContainAny":["primer paso","inicio","proceso"]}},
+  {"id":"documents","query":"Tienen menu, catalogo o documento para ver?","expected":{"mustContainAny":["menu","catalogo","documento"]}}
+]
+

@@ -1,0 +1,118 @@
+{
+  "businessId": "cmmtdeoxy0001wgtrn6bvt67o",
+  "dataset": "scripts/rag-retrieval-eval.generated.json",
+  "primaryK": 3,
+  "testedCombinations": 36,
+  "successes": 36,
+  "failures": 0,
+  "best": {
+    "ok": true,
+    "config": {
+      "topK": 3,
+      "minVector": 0.55,
+      "multiQuery": "true",
+      "maxVariants": 1
+    },
+    "metrics": {
+      "hit@1": 0,
+      "hit@3": 0,
+      "hit@5": 0,
+      "mrr": 0
+    },
+    "primaryHit": 0,
+    "mrr": 0,
+    "evaluated": 20
+  },
+  "top": [
+    {
+      "ok": true,
+      "config": {
+        "topK": 3,
+        "minVector": 0.55,
+        "multiQuery": "true",
+        "maxVariants": 1
+      },
+      "metrics": {
+        "hit@1": 0,
+        "hit@3": 0,
+        "hit@5": 0,
+        "mrr": 0
+      },
+      "primaryHit": 0,
+      "mrr": 0,
+      "evaluated": 20
+    },
+    {
+      "ok": true,
+      "config": {
+        "topK": 3,
+        "minVector": 0.55,
+        "multiQuery": "true",
+        "maxVariants": 2
+      },
+      "metrics": {
+        "hit@1": 0,
+        "hit@3": 0,
+        "hit@5": 0,
+        "mrr": 0
+      },
+      "primaryHit": 0,
+      "mrr": 0,
+      "evaluated": 20
+    },
+    {
+      "ok": true,
+      "config": {
+        "topK": 3,
+        "minVector": 0.55,
+        "multiQuery": "false",
+        "maxVariants": 1
+      },
+      "metrics": {
+        "hit@1": 0,
+        "hit@3": 0,
+        "hit@5": 0,
+        "mrr": 0
+      },
+      "primaryHit": 0,
+      "mrr": 0,
+      "evaluated": 20
+    },
+    {
+      "ok": true,
+      "config": {
+        "topK": 3,
+        "minVector": 0.55,
+        "multiQuery": "false",
+        "maxVariants": 2
+      },
+      "metrics": {
+        "hit@1": 0,
+        "hit@3": 0,
+        "hit@5": 0,
+        "mrr": 0
+      },
+      "primaryHit": 0,
+      "mrr": 0,
+      "evaluated": 20
+    },
+    {
+      "ok": true,
+      "config": {
+        "topK": 3,
+        "minVector": 0.6,
+        "multiQuery": "true",
+        "maxVariants": 1
+      },
+      "metrics": {
+        "hit@1": 0,
+        "hit@3": 0,
+        "hit@5": 0,
+        "mrr": 0
+      },
+      "primaryHit": 0,
+      "mrr": 0,
+      "evaluated": 20
+    }
+  ]
+}

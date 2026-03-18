@@ -19,15 +19,47 @@ type IncomingMessage = {
   content: string;
 };
 
+const STREAM_CHUNK_SIZE = Math.max(8, Number(process.env.CHAT_STREAM_CHUNK_SIZE || 64));
+const STREAM_DELAY_MS = Math.max(0, Number(process.env.CHAT_STREAM_DELAY_MS || 0));
+
+function normalizeProvider(value: unknown): Provider {
+  return value === 'openai' || value === 'github' || value === 'gemini' ? value : 'openai';
+}
+
+function okAssistantResponse(content: string, stream: boolean) {
+  if (stream) {
+    return new Response(streamTextResponse(content || ''), {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
+    });
+  }
+
+  return NextResponse.json({ role: 'assistant', content });
+}
+
 function streamTextResponse(text: string) {
   const encoder = new TextEncoder();
-  const chunks = text.match(/.{1,24}(\s|$)/g) || [text];
+  const safeText = text || '';
+
+  // Fixed-size chunking is cheaper than regex splitting on large responses.
+  const chunks: string[] = [];
+  for (let i = 0; i < safeText.length; i += STREAM_CHUNK_SIZE) {
+    chunks.push(safeText.slice(i, i + STREAM_CHUNK_SIZE));
+  }
+  if (chunks.length === 0) {
+    chunks.push('');
+  }
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const chunk of chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', delta: chunk })}\n\n`));
-        await new Promise((resolve) => setTimeout(resolve, 18));
+        if (STREAM_DELAY_MS > 0) {
+          await new Promise((resolve) => setTimeout(resolve, STREAM_DELAY_MS));
+        }
       }
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
@@ -93,25 +125,8 @@ export async function POST(request: Request) {
   let releaseConcurrency: (() => void) | null = null;
   try {
     const requesterKey = buildRequesterKey(request);
-    const body = await request.json();
-    const {
-      messages,
-      provider = 'openai',
-      isDemo = false,
-      demoContext = '',
-      agentId,
-      systemPrompt,
-      stream = false,
-    } = body as {
-      messages: IncomingMessage[];
-      provider?: Provider;
-      isDemo?: boolean;
-      demoContext?: string;
-      agentId?: string;
-      systemPrompt?: string;
-      stream?: boolean;
-    };
 
+    // Apply traffic control before parsing body to reduce work on abusive bursts.
     const rate = await checkRateLimit({
       scope: 'api-chat',
       key: requesterKey,
@@ -131,6 +146,26 @@ export async function POST(request: Request) {
         }
       );
     }
+
+    const body = await request.json();
+    const {
+      messages,
+      provider: rawProvider = 'openai',
+      isDemo = false,
+      demoContext = '',
+      agentId,
+      systemPrompt,
+      stream = false,
+    } = body as {
+      messages: IncomingMessage[];
+      provider?: Provider;
+      isDemo?: boolean;
+      demoContext?: string;
+      agentId?: string;
+      systemPrompt?: string;
+      stream?: boolean;
+    };
+    const provider = normalizeProvider(rawProvider);
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'Faltan mensajes' }, { status: 400 });
@@ -162,20 +197,9 @@ export async function POST(request: Request) {
       }
 
       const content = await generateDemoReply(normalizedMessages, provider, demoSystemPrompt);
-
-      if (stream) {
-        incrementOpsCounter('chat.success');
-        recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
-        return new Response(streamTextResponse(content), {
-          headers: {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-cache, no-transform',
-            Connection: 'keep-alive',
-          },
-        });
-      }
-
-      return NextResponse.json({ role: 'assistant', content });
+      incrementOpsCounter('chat.success');
+      recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+      return okAssistantResponse(content, stream);
     }
 
     // Playground privado: siempre requiere sesión y agentId explícito para alinear test mode al agente activo.
@@ -218,22 +242,9 @@ export async function POST(request: Request) {
       systemPrompt,
     });
 
-    if (stream) {
-      incrementOpsCounter('chat.success');
-      recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
-      return new Response(streamTextResponse(content || ''), {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-        },
-      });
-    }
-
     incrementOpsCounter('chat.success');
     recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
-
-    return NextResponse.json({ role: 'assistant', content });
+    return okAssistantResponse(content || '', stream);
   } catch (error: any) {
     console.error('[API Chat] Error:', error);
     incrementOpsCounter('chat.error');
