@@ -39,6 +39,7 @@
     "@supabase/supabase-js": "^2.99.2",
     "bcryptjs": "^3.0.3",
     "framer-motion": "^12.35.0",
+    "ioredis": "^5.10.0",
     "lucide-react": "^0.576.0",
     "next": "^16.1.6",
     "next-auth": "^4.24.13",
