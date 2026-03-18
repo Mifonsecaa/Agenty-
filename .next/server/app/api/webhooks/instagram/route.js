@@ -1,0 +1,13 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/webhooks/instagram/route.js")
+R.c("server/chunks/[root-of-the-server]__3c3a0b43._.js")
+R.c("server/chunks/lib_ai_ts_208f0092._.js")
+R.c("server/chunks/node_modules_next_f2da0d3e._.js")
+R.c("server/chunks/node_modules_formdata-node_lib_esm_File_ccf0a600.js")
+R.c("server/chunks/[root-of-the-server]__24f8fcd9._.js")
+R.c("server/chunks/[root-of-the-server]__bd5a8573._.js")
+R.c("server/chunks/_1402c258._.js")
+R.c("server/chunks/[root-of-the-server]__c80fd293._.js")
+R.c("server/chunks/node_modules_zod_v3_e5ad427e._.js")
+R.c("server/chunks/_next-internal_server_app_api_webhooks_instagram_route_actions_c146eccb.js")
+R.m(13957)
+module.exports=R.m(13957).exports

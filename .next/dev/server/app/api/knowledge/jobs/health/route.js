@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/knowledge/jobs/health/route.js")
+R.c("server/chunks/node_modules_next_a486b8d1._.js")
+R.c("server/chunks/node_modules_next-auth_b2ae42cb._.js")
+R.c("server/chunks/node_modules_openid-client_d15f72b3._.js")
+R.c("server/chunks/node_modules_5929141f._.js")
+R.c("server/chunks/[root-of-the-server]__f4bd6e0e._.js")
+R.c("server/chunks/[root-of-the-server]__e2d5c6f8._.js")
+R.c("server/chunks/_next-internal_server_app_api_knowledge_jobs_health_route_actions_7d756129.js")
+R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/knowledge/jobs/health/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/knowledge/jobs/health/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

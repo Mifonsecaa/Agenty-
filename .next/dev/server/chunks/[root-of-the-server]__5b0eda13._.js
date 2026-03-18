@@ -1,0 +1,771 @@
+module.exports = [
+"[externals]/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js [external] (next/dist/compiled/next-server/app-route-turbo.runtime.dev.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/compiled/next-server/app-route-turbo.runtime.dev.js", () => require("next/dist/compiled/next-server/app-route-turbo.runtime.dev.js"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/compiled/@opentelemetry/api [external] (next/dist/compiled/@opentelemetry/api, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/compiled/@opentelemetry/api", () => require("next/dist/compiled/@opentelemetry/api"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/compiled/next-server/app-page-turbo.runtime.dev.js [external] (next/dist/compiled/next-server/app-page-turbo.runtime.dev.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/compiled/next-server/app-page-turbo.runtime.dev.js", () => require("next/dist/compiled/next-server/app-page-turbo.runtime.dev.js"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/server/app-render/work-unit-async-storage.external.js [external] (next/dist/server/app-render/work-unit-async-storage.external.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/server/app-render/work-unit-async-storage.external.js", () => require("next/dist/server/app-render/work-unit-async-storage.external.js"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/server/app-render/work-async-storage.external.js [external] (next/dist/server/app-render/work-async-storage.external.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/server/app-render/work-async-storage.external.js", () => require("next/dist/server/app-render/work-async-storage.external.js"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/shared/lib/no-fallback-error.external.js [external] (next/dist/shared/lib/no-fallback-error.external.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/shared/lib/no-fallback-error.external.js", () => require("next/dist/shared/lib/no-fallback-error.external.js"));
+
+module.exports = mod;
+}),
+"[externals]/next/dist/server/app-render/after-task-async-storage.external.js [external] (next/dist/server/app-render/after-task-async-storage.external.js, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("next/dist/server/app-render/after-task-async-storage.external.js", () => require("next/dist/server/app-render/after-task-async-storage.external.js"));
+
+module.exports = mod;
+}),
+"[project]/lib/prisma.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "prisma",
+    ()=>prisma
+]);
+var __TURBOPACK__imported__module__$5b$externals$5d2f40$prisma$2f$client__$5b$external$5d$__$2840$prisma$2f$client$2c$__cjs$2c$__$5b$project$5d2f$node_modules$2f40$prisma$2f$client$29$__ = __turbopack_context__.i("[externals]/@prisma/client [external] (@prisma/client, cjs, [project]/node_modules/@prisma/client)");
+;
+const globalForPrisma = /*TURBOPACK member replacement*/ __turbopack_context__.g;
+const prisma = globalForPrisma.prisma || new __TURBOPACK__imported__module__$5b$externals$5d2f40$prisma$2f$client__$5b$external$5d$__$2840$prisma$2f$client$2c$__cjs$2c$__$5b$project$5d2f$node_modules$2f40$prisma$2f$client$29$__["PrismaClient"]({
+    log: [
+        "query"
+    ]
+});
+if ("TURBOPACK compile-time truthy", 1) globalForPrisma.prisma = prisma;
+}),
+"[externals]/stream [external] (stream, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("stream", () => require("stream"));
+
+module.exports = mod;
+}),
+"[externals]/http [external] (http, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("http", () => require("http"));
+
+module.exports = mod;
+}),
+"[externals]/url [external] (url, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("url", () => require("url"));
+
+module.exports = mod;
+}),
+"[externals]/punycode [external] (punycode, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("punycode", () => require("punycode"));
+
+module.exports = mod;
+}),
+"[externals]/https [external] (https, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("https", () => require("https"));
+
+module.exports = mod;
+}),
+"[externals]/zlib [external] (zlib, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("zlib", () => require("zlib"));
+
+module.exports = mod;
+}),
+"[externals]/util [external] (util, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("util", () => require("util"));
+
+module.exports = mod;
+}),
+"[externals]/node:fs [external] (node:fs, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("node:fs", () => require("node:fs"));
+
+module.exports = mod;
+}),
+"[externals]/node:stream [external] (node:stream, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("node:stream", () => require("node:stream"));
+
+module.exports = mod;
+}),
+"[externals]/node:stream/web [external] (node:stream/web, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("node:stream/web", () => require("node:stream/web"));
+
+module.exports = mod;
+}),
+"[externals]/fs/promises [external] (fs/promises, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("fs/promises", () => require("fs/promises"));
+
+module.exports = mod;
+}),
+"[externals]/path [external] (path, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("path", () => require("path"));
+
+module.exports = mod;
+}),
+"[externals]/os [external] (os, cjs)", ((__turbopack_context__, module, exports) => {
+
+const mod = __turbopack_context__.x("os", () => require("os"));
+
+module.exports = mod;
+}),
+"[project]/services/ai/transcription.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "transcriptionService",
+    ()=>transcriptionService
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/openai/index.mjs [app-route] (ecmascript) <locals>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$uploads$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/openai/uploads.mjs [app-route] (ecmascript) <locals>");
+var __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__ = __turbopack_context__.i("[externals]/fs/promises [external] (fs/promises, cjs)");
+var __TURBOPACK__imported__module__$5b$externals$5d2f$path__$5b$external$5d$__$28$path$2c$__cjs$29$__ = __turbopack_context__.i("[externals]/path [external] (path, cjs)");
+var __TURBOPACK__imported__module__$5b$externals$5d2f$os__$5b$external$5d$__$28$os$2c$__cjs$29$__ = __turbopack_context__.i("[externals]/os [external] (os, cjs)");
+;
+;
+;
+;
+;
+const transcriptionService = {
+    async transcribeAudio (audioBuffer) {
+        try {
+            console.log("[TranscriptionService] Starting transcription...");
+            const openai = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__["default"]({
+                apiKey: process.env.OPENAI_API_KEY
+            });
+            // OpenAI requiere un archivo con nombre y extensión para detectar el tipo
+            // Creamos un archivo temporal
+            const tempFilePath = __TURBOPACK__imported__module__$5b$externals$5d2f$path__$5b$external$5d$__$28$path$2c$__cjs$29$__["default"].join(__TURBOPACK__imported__module__$5b$externals$5d2f$os__$5b$external$5d$__$28$os$2c$__cjs$29$__["default"].tmpdir(), `audio-${Date.now()}.ogg`);
+            await __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__["default"].writeFile(tempFilePath, audioBuffer);
+            console.log(`[TranscriptionService] Saved temp audio file to ${tempFilePath}, sending to Whisper...`);
+            const file = await __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__["default"].readFile(tempFilePath);
+            // Necesitamos pasar un objeto File-like a la API de OpenAI
+            // En Node, fs.createReadStream funciona, pero openai v4 prefiere el helper toFile o File object
+            // Vamos a usar fs.createReadStream que es compatible con el SDK
+            const translation = await openai.audio.transcriptions.create({
+                file: await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$uploads$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__["toFile"])(file, "audio.ogg"),
+                model: "whisper-1",
+                language: "es",
+                prompt: "Transcribe este audio de WhatsApp de manera precisa."
+            });
+            console.log("[TranscriptionService] Transcription result:", translation.text);
+            // Limpiar archivo temporal
+            await __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__["default"].unlink(tempFilePath).catch(console.error);
+            return translation.text;
+        } catch (error) {
+            console.error("[TranscriptionService] Error transcribing audio:", error);
+            return ""; // Retornar vacío en caso de error para no romper el flujo
+        }
+    }
+};
+}),
+"[project]/services/telegram-sender.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "sendTelegramMedia",
+    ()=>sendTelegramMedia,
+    "sendTelegramMessage",
+    ()=>sendTelegramMessage,
+    "sendTelegramTyping",
+    ()=>sendTelegramTyping
+]);
+// services/telegram-sender.ts
+// Envía mensajes de vuelta a usuarios de Telegram
+var __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__ = __turbopack_context__.i("[externals]/fs/promises [external] (fs/promises, cjs)");
+var __TURBOPACK__imported__module__$5b$externals$5d2f$path__$5b$external$5d$__$28$path$2c$__cjs$29$__ = __turbopack_context__.i("[externals]/path [external] (path, cjs)");
+;
+;
+async function sendTelegramMessage({ botToken, chatId, text, parseMode = "HTML", replyToMessageId }) {
+    // Telegram has a 4096 char limit per message — split if needed
+    const chunks = splitMessage(text, 4096);
+    let lastMessageId;
+    for (const chunk of chunks){
+        const body = {
+            chat_id: chatId,
+            text: chunk,
+            parse_mode: parseMode
+        };
+        if (replyToMessageId && chunk === chunks[0]) {
+            body.reply_to_message_id = replyToMessageId;
+        }
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            console.error("[Telegram Sender] Error:", data.description);
+            // If parse_mode fails, retry as plain text
+            if (data.error_code === 400 && parseMode !== undefined) {
+                const plainRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: chunk
+                    })
+                });
+                const plainData = await plainRes.json();
+                if (plainData.ok) {
+                    lastMessageId = plainData.result?.message_id;
+                    continue;
+                }
+            }
+            return {
+                ok: false,
+                error: data.description
+            };
+        }
+        lastMessageId = data.result?.message_id;
+    }
+    return {
+        ok: true,
+        messageId: lastMessageId
+    };
+}
+async function sendTelegramTyping(botToken, chatId) {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            chat_id: chatId,
+            action: "typing"
+        })
+    }).catch(()=>{});
+}
+async function sendTelegramMedia({ botToken, chatId, mediaUrl, caption }) {
+    const lowerUrl = mediaUrl.toLowerCase();
+    const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(lowerUrl);
+    const endpoint = isImage ? "sendPhoto" : "sendDocument";
+    const mediaKey = isImage ? "photo" : "document";
+    // Intento 1: enviar por URL directa (rápido cuando Telegram puede alcanzarla).
+    const urlResult = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            chat_id: chatId,
+            [mediaKey]: mediaUrl,
+            caption: caption || undefined
+        })
+    });
+    const urlData = await urlResult.json().catch(()=>({}));
+    if (urlData.ok) {
+        return {
+            ok: true,
+            messageId: urlData.result?.message_id
+        };
+    }
+    console.error("[Telegram Sender] Media error:", urlData?.description || `${urlResult.status} ${urlResult.statusText}`);
+    // Intento 2: fallback robusto subiendo binario directamente a Telegram.
+    const uploadResult = await uploadTelegramMediaBinary({
+        botToken,
+        chatId,
+        mediaUrl,
+        caption,
+        endpoint,
+        mediaKey
+    });
+    if (uploadResult.ok) return uploadResult;
+    return {
+        ok: false,
+        error: uploadResult.error || urlData?.description || "No se pudo enviar el archivo por Telegram"
+    };
+}
+async function uploadTelegramMediaBinary({ botToken, chatId, mediaUrl, caption, endpoint, mediaKey }) {
+    try {
+        const { bytes, fileName, mimeType } = await resolveMediaContent(mediaUrl);
+        if (!bytes) return {
+            ok: false,
+            error: "No se pudo leer el archivo para reintento"
+        };
+        const formData = new FormData();
+        formData.append("chat_id", String(chatId));
+        if (caption) formData.append("caption", caption);
+        formData.append(mediaKey, new Blob([
+            bytes
+        ], {
+            type: mimeType || "application/octet-stream"
+        }), fileName);
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json().catch(()=>({}));
+        if (!data.ok) {
+            console.error("[Telegram Sender] Media upload error:", data?.description || `${res.status} ${res.statusText}`);
+            return {
+                ok: false,
+                error: data?.description || `${res.status} ${res.statusText}`
+            };
+        }
+        return {
+            ok: true,
+            messageId: data.result?.message_id
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error?.message || "Error en upload binario a Telegram"
+        };
+    }
+}
+async function resolveMediaContent(mediaUrl) {
+    const lower = mediaUrl.toLowerCase();
+    const guessedMime = lower.endsWith(".png") ? "image/png" : lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "image/jpeg" : lower.endsWith(".webp") ? "image/webp" : lower.endsWith(".gif") ? "image/gif" : lower.endsWith(".pdf") ? "application/pdf" : undefined;
+    try {
+        const parsed = new URL(mediaUrl);
+        const fileName = decodeURIComponent(parsed.pathname.split("/").pop() || "archivo");
+        // Si es nuestro directorio local /uploads, leemos del disco para evitar problemas de URL pública.
+        if (parsed.pathname.startsWith("/uploads/")) {
+            const localPath = __TURBOPACK__imported__module__$5b$externals$5d2f$path__$5b$external$5d$__$28$path$2c$__cjs$29$__["default"].join(process.cwd(), "public", parsed.pathname.replace(/^\//, ""));
+            const buffer = await (0, __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__["readFile"])(localPath);
+            return {
+                bytes: new Uint8Array(buffer),
+                fileName,
+                mimeType: guessedMime
+            };
+        }
+        const remote = await fetch(mediaUrl);
+        if (!remote.ok) {
+            throw new Error(`No se pudo descargar media (${remote.status} ${remote.statusText})`);
+        }
+        const arr = await remote.arrayBuffer();
+        const contentType = remote.headers.get("content-type") || guessedMime || undefined;
+        return {
+            bytes: new Uint8Array(arr),
+            fileName,
+            mimeType: contentType
+        };
+    } catch  {
+        // Fallback final para URLs relativas tipo /uploads/archivo.png
+        const cleaned = mediaUrl.replace(/^https?:\/\/[^/]+/i, "");
+        const fileName = decodeURIComponent(cleaned.split("/").pop() || "archivo");
+        const rel = cleaned.startsWith("/") ? cleaned.slice(1) : cleaned;
+        const localPath = __TURBOPACK__imported__module__$5b$externals$5d2f$path__$5b$external$5d$__$28$path$2c$__cjs$29$__["default"].join(process.cwd(), "public", rel);
+        const buffer = await (0, __TURBOPACK__imported__module__$5b$externals$5d2f$fs$2f$promises__$5b$external$5d$__$28$fs$2f$promises$2c$__cjs$29$__["readFile"])(localPath);
+        return {
+            bytes: new Uint8Array(buffer),
+            fileName,
+            mimeType: guessedMime
+        };
+    }
+}
+/**
+ * Split a long message into chunks respecting word boundaries
+ */ function splitMessage(text, maxLength) {
+    if (text.length <= maxLength) return [
+        text
+    ];
+    const chunks = [];
+    let remaining = text;
+    while(remaining.length > maxLength){
+        let splitIndex = remaining.lastIndexOf(" ", maxLength);
+        if (splitIndex === -1) splitIndex = maxLength;
+        chunks.push(remaining.slice(0, splitIndex));
+        remaining = remaining.slice(splitIndex).trimStart();
+    }
+    if (remaining) chunks.push(remaining);
+    return chunks;
+}
+}),
+"[project]/lib/media-parser.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "extractMediaFromAgentReply",
+    ()=>extractMediaFromAgentReply
+]);
+const MEDIA_TAG_REGEX = /\[MEDIA_URL:\s*([^\]]+)]/gi;
+const MARKDOWN_IMAGE_REGEX = /!\[[^\]]*]\(([^)]+)\)/gi;
+function normalizeMediaUrl(rawUrl, baseUrl) {
+    const trimmed = rawUrl.trim().replace(/^['"]|['"]$/g, "");
+    if (!trimmed) return "";
+    // Si el modelo devuelve localhost, lo reescribimos al dominio público actual.
+    if (/^https?:\/\/localhost(?::\d+)?\/uploads\//i.test(trimmed)) {
+        const base = new URL(baseUrl);
+        const uploadPath = trimmed.replace(/^https?:\/\/localhost(?::\d+)?/i, "");
+        return new URL(uploadPath, base.origin).toString();
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+        return trimmed;
+    }
+    if (trimmed.startsWith("/")) {
+        return new URL(trimmed, baseUrl).toString();
+    }
+    if (trimmed.startsWith("uploads/")) {
+        return new URL(`/${trimmed}`, baseUrl).toString();
+    }
+    return trimmed;
+}
+function extractMediaFromAgentReply(reply, baseUrl) {
+    const resolvedBaseUrl = baseUrl || process.env.PUBLIC_BASE_URL || process.env.NEXTAUTH_URL || "http://localhost:3001";
+    const mediaUrls = new Set();
+    let cleanText = reply || "";
+    cleanText = cleanText.replace(MEDIA_TAG_REGEX, (_, rawUrl)=>{
+        const normalized = normalizeMediaUrl(rawUrl, resolvedBaseUrl);
+        if (normalized) mediaUrls.add(normalized);
+        return "";
+    });
+    cleanText = cleanText.replace(MARKDOWN_IMAGE_REGEX, (_, rawUrl)=>{
+        const normalized = normalizeMediaUrl(rawUrl, resolvedBaseUrl);
+        if (normalized) mediaUrls.add(normalized);
+        return "";
+    });
+    return {
+        cleanText: cleanText.trim(),
+        mediaUrls: Array.from(mediaUrls)
+    };
+}
+}),
+"[project]/app/api/telegram/webhook/route.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "POST",
+    ()=>POST
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/lib/prisma.ts [app-route] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$ai$2f$transcription$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/services/ai/transcription.ts [app-route] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$telegram$2d$sender$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/services/telegram-sender.ts [app-route] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$media$2d$parser$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/lib/media-parser.ts [app-route] (ecmascript)");
+;
+;
+;
+;
+;
+async function POST(req) {
+    try {
+        const requestOrigin = new URL(req.url).origin;
+        const { searchParams } = new URL(req.url);
+        const businessId = searchParams.get("businessId");
+        const body = await req.json();
+        const message = body.message;
+        // Si es un status update u otro tipo de eventos que no sea mensaje directo
+        if (!message) {
+            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                ok: true
+            });
+        }
+        const chatId = message.chat?.id?.toString();
+        const numericChatId = Number(chatId);
+        const username = message.from?.username || message.from?.first_name || "Usuario";
+        // ---------------------------------------------------------
+        // 1. Identificar Negocio y Token
+        // ---------------------------------------------------------
+        let business;
+        if (businessId) {
+            business = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].business.findUnique({
+                where: {
+                    id: businessId
+                }
+            });
+        } else {
+            // Fallback para legacy o pruebas locales sin params: Busca el primero
+            business = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].business.findFirst();
+        }
+        if (!business) {
+            console.warn(`[Telegram Webhook] No se encontró el negocio (ID: ${businessId || "undefined"})`);
+            // Sin token no podemos responder, así que terminamos aquí
+            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                ok: true
+            });
+        }
+        // Token del bot específico de este negocio o fallback a variable de entorno
+        // Ahora prisma.schema tiene telegramBotToken en el modelo Business
+        const TELEGRAM_BOT_TOKEN = business.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
+        if (!TELEGRAM_BOT_TOKEN) {
+            console.error(`[Telegram Webhook] Business ${business.id} has no telegramBotToken and env var is missing.`);
+            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                ok: true
+            });
+        }
+        // ---------------------------------------------------------
+        // 2. Procesar Contenido (Texto o Audio)
+        // ---------------------------------------------------------
+        const MAX_AUDIO_DURATION_SECONDS = 60;
+        const baseText = message.text || "";
+        const captionText = message.caption || "";
+        const voice = message.voice;
+        const audio = message.audio;
+        const videoNote = message.video_note;
+        const audioFileId = voice?.file_id || audio?.file_id || videoNote?.file_id;
+        const audioDuration = voice?.duration ?? audio?.duration ?? videoNote?.duration;
+        // Si no hay chatId, ni contenido válido (texto/audio), ignoramos
+        if (!chatId || Number.isNaN(numericChatId) || !baseText && !captionText && !audioFileId) {
+            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                ok: true
+            });
+        }
+        let messageText = baseText || captionText;
+        // --- Gestión de Audio ---
+        if (audioFileId) {
+            console.log(`[Telegram Webhook] Audio/voice detected from ${username} (${chatId}). duration=${audioDuration ?? "unknown"}s`);
+            // Chequeo de duración
+            if (audioDuration !== undefined && audioDuration > MAX_AUDIO_DURATION_SECONDS) {
+                // Si es muy largo, avisamos y no transcribimos
+                // Necesitamos crear conversación/usuario primero para dejar rastro
+                const { conversation } = await getOrCreateCustomerAndConversation(business.id, chatId, username);
+                await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].message.create({
+                    data: {
+                        conversationId: conversation.id,
+                        role: "user",
+                        content: "[Audio demasiado largo (>60s), no procesado]"
+                    }
+                });
+                await (0, __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$telegram$2d$sender$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["sendTelegramMessage"])({
+                    botToken: TELEGRAM_BOT_TOKEN,
+                    chatId: numericChatId,
+                    text: "Tu nota de voz supera el límite de 60 segundos. Por favor, envía audios de hasta 1 minuto o resume tu consulta en texto."
+                });
+                return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                    ok: true
+                });
+            }
+            // Transcribir
+            try {
+                const audioBuffer = await fetchTelegramFileBuffer(audioFileId, TELEGRAM_BOT_TOKEN);
+                if (audioBuffer) {
+                    console.log(`[Telegram Webhook] Audio file downloaded (${audioBuffer.byteLength} bytes). Transcribing...`);
+                    const transcription = await __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$ai$2f$transcription$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["transcriptionService"].transcribeAudio(audioBuffer);
+                    if (transcription) {
+                        const block = `[NOTA DE VOZ DEL CLIENTE]: ${transcription}`;
+                        messageText = messageText ? `${messageText}\n\n${block}` : block;
+                        console.log(`[Telegram Webhook] Audio transcribed: "${messageText}"`);
+                    } else {
+                        messageText = messageText || "[Audio ininteligible]";
+                        console.warn("[Telegram Webhook] Empty transcription result.");
+                    }
+                } else {
+                    messageText = messageText || "[Error descargando audio]";
+                    console.error("[Telegram Webhook] Could not download audio file.");
+                }
+            } catch (err) {
+                console.error("[Telegram Webhook] Audio processing error:", err);
+                messageText = messageText || "[Error procesando audio]";
+            }
+        }
+        console.log(`[Telegram Webhook] Final User Message from ${username}: ${messageText}`);
+        // ---------------------------------------------------------
+        // 3. Crear / Actualizar Usuario y Conversación
+        // ---------------------------------------------------------
+        const { conversation } = await getOrCreateCustomerAndConversation(business.id, chatId, username);
+        // Guardar mensaje del usuario
+        await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].message.create({
+            data: {
+                conversationId: conversation.id,
+                role: "user",
+                content: messageText
+            }
+        });
+        await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].conversation.update({
+            where: {
+                id: conversation.id
+            },
+            data: {
+                lastMessageAt: new Date()
+            }
+        });
+        // ---------------------------------------------------------
+        // 4. Generar Respuesta IA
+        // ---------------------------------------------------------
+        // Enviamos "Escribiendo..." para dar feedback inmediato
+        await (0, __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$telegram$2d$sender$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["sendTelegramTyping"])(TELEGRAM_BOT_TOKEN, numericChatId);
+        console.log(`[Telegram Webhook] Generating AI response with agent graph for business ${business.id}...`);
+        let aiReply = "Lo siento, tuve un problema interno procesando tu mensaje.";
+        try {
+            const { createAgentGraph } = await __turbopack_context__.A("[project]/lib/agent/graph.ts [app-route] (ecmascript, async loader)");
+            const { HumanMessage } = await __turbopack_context__.A("[project]/node_modules/@langchain/core/dist/messages/index.js [app-route] (ecmascript, async loader)");
+            // En Telegram usamos chatId como identificador de cliente para habilitar booking CREATE/CANCEL.
+            const agentExecutor = createAgentGraph(business.id, business.name, business.config, chatId);
+            const result = await agentExecutor.invoke({
+                messages: [
+                    new HumanMessage(messageText)
+                ],
+                businessId: business.id,
+                businessName: business.name,
+                config: business.config
+            });
+            const lastMsg = result?.messages?.[result.messages.length - 1];
+            const lastContent = lastMsg?.content;
+            if (typeof lastContent === "string") {
+                aiReply = lastContent;
+            } else if (Array.isArray(lastContent)) {
+                aiReply = lastContent.map((part)=>typeof part === "string" ? part : part?.text || "").join("\n").trim() || aiReply;
+            }
+        } catch (agentError) {
+            console.error("[Telegram Webhook] Agent graph error:", agentError);
+        }
+        let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+        const parsedReply = (0, __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$media$2d$parser$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["extractMediaFromAgentReply"])(replyText, requestOrigin);
+        replyText = parsedReply.cleanText;
+        const mediaUrls = parsedReply.mediaUrls;
+        // Guardar respuesta del agente
+        if (replyText) {
+            await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].message.create({
+                data: {
+                    conversationId: conversation.id,
+                    role: "agent",
+                    content: replyText
+                }
+            });
+        }
+        // ---------------------------------------------------------
+        // 5. Enviar Respuesta
+        // ---------------------------------------------------------
+        console.log(`[Telegram Webhook] Sending reply to ${chatId}: ${replyText}`);
+        if (replyText) {
+            await (0, __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$telegram$2d$sender$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["sendTelegramMessage"])({
+                botToken: TELEGRAM_BOT_TOKEN,
+                chatId: numericChatId,
+                text: replyText
+            });
+        }
+        for (const mediaUrl of mediaUrls){
+            const mediaResult = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$services$2f$telegram$2d$sender$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["sendTelegramMedia"])({
+                botToken: TELEGRAM_BOT_TOKEN,
+                chatId: numericChatId,
+                mediaUrl,
+                caption: "Aqui tienes el archivo."
+            });
+            if (mediaResult.ok) {
+                await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].message.create({
+                    data: {
+                        conversationId: conversation.id,
+                        role: "agent",
+                        content: `[ARCHIVO ENVIADO: ${mediaUrl}]`
+                    }
+                });
+            } else {
+                await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].message.create({
+                    data: {
+                        conversationId: conversation.id,
+                        role: "system",
+                        content: `[ERROR ENVIO ARCHIVO TELEGRAM]: ${mediaUrl} - ${mediaResult.error || "Error desconocido"}`
+                    }
+                });
+            }
+        }
+        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+            ok: true
+        });
+    } catch (error) {
+        console.error("[Telegram Webhook] Fatal Error:", error);
+        // Siempre devolvemos 200 OK a Telegram para evitar reintentos infinitos en caso de error lógico
+        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+            ok: true
+        });
+    }
+}
+// =========================================================================================
+// Helpers Internos
+// =========================================================================================
+async function getOrCreateCustomerAndConversation(businessId, chatId, username) {
+    let customer = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].customer.findUnique({
+        where: {
+            phone: chatId
+        }
+    });
+    if (!customer) {
+        customer = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].customer.create({
+            data: {
+                phone: chatId,
+                name: username
+            }
+        });
+    }
+    let conversation = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].conversation.findFirst({
+        where: {
+            businessId,
+            customerId: customer.id,
+            status: {
+                not: "RESOLVED"
+            },
+            channel: "TELEGRAM"
+        }
+    });
+    if (!conversation) {
+        conversation = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["prisma"].conversation.create({
+            data: {
+                businessId,
+                customerId: customer.id,
+                channel: "TELEGRAM",
+                status: "ACTIVE"
+            }
+        });
+    }
+    return {
+        customer,
+        conversation
+    };
+}
+async function fetchTelegramFileBuffer(fileId, token) {
+    try {
+        // 1) Obtener ruta del archivo
+        const getFileUrl = `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`;
+        const getFileRes = await fetch(getFileUrl);
+        if (!getFileRes.ok) {
+            console.error(`[Telegram Fetch] getFile failed: ${getFileRes.status}`);
+            return null;
+        }
+        const fileData = await getFileRes.json();
+        if (!fileData.ok || !fileData.result?.file_path) {
+            console.error(`[Telegram Fetch] Invalid file data`, fileData);
+            return null;
+        }
+        const filePath = fileData.result.file_path;
+        const fileUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
+        // 2) Descargar binario
+        const fileRes = await fetch(fileUrl);
+        if (!fileRes.ok) {
+            console.error(`[Telegram Fetch] Download failed: ${fileRes.status}`);
+            return null;
+        }
+        const arrayBuffer = await fileRes.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } catch (error) {
+        console.error("[Telegram Fetch] Error:", error);
+        return null;
+    }
+}
+}),
+];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__5b0eda13._.js.map
