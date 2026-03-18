@@ -11,6 +11,8 @@ type RetrieverCandidate = {
   combinedScore: number;
 };
 
+type RetrieverRow = { content: string; metadata: unknown; distance: number };
+
 type RetrieverResult = {
   selected: RetrieverCandidate[];
   ragContext: string;
@@ -33,7 +35,7 @@ const RAG_RETRIEVAL_CACHE_TTL_MS = Number(process.env.RAG_RETRIEVAL_CACHE_TTL_MS
 const RAG_RETRIEVAL_CACHE_MAX_ENTRIES = Number(process.env.RAG_RETRIEVAL_CACHE_MAX_ENTRIES || 600);
 const RAG_RETRIEVAL_CANDIDATES = Number(process.env.RAG_RETRIEVAL_CANDIDATES || 10);
 const RAG_RETRIEVAL_TOP_K = Number(process.env.RAG_RETRIEVAL_TOP_K || 4);
-const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.6);
+const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.5);
 const RAG_CONTEXT_MAX_CHARS = Number(process.env.RAG_CONTEXT_MAX_CHARS || 2600);
 const RAG_CONTEXT_MAX_TOKENS = Number(process.env.RAG_CONTEXT_MAX_TOKENS || 900);
 const RAG_MULTI_QUERY_ENABLED = (process.env.RAG_MULTI_QUERY_ENABLED || "true").toLowerCase() !== "false";
@@ -95,7 +97,7 @@ function shouldSkipRag(query: string) {
   }
 
   const normalized = normalizeForMatch(query);
-  if (!normalized || normalized.length < 8) {
+  if (!normalized || normalized.length < 4) {
     return { skipped: true as const, reason: "short_query" };
   }
 
@@ -149,6 +151,26 @@ async function retrieveRowsForQuery(params: { businessId: string; queryText: str
   return rows;
 }
 
+async function retrieveRowsLexicalFallback(params: { businessId: string; queryText: string; candidatesLimit: number }): Promise<RetrieverRow[]> {
+  const queryTerms = extractTerms(params.queryText);
+  const terms = queryTerms.length > 0 ? queryTerms.slice(0, 5) : [params.queryText.trim()];
+
+  const rows = await prisma.knowledgeItem.findMany({
+    where: {
+      businessId: params.businessId,
+      OR: terms
+        .filter(Boolean)
+        .map((term) => ({ content: { contains: term, mode: "insensitive" as const } })),
+    },
+    select: { content: true, metadata: true },
+    orderBy: { createdAt: "desc" },
+    take: Math.max(params.candidatesLimit * 3, 18),
+  });
+
+  // Distancia sintética para reutilizar el mismo pipeline de ranking.
+  return rows.map((row, idx) => ({ content: row.content, metadata: row.metadata, distance: 0.95 + idx * 0.001 }));
+}
+
 function pruneExpired<T>(cache: Map<string, CacheEntry<T>>) {
   const now = nowMs();
   for (const [key, entry] of cache.entries()) {
@@ -166,6 +188,18 @@ function enforceMaxEntries<T>(cache: Map<string, CacheEntry<T>>, maxEntries: num
     const key = ordered[i]?.[0];
     if (key) cache.delete(key);
   }
+}
+
+function getCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  const now = nowMs();
+  if (entry.expiresAt <= now) {
+    cache.delete(key);
+    return null;
+  }
+  entry.lastAccessAt = now;
+  return entry.value;
 }
 
 function getCachedResult(key: string) {
@@ -257,8 +291,8 @@ export async function retrieveRagContext(params: { businessId: string; query: st
   const businessId = params.businessId;
   const query = (params.query || "").trim();
 
-  if (!query || !process.env.OPENAI_API_KEY) {
-    return { selected: [], ragContext: "", availableFiles: [], skipped: true, skipReason: "missing_query_or_key" };
+  if (!query) {
+    return { selected: [], ragContext: "", availableFiles: [], skipped: true, skipReason: "missing_query" };
   }
 
   const skip = shouldSkipRag(query);
@@ -275,23 +309,42 @@ export async function retrieveRagContext(params: { businessId: string; query: st
   const cached = getCachedResult(cacheKey);
   if (cached) return cached;
 
-  const embeddings = getEmbeddingsClient();
   const queryTerms = extractTerms(query);
 
   const candidatesLimit = Math.max(4, Math.min(20, RAG_RETRIEVAL_CANDIDATES));
   const topK = Math.max(1, Math.min(8, RAG_RETRIEVAL_TOP_K));
   const variants = buildQueryVariants(query);
 
-  const rowBatches = await Promise.all(
-    variants.map((variant) =>
-      retrieveRowsForQuery({
-        businessId,
-        queryText: variant,
-        embeddings,
-        candidatesLimit,
-      })
-    )
-  );
+  let rowBatches: RetrieverRow[][] = [];
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const embeddings = getEmbeddingsClient();
+      rowBatches = await Promise.all(
+        variants.map((variant) =>
+          retrieveRowsForQuery({
+            businessId,
+            queryText: variant,
+            embeddings,
+            candidatesLimit,
+          })
+        )
+      );
+    } catch (vectorError) {
+      console.warn("[RAG Retriever] Vector retrieval failed, fallback to lexical:", vectorError);
+    }
+  }
+
+  if (!rowBatches.length || rowBatches.every((batch) => batch.length === 0)) {
+    rowBatches = await Promise.all(
+      variants.map((variant) =>
+        retrieveRowsLexicalFallback({
+          businessId,
+          queryText: variant,
+          candidatesLimit,
+        })
+      )
+    );
+  }
 
   const rows: Array<{ content: string; metadata: unknown; distance: number; rank: number }> = [];
   for (const batch of rowBatches) {
@@ -336,10 +389,17 @@ export async function retrieveRagContext(params: { businessId: string; query: st
       }
   }
 
-  const ranked = Array.from(fusedByKey.values())
-    .filter((item) => item.vectorScore >= RAG_MIN_VECTOR_SIMILARITY || item.lexicalScore >= 0.28)
-    .sort((a, b) => b.combinedScore - a.combinedScore)
+  const allRanked = Array.from(fusedByKey.values()).sort((a, b) => b.combinedScore - a.combinedScore);
+
+  let ranked = allRanked
+    .filter((item) => item.vectorScore >= RAG_MIN_VECTOR_SIMILARITY || item.lexicalScore >= 0.18)
     .slice(0, topK);
+
+  // Si los umbrales dejaron el set vacío, devolvemos los mejores candidatos
+  // para evitar respuestas sin grounding cuando sí hay conocimiento.
+  if (!ranked.length && allRanked.length > 0) {
+    ranked = allRanked.slice(0, topK);
+  }
 
   const availableFiles: Array<{ url: string; description: string }> = [];
   const contextChunks: string[] = [];

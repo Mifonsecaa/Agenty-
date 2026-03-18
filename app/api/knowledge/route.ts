@@ -7,8 +7,39 @@ import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
 import { validateData, validationErrorResponse, serverErrorResponse, successResponse } from "@/lib/validation/validate";
 import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+function sanitizeFileName(name: string) {
+    return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
+    if (!process.env.GEMINI_API_KEY) {
+        return "Imagen subida a la base de conocimiento. No se pudo generar descripción automática (falta GEMINI_API_KEY).";
+    }
+
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            "Describe en español el contenido de esta imagen para una base de conocimiento empresarial. Si hay productos, precios, horarios, términos o datos clave, enuméralos de forma clara.",
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType,
+                },
+            },
+        ]);
+        return result.response.text() || "Imagen subida sin descripción textual.";
+    } catch (error) {
+        console.error("[API Knowledge] Error describiendo imagen:", error);
+        return "Imagen subida a la base de conocimiento. La descripción automática no estuvo disponible.";
+    }
+}
 
 function stripHtmlToText(html: string) {
     return html
@@ -35,6 +66,9 @@ export async function POST(req: Request) {
         }
 
         let { businessId, text, name, type, url } = validation.data!;
+        const safeType = type || "application/octet-stream";
+        let fileUrl: string | null = null;
+        let uploadedBuffer: Buffer | null = null;
 
         if (url && !text) {
             try {
@@ -51,14 +85,30 @@ export async function POST(req: Request) {
             }
         }
 
-        if (type === "application/pdf") {
+        const isTextLike = safeType.startsWith("text/") || ["application/json", "text/csv"].includes(safeType) || /\.(txt|md|csv|json)$/i.test(name || "");
+        if (!url && name) {
+            uploadedBuffer = isTextLike
+                ? Buffer.from(text || "", "utf-8")
+                : Buffer.from(text || "", "base64");
+
+            if (uploadedBuffer.byteLength > 0) {
+                const uploadDir = path.join(process.cwd(), "public", "uploads");
+                await mkdir(uploadDir, { recursive: true });
+                const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
+                const outputPath = path.join(uploadDir, uniqueName);
+                await writeFile(outputPath, uploadedBuffer);
+                fileUrl = `/uploads/${uniqueName}`;
+            }
+        }
+
+        if (safeType === "application/pdf") {
             try {
-                if (!text) {
+                if (!text && !uploadedBuffer) {
                     return NextResponse.json({ error: "El PDF no contiene datos para procesar" }, { status: 400 });
                 }
                 console.log("[API Knowledge] Cargando pdf-parse...");
                 const pdf = require("pdf-parse");
-                const buffer = Buffer.from(text, "base64");
+                const buffer = uploadedBuffer || Buffer.from(text || "", "base64");
                 console.log(`[API Knowledge] Buffer creado, tamaño: ${buffer.length}`);
                 const data = await pdf(buffer);
                 // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
@@ -73,6 +123,17 @@ export async function POST(req: Request) {
                     stack: pdfError.stack
                 }, { status: 422 });
             }
+        } else if (safeType.startsWith("image/")) {
+            if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
+                return NextResponse.json({ error: "La imagen no contiene datos para procesar" }, { status: 400 });
+            }
+            const visualDescription = await describeImageForKnowledge(uploadedBuffer, safeType);
+            text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+        } else if (isTextLike) {
+            text = text || "";
+        } else {
+            // Para archivos no textuales no-imagen guardamos un rastro recuperable.
+            text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`; 
         }
 
         // Verificar que el negocio pertenece al usuario
@@ -97,7 +158,8 @@ export async function POST(req: Request) {
             text: safeText,
             metadata: {
                 fileName: name || "document",
-                fileType: type || "txt",
+                fileType: safeType,
+                fileUrl,
                 source: url ? "website" : "manual_ingestion",
                 url: url || null,
             },
@@ -107,7 +169,8 @@ export async function POST(req: Request) {
             // Fallback temporal para no romper el flujo si la migración aún no está aplicada.
             const chunkCount = await ingestionService.ingestText(businessId, safeText, {
                 fileName: name || "document",
-                fileType: type || "txt"
+                fileType: safeType,
+                fileUrl,
             });
 
             return NextResponse.json({
@@ -185,7 +248,7 @@ export async function GET(req: Request) {
         const normalizedItems: KnowledgeItem[] = items.map((item) => {
             const metadata = item.metadata;
             const safeMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-                ? metadata as { fileName?: unknown }
+                ? metadata as { fileName?: unknown; fileUrl?: unknown; fileType?: unknown }
                 : undefined;
 
             return {
@@ -193,6 +256,8 @@ export async function GET(req: Request) {
                 content: item.content,
                 metadata: {
                     fileName: typeof safeMetadata?.fileName === "string" ? safeMetadata.fileName : undefined,
+                    fileUrl: typeof safeMetadata?.fileUrl === "string" ? safeMetadata.fileUrl : undefined,
+                    fileType: typeof safeMetadata?.fileType === "string" ? safeMetadata.fileType : undefined,
                 },
                 createdAt: item.createdAt.toISOString(),
             };

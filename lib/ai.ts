@@ -130,6 +130,36 @@ function compactMessagesForKey(messages: ChatMessage[]) {
     }));
 }
 
+async function loadBusinessKnowledgeFiles(businessId: string) {
+    const rows = await prisma.knowledgeItem.findMany({
+        where: { businessId },
+        select: { metadata: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 120,
+    });
+
+    const seen = new Set<string>();
+    const files: Array<{ url: string; description: string }> = [];
+
+    for (const row of rows) {
+        const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+            ? row.metadata as Record<string, unknown>
+            : {};
+
+        const fileUrl = typeof metadata.fileUrl === "string" ? metadata.fileUrl : "";
+        if (!fileUrl || seen.has(fileUrl)) continue;
+        seen.add(fileUrl);
+
+        const fileName = typeof metadata.fileName === "string" ? metadata.fileName : "Archivo adjunto";
+        const fileType = typeof metadata.fileType === "string" ? metadata.fileType : "archivo";
+        files.push({ url: fileUrl, description: `${fileName} (${fileType})` });
+
+        if (files.length >= 12) break;
+    }
+
+    return files;
+}
+
 export const aiService = {
     async generateResponse(businessId: string, messages: ChatMessage[], options: GenerateOptions = {}) {
         try {
@@ -147,13 +177,27 @@ export const aiService = {
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
             
+            const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
+            const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
+            const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
+
             try {
-                const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
-                if (lastUserMessage && process.env.OPENAI_API_KEY) {
+                if (lastUserMessage) {
                     const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
                     ragContext = retrieval.ragContext;
                     availableFiles = retrieval.availableFiles;
                     console.log(`[AIService] RAG retrieval selected ${retrieval.selected.length} chunks`);
+                }
+
+                // Garantiza acceso a adjuntos aunque no hayan quedado en top-k del retriever.
+                const allKnowledgeFiles = await loadBusinessKnowledgeFiles(businessId);
+                if (allKnowledgeFiles.length > 0) {
+                    const seenUrls = new Set(availableFiles.map((f) => f.url));
+                    for (const file of allKnowledgeFiles) {
+                        if (seenUrls.has(file.url)) continue;
+                        availableFiles.push(file);
+                        seenUrls.add(file.url);
+                    }
                 }
             } catch (ragError) {
                 console.error("[AIService] Error en RAG retrieval:", ragError);
@@ -173,6 +217,16 @@ export const aiService = {
                 
                 Archivos disponibles:
                 ${availableFiles.map(f => `- ${f.description} (URL: ${f.url})`).join("\n")}`;
+            }
+
+            // Regla anti-alucinación para datos sensibles (precios, horarios, políticas).
+            systemPrompt += "\n\nREGLA CRITICA: nunca inventes precios, horarios, stock o condiciones comerciales. Si no aparecen en la base de conocimiento/contexto, responde explícitamente que no tienes ese dato confirmado y ofrece escalar o pedir verificación.";
+
+            const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
+
+            // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
+            if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
+                return "No tengo ese dato confirmado en la base de conocimiento en este momento. Si quieres, te ayudo a verificarlo o a escalarlo con el negocio.";
             }
 
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
@@ -255,6 +309,32 @@ export const aiService = {
                     } else {
                         throw geminiErr;
                     }
+                }
+            }
+
+            // Cuando el usuario pide explícitamente un archivo/menu, forzamos etiqueta MEDIA_URL
+            // para que el canal (Telegram/WhatsApp) envíe el adjunto real.
+            if (asksForDocument && availableFiles.length > 0 && !/\[MEDIA_URL:\s*[^\]]+\]/i.test(finalResponse)) {
+                const asksImage = /(imagen|im[aá]genes|foto|fotos|jpg|jpeg|png|webp|gif)/i.test(lastUserMessage);
+                const prioritized = asksImage
+                    ? [...availableFiles].sort((a, b) => {
+                        const scoreA = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(a.description) ? 1 : 0;
+                        const scoreB = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(b.description) ? 1 : 0;
+                        return scoreB - scoreA;
+                    })
+                    : availableFiles;
+
+                const filesToShare = asksForEverything
+                    ? prioritized.slice(0, 5)
+                    : prioritized.slice(0, 1);
+
+                const mediaTags = filesToShare
+                    .filter((file) => Boolean(file.url))
+                    .map((file) => `[MEDIA_URL: ${file.url}]`)
+                    .join("\n");
+
+                if (mediaTags) {
+                    finalResponse = `${finalResponse.trim()}\n\n${mediaTags}`;
                 }
             }
 

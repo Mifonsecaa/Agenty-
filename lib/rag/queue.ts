@@ -29,6 +29,18 @@ const RETRYABLE_ERROR_MATCHERS = [
   "timeout",
 ];
 
+function getKnowledgeJobModel() {
+  const model = (prisma as any).knowledgeIngestionJob;
+  if (!model) return null;
+  if (
+    typeof model.findFirst !== "function" ||
+    typeof model.create !== "function"
+  ) {
+    return null;
+  }
+  return model;
+}
+
 function sanitizeText(value: string) {
   // Remove invalid control chars that can break UTF-8 writes.
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
@@ -72,7 +84,10 @@ function getAgeBucket(createdAt: Date, nowMs: number) {
 }
 
 export async function enqueueKnowledgeIngestion(payload: EnqueuePayload) {
-  const model = (prisma as any).knowledgeIngestionJob;
+  const model = getKnowledgeJobModel();
+  if (!model) {
+    return { job: null, deduplicated: false, missingQueueTable: true };
+  }
   const fingerprint = buildFingerprint(payload);
 
   try {
@@ -111,7 +126,8 @@ export async function enqueueKnowledgeIngestion(payload: EnqueuePayload) {
 }
 
 export async function getKnowledgeJob(jobId: string) {
-  const model = (prisma as any).knowledgeIngestionJob;
+  const model = getKnowledgeJobModel();
+  if (!model || typeof model.findUnique !== "function") return null;
   return model.findUnique({ where: { id: jobId } });
 }
 
