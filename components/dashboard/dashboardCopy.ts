@@ -129,4 +129,3 @@ export function getDashboardCopy(locale?: DashboardLocale | string) {
   if (locale === "en") return dashboardCopyByLocale.en;
   return dashboardCopyByLocale.es;
 }
-

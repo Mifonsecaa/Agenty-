@@ -201,6 +201,13 @@ export default function KnowledgeBase() {
     const handleUpload = async (file: File) => {
         if (!activeAgent?.id || uploadState === "uploading") return;
 
+        // Check file size
+        const MAX_SIZE_MB = 10;
+        if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+            toast.error(copy.knowledge.fileTooLarge || `El archivo es demasiado grande (max ${MAX_SIZE_MB}MB).`);
+            return;
+        }
+
         const businessId = activeAgent.id;
 
         const isTextLike = file.type.startsWith("text/") ||
@@ -246,33 +253,38 @@ export default function KnowledgeBase() {
                     })
                 });
 
-                if (res.ok) {
-                    const data: KnowledgeListResponse = await res.json().catch(() => ({ success: true } as KnowledgeListResponse));
-
-                    if (data.queued && data.jobId) {
-                        setProgress(55);
-                        toast.info(data.message || copy.knowledge.uploadQueued);
-                        await waitForJobCompletion(data.jobId);
+                if (!res.ok) {
+                    let errorMessage: string = copy.knowledge.uploadError;
+                    try {
+                        const errorData = await res.json();
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (e) {
+                         // Fallback if response is text (e.g., 413 Payload Too Large from server/proxy)
+                        const text = await res.text();
+                        if (text.includes("Too Large")) {
+                            errorMessage = "El archivo es demasiado grande para el servidor.";
+                        }
                     }
+                    throw new Error(errorMessage);
+                }
 
-                    setProgress(100);
-                    setUploadState("success");
-                    toast.success(copy.knowledge.uploadSuccess);
-                    setTimeout(() => {
-                        setUploadState("idle");
-                        setUploadingFileName("");
-                        fetchKnowledge();
-                        void fetchQueueHealth({ silent: true });
-                    }, 1200);
-                } else {
-                    const errorData: KnowledgeListResponse = await res.json().catch(() => ({ error: "Error desconocido", success: false }));
+                const data: KnowledgeListResponse = await res.json();
+
+                if (data.queued && data.jobId) {
+                    setProgress(55);
+                    toast.info(data.message || copy.knowledge.uploadQueued);
+                    await waitForJobCompletion(data.jobId);
+                }
+
+                setProgress(100);
+                setUploadState("success");
+                toast.success(copy.knowledge.uploadSuccess);
+                setTimeout(() => {
                     setUploadState("idle");
                     setUploadingFileName("");
-                    const errorMsg = errorData.error || "Error al procesar el documento.";
-                    const errorDetails = errorData.details || errorData.message || "";
-                    toast.error(errorDetails ? `${errorMsg} ${errorDetails}` : errorMsg);
-                    console.error("Server Error:", errorData);
-                }
+                    fetchKnowledge();
+                    void fetchQueueHealth({ silent: true });
+                }, 1200);
             };
 
             if (isTextLike) reader.readAsText(file);
