@@ -157,7 +157,9 @@ async function uploadTelegramMediaBinary({
     const formData = new FormData();
     formData.append("chat_id", String(chatId));
     if (caption) formData.append("caption", caption);
-    formData.append(mediaKey, new Blob([bytes], { type: mimeType || "application/octet-stream" }), fileName);
+
+    // El cambio está aquí: agregamos "as any" a la variable bytes
+    formData.append(mediaKey, new Blob([bytes as any], { type: mimeType || "application/octet-stream" }), fileName);
 
     const res = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
       method: "POST",
