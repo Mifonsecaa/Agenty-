@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { createHash } from "crypto";
 import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
+import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 
 console.log("[AIService] Module Loading...");
 
@@ -224,10 +225,25 @@ export const aiService = {
             systemPrompt += "\nREGLA ADICIONAL PARA PRECIOS: no reasignes precios entre productos. Si detectas duda o inconsistencia, responde solo con los items confirmados y marca el resto como 'precio no confirmado'.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
+            const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
 
             // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
             if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
                 return "No tengo ese dato confirmado en la base de conocimiento en este momento. Si quieres, te ayudo a verificarlo o a escalarlo con el negocio.";
+            }
+
+            // Fase 3.1: si detectamos conflicto de precios para un mismo item,
+            // respondemos de forma segura y transparente en vez de arriesgar una alucinación.
+            if (asksMenuOrPrice && ragContext) {
+                const menuConsistency = analyzeMenuConsistency(ragContext);
+                if (menuConsistency.conflicts.length > 0) {
+                    const topConflicts = menuConsistency.conflicts
+                        .slice(0, 5)
+                        .map((c) => `${c.item} (${c.prices.join(" / ")})`)
+                        .join(", ");
+
+                    return `Detecté inconsistencias en algunos precios de la base de conocimiento (${topConflicts}). Para evitar darte un dato incorrecto, te comparto solo precios confirmados o, si prefieres, puedo escalarlo para validación humana.`;
+                }
             }
 
             // 2. Determinar proveedor - Preferimos OpenAI si está disponible debido a restricciones regionales de Gemini
