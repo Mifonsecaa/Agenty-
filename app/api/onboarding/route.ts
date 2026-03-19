@@ -11,6 +11,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { knowledgeAgent } from "@/services/ai/knowledgeAgent";
+import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -53,20 +54,43 @@ export async function POST(req: Request) {
 
             const files = formData.getAll("files") as File[];
             if (files && files.length > 0) {
-               // Asegurar directorio de subida
-               const uploadDir = path.join(process.cwd(), "public", "uploads");
-               await mkdir(uploadDir, { recursive: true });
-
                for (const file of files) {
                    try {
                        const arrayBuffer = await file.arrayBuffer();
                        const buffer = Buffer.from(arrayBuffer);
-                       
-                       // Guardar archivo físicamente para poder enviarlo después
-                       const uniqueName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-                       const filePath = path.join(uploadDir, uniqueName);
-                       await writeFile(filePath, buffer);
-                       const publicUrl = `/uploads/${uniqueName}`; // URL accesible por el navegador/bot
+
+                       // 1) Intento principal: almacenamiento persistente en Supabase Storage
+                       let publicUrl: string | null = null;
+                       const storageUpload = await uploadKnowledgeFileToStorage({
+                           buffer,
+                           fileName: file.name,
+                           contentType: file.type,
+                       });
+                       if (storageUpload.publicUrl) {
+                           publicUrl = storageUpload.publicUrl;
+                       } else if (storageUpload.provider === "supabase" && storageUpload.error) {
+                           console.warn(`[Onboarding] Supabase upload failed, fallback local: ${storageUpload.error}`);
+                       }
+
+                       // 2) Fallback local para desarrollo local
+                       if (!publicUrl) {
+                           try {
+                               const uploadDir = path.join(process.cwd(), "public", "uploads");
+                               await mkdir(uploadDir, { recursive: true });
+                               const uniqueName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+                               const filePath = path.join(uploadDir, uniqueName);
+                               await writeFile(filePath, buffer);
+                               publicUrl = `/uploads/${uniqueName}`;
+                           } catch (fileError: any) {
+                               const isReadOnlyFs =
+                                   fileError?.code === "EROFS" ||
+                                   String(fileError?.message || "").toLowerCase().includes("read-only file system");
+                               if (!isReadOnlyFs) {
+                                   throw fileError;
+                               }
+                               console.warn("[Onboarding] Read-only filesystem detected; file URL will be omitted.");
+                           }
+                       }
                        
                        let fileText = "";
 

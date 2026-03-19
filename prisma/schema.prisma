@@ -7,16 +7,7 @@ datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
-  extensions = [vector]
-}
-
-enum KnowledgeIngestionJobStatus {
-  PENDING
-  PROCESSING
-  RETRY
-  COMPLETED
-  FAILED
-  DLQ
+  extensions = [uuid_ossp(map: "uuid-ossp", schema: "extensions"), vector]
 }
 
 model Account {
@@ -66,40 +57,33 @@ model VerificationToken {
 }
 
 model Business {
-  id           String        @id @default(cuid())
-  name         String
-  phone        String?       @unique
-
-  // Telegram Integration
-  telegramBotToken    String?
-  telegramBotUsername String?
-
-  // WhatsApp Integration
-  whatsappPhoneNumberId String?
-  whatsappAccessToken   String?
+  id                         String                  @id @default(cuid())
+  name                       String
+  phone                      String?                 @unique
+  telegramBotToken           String?
+  telegramBotUsername        String?
+  whatsappPhoneNumberId      String?
+  whatsappAccessToken        String?
   whatsappWebhookVerifyToken String?
-
-  // Instagram Integration
-  instagramPageId      String?
-  instagramAppSecret   String?
-  instagramAccessToken String?
-
-  config       Json
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reservations Reservation[]
-  dailyMetrics DailyMetric[]
-  knowledgeItems KnowledgeItem[]
-  knowledgeIngestionJobs KnowledgeIngestionJob[]
-  conversations  Conversation[]
+  instagramPageId            String?
+  instagramAppSecret         String?
+  instagramAccessToken       String?
+  config                     Json
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  userId                     String
+  user                       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations              Conversation[]
+  dailyMetrics               DailyMetric[]
+  knowledgeIngestionJobs     KnowledgeIngestionJob[]
+  knowledgeItems             KnowledgeItem[]
+  reservations               Reservation[]
 }
 
 model DailyMetric {
   id               String   @id @default(cuid())
   businessId       String
-  date             DateTime // Fecha truncada (sólo día)
+  date             DateTime
   messagesReceived Int      @default(0)
   messagesSent     Int      @default(0)
   aiResponses      Int      @default(0)
@@ -110,29 +94,28 @@ model DailyMetric {
 }
 
 model Customer {
-  id               String        @id @default(cuid())
-  phone            String        @unique
-  name             String?
-  aiProfile        String?       @db.Text // Resumen generado por IA sobre gustos/perfil
+  id                String         @id @default(cuid())
+  phone             String         @unique
+  name              String?
+  aiProfile         String?
   lastProfileUpdate DateTime?
-  createdAt        DateTime      @default(now())
-  reservations     Reservation[]
-  conversations    Conversation[]
+  createdAt         DateTime       @default(now())
+  conversations     Conversation[]
+  reservations      Reservation[]
 }
 
 model Conversation {
-  id           String    @id @default(cuid())
-  businessId   String
-  customerId   String
-  status       String    @default("ACTIVE") // ACTIVE, HANDOFF, RESOLVED
-  channel      String    @default("WHATSAPP") // WHATSAPP, WEB, INSTAGRAM
-  lastMessageAt DateTime @default(now())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  messages     Message[]
+  id            String    @id @default(cuid())
+  businessId    String
+  customerId    String
+  status        String    @default("ACTIVE")
+  channel       String    @default("WHATSAPP")
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages      Message[]
 
   @@index([businessId, lastMessageAt])
 }
@@ -140,10 +123,9 @@ model Conversation {
 model Message {
   id             String       @id @default(cuid())
   conversationId String
-  role           String       // user, assistant, system
+  role           String
   content        String
   createdAt      DateTime     @default(now())
-
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
@@ -154,8 +136,8 @@ model Reservation {
   startTime  DateTime
   endTime    DateTime
   status     String   @default("CONFIRMED")
-  details    String?  // Detalles extra como "Corte y barba"
-  metadata   Json?    @default("{}") // Datos estructurados extra
+  details    String?
+  metadata   Json?    @default("{}")
   businessId String
   customerId String
   createdAt  DateTime @default(now())
@@ -167,13 +149,13 @@ model Reservation {
 }
 
 model KnowledgeItem {
-  id         String   @id @default(cuid())
+  id         String                 @id @default(cuid())
   businessId String
   content    String
   embedding  Unsupported("vector")?
-  metadata   Json     @default("{}")
-  createdAt  DateTime @default(now())
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  metadata   Json                   @default("{}")
+  createdAt  DateTime               @default(now())
+  business   Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
 }
@@ -193,10 +175,18 @@ model KnowledgeIngestionJob {
   nextRunAt   DateTime                    @default(now())
   startedAt   DateTime?
   finishedAt  DateTime?
-
   business    Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
   @@index([status, nextRunAt])
   @@index([fingerprint])
+}
+
+enum KnowledgeIngestionJobStatus {
+  PENDING
+  PROCESSING
+  RETRY
+  COMPLETED
+  FAILED
+  DLQ
 }

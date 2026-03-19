@@ -10,6 +10,7 @@ import type { KnowledgeItem, KnowledgeListData } from "@/types/knowledge";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -177,12 +178,45 @@ export async function POST(req: Request) {
             }
 
             if (uploadedBuffer.byteLength > 0) {
-                const uploadDir = path.join(process.cwd(), "public", "uploads");
-                await mkdir(uploadDir, { recursive: true });
-                const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
-                const outputPath = path.join(uploadDir, uniqueName);
-                await writeFile(outputPath, uploadedBuffer);
-                fileUrl = `/uploads/${uniqueName}`;
+                const storageUpload = await uploadKnowledgeFileToStorage({
+                    buffer: uploadedBuffer,
+                    fileName: name,
+                    contentType: safeType,
+                    businessId,
+                });
+                if (storageUpload.publicUrl) {
+                    fileUrl = storageUpload.publicUrl;
+                } else if (storageUpload.provider === "supabase" && storageUpload.error) {
+                    console.warn(`[API Knowledge] Supabase upload failed, fallback to local disk: ${storageUpload.error}`);
+                }
+
+                if (fileUrl) {
+                    // Almacén persistente listo; no necesitamos escribir en disco local.
+                    // Esto evita fallos en Vercel por filesystem read-only.
+                    // Continuamos con el procesamiento del contenido.
+                } else {
+                try {
+                    const uploadDir = path.join(process.cwd(), "public", "uploads");
+                    await mkdir(uploadDir, { recursive: true });
+                    const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
+                    const outputPath = path.join(uploadDir, uniqueName);
+                    await writeFile(outputPath, uploadedBuffer);
+                    fileUrl = `/uploads/${uniqueName}`;
+                } catch (fileError: any) {
+                    const isReadOnlyFs =
+                        fileError?.code === "EROFS" ||
+                        String(fileError?.message || "").toLowerCase().includes("read-only file system");
+
+                    if (isReadOnlyFs) {
+                        // En Vercel serverless el filesystem del deployment es read-only.
+                        // Continuamos la ingesta sin URL persistente de archivo.
+                        console.warn("[API Knowledge] Read-only filesystem detected; skipping local file persistence.");
+                        fileUrl = null;
+                    } else {
+                        throw fileError;
+                    }
+                }
+                }
             }
         }
 
