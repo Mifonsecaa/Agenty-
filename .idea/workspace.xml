@@ -5,6 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b21f2c49-2e24-44a8-8453-b374d9817347" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/node_modules/@prisma/client-2c3a283f134fdcb6" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/pdf-parse-08f4573089f02674" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/node_modules/pdf-parse-08f4573089f02674" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.next/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" afterPath="$PROJECT_DIR$/.next/node_modules/@prisma/client-2c3a283f134fdcb6" afterDir="false" />
@@ -21,7 +22,8 @@
     </persistenceIdMap>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="204" />
+    <option name="cachedIndexableFilesCount" value="214" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
