@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { extractMenuEntries, hasMenuLikeSignals } from "@/lib/rag/menu-precision";
 
 const KnowledgeItemSchema = z.object({
     content: z.string().describe("El fragmento de conocimiento, hecho, regla o informacion extraida."),
@@ -36,6 +37,7 @@ const RETRY_SECTION_MAX_CHARS = 5000;
 const MIN_ITEM_CONTENT_LENGTH = 24;
 const MAX_ITEMS_FINAL = 60;
 const MAX_ITEMS_PER_SECTION = 14;
+const MENU_DETERMINISTIC_MIN_ITEMS = Number(process.env.MENU_DETERMINISTIC_MIN_ITEMS || 4);
 
 export class KnowledgeAgent {
     private openai: OpenAI | null = null;
@@ -190,6 +192,23 @@ export class KnowledgeAgent {
         return false;
     }
 
+    private buildDeterministicMenuItems(text: string): NormalizedKnowledgeItem[] {
+        if (!hasMenuLikeSignals(text)) return [];
+        const entries = extractMenuEntries(text);
+        if (entries.length < MENU_DETERMINISTIC_MIN_ITEMS) return [];
+
+        return entries.map((entry) => ({
+            content: `[SECCION: ${entry.section}] ${entry.item} | ${entry.price}`,
+            tags: [
+                "menu",
+                "precio",
+                "producto",
+                entry.section.toLowerCase().replace(/\s+/g, "_"),
+            ],
+            relevance: 10,
+        }));
+    }
+
     private async decideRoutePlan(text: string, sourceName: string): Promise<RoutePlan> {
         const heuristic = this.buildHeuristicRoute(text, sourceName);
         const planningPrompt = `
@@ -264,6 +283,9 @@ Reglas:
 4) Etiquetas cortas y utiles para busqueda.
 5) relevance de 1 a 10 (10 = dato critico operativo).
 6) Si el texto es pobre, devuelve menos items, pero de mejor calidad.
+7) Si hay precios, conserva el valor EXACTO tal como aparece (moneda y numero). No redondees ni reemplaces.
+8) No mezcles productos con precios de otras lineas o secciones.
+9) Si un precio es ambiguo o no legible, indica explicitamente "precio_no_confirmado".
 `;
     }
 
@@ -316,6 +338,14 @@ Reglas:
         }
 
         try {
+            // Fase 3: para menus/listas de precios usamos parser deterministico antes del LLM.
+            // Esto reduce alucinaciones y evita mezclar precios entre productos.
+            const deterministicMenuItems = this.buildDeterministicMenuItems(cleanText);
+            if (deterministicMenuItems.length >= MENU_DETERMINISTIC_MIN_ITEMS) {
+                console.log(`[KnowledgeAgent] Modo deterministico de menu activado (${deterministicMenuItems.length} items).`);
+                return { items: this.normalizeItems(deterministicMenuItems) };
+            }
+
             const routePlan = await this.decideRoutePlan(cleanText, sourceName);
             console.log(`[KnowledgeAgent] Route plan => ${routePlan.documentType}/${routePlan.extractionMode}`);
 

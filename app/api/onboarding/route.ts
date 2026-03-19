@@ -12,6 +12,7 @@ import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { knowledgeAgent } from "@/services/ai/knowledgeAgent";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
+import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -19,7 +20,20 @@ async function describeImage(buffer: Buffer, mimeType: string): Promise<string> 
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
-            "Describe detalladamente el contenido de esta imagen. Si es un menú, lista los platos y precios. Si es un horario, lista las horas. Si es un producto, descríbelo.",
+            `Extrae texto fiel de esta imagen en ESPANOL para entrenar un agente.
+PRIORIDAD: no inventar ni modificar precios.
+
+Reglas:
+1) Si es menu/lista de precios: transcribe item + precio EXACTO.
+2) Conserva secciones/categorias.
+3) Si un valor no es legible, marca [PRECIO_NO_LEGIBLE].
+4) No deduzcas ni completes datos faltantes.
+5) Devuelve texto plano estructurado (sin explicaciones largas).
+
+Formato:
+[SECCION: <nombre>]
+<producto> | <precio>
+`,
             {
                 inlineData: {
                     data: buffer.toString("base64"),
@@ -30,6 +44,31 @@ async function describeImage(buffer: Buffer, mimeType: string): Promise<string> 
         return result.response.text();
     } catch (error) {
         console.error("Error describiendo imagen con Gemini:", error);
+        return "";
+    }
+}
+
+async function verifyMenuImageTranscription(buffer: Buffer, mimeType: string): Promise<string> {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            `Transcribe SOLO menu con precision maxima.
+Reglas:
+1) Formato: "producto | precio".
+2) Usa lineas "[SECCION: nombre]" para categorias.
+3) No inventes, no completes, no normalices.
+4) Si no se ve el precio, omite ese item.
+`,
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: mimeType
+                }
+            }
+        ]);
+        return result.response.text() || "";
+    } catch (error) {
+        console.error("Error verificando transcripción de menú con Gemini:", error);
         return "";
     }
 }
@@ -109,7 +148,24 @@ export async function POST(req: Request) {
                            console.log(`[Onboarding] Procesando imagen ${file.name} con IA...`);
                            const description = await describeImage(buffer, file.type);
                            if (description) {
-                               fileText = `[IMAGEN: ${file.name}]\nDescripción visual: ${description}`;
+                               const menuEntriesPrimary = hasMenuLikeSignals(description) ? extractMenuEntries(description) : [];
+                               let menuEntriesFinal = menuEntriesPrimary;
+
+                               if (menuEntriesPrimary.length >= 3) {
+                                   const verificationText = await verifyMenuImageTranscription(buffer, file.type);
+                                   const menuEntriesSecondary = hasMenuLikeSignals(verificationText) ? extractMenuEntries(verificationText) : [];
+                                   const intersection = intersectMenuEntries(menuEntriesPrimary, menuEntriesSecondary);
+                                   if (intersection.length >= 3) {
+                                       menuEntriesFinal = intersection;
+                                   }
+                               }
+
+                               if (menuEntriesFinal.length >= 3) {
+                                   const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
+                                   fileText = `[IMAGEN_MENU: ${file.name}]\n${canonicalMenu}`;
+                               } else {
+                                   fileText = `[IMAGEN: ${file.name}]\nDescripción visual: ${description}`;
+                               }
                                console.log(`[Onboarding] Imagen descrita: ${description.substring(0, 50)}...`);
                            }
                        } else if (file.type.startsWith("text/") || file.name.endsWith(".txt") || file.name.endsWith(".md") || file.name.endsWith(".json") || file.name.endsWith(".csv")) {

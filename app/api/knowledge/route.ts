@@ -11,6 +11,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
+import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -27,7 +28,21 @@ async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
-            "Describe en español el contenido de esta imagen para una base de conocimiento empresarial. Si hay productos, precios, horarios, términos o datos clave, enuméralos de forma clara.",
+            `Extrae texto de esta imagen para una base de conocimiento empresarial en ESPANOL.
+PRIORIDAD MAXIMA: fidelidad literal de precios, productos y secciones.
+
+Reglas:
+1) Si es menu/carta/lista de precios, transcribe item + precio EXACTO sin inferir ni corregir.
+2) No reemplaces ni homogenices precios.
+3) Si un precio no se distingue, usa [PRECIO_NO_LEGIBLE].
+4) Mantén secciones/categorías (ej. Panaderia, Pasteles, Bebidas).
+5) No inventes productos ni valores.
+6) Devuelve texto plano estructurado, una linea por item.
+
+Formato sugerido:
+[SECCION: <nombre>]
+<producto> | <precio>
+`,
             {
                 inlineData: {
                     data: buffer.toString("base64"),
@@ -39,6 +54,35 @@ async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
     } catch (error) {
         console.error("[API Knowledge] Error describiendo imagen:", error);
         return "Imagen subida a la base de conocimiento. La descripción automática no estuvo disponible.";
+    }
+}
+
+async function verifyMenuImageTranscription(buffer: Buffer, mimeType: string) {
+    if (!process.env.GEMINI_API_KEY) {
+        return "";
+    }
+
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            `Transcribe SOLO menu con precision maxima.
+Reglas estrictas:
+1) Devuelve solo lineas con formato "producto | precio".
+2) Si hay secciones, agrega antes una linea "[SECCION: nombre]".
+3) No inventes, no completes, no normalices.
+4) Si no se ve un precio, omite ese item.
+`,
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType,
+                },
+            },
+        ]);
+        return result.response.text() || "";
+    } catch (error) {
+        console.error("[API Knowledge] Error en verificación de transcripción de menú:", error);
+        return "";
     }
 }
 
@@ -247,7 +291,24 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "La imagen no contiene datos para procesar" }, { status: 400 });
             }
             const visualDescription = await describeImageForKnowledge(uploadedBuffer, safeType);
-            text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+            const menuEntriesPrimary = hasMenuLikeSignals(visualDescription) ? extractMenuEntries(visualDescription) : [];
+            let menuEntriesFinal = menuEntriesPrimary;
+
+            if (menuEntriesPrimary.length >= 3) {
+                const verificationText = await verifyMenuImageTranscription(uploadedBuffer, safeType);
+                const menuEntriesSecondary = hasMenuLikeSignals(verificationText) ? extractMenuEntries(verificationText) : [];
+                const intersection = intersectMenuEntries(menuEntriesPrimary, menuEntriesSecondary);
+                if (intersection.length >= 3) {
+                    menuEntriesFinal = intersection;
+                }
+            }
+
+            if (menuEntriesFinal.length >= 3) {
+                const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
+                text = `[IMAGEN_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
+            } else {
+                text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+            }
         } else if (isSpreadsheet) {
             if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
                 return NextResponse.json({ error: "El archivo Excel no contiene datos para procesar" }, { status: 400 });
