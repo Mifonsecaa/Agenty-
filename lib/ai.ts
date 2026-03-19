@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
+import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
 
 console.log("[AIService] Module Loading...");
 
@@ -161,6 +162,32 @@ async function loadBusinessKnowledgeFiles(businessId: string) {
     return files;
 }
 
+function hasPriceSignals(text: string) {
+    return /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(text || "");
+}
+
+async function loadMenuFallbackContext(businessId: string) {
+    const rows = await prisma.knowledgeItem.findMany({
+        where: { businessId },
+        select: { content: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 240,
+    });
+
+    const candidates = rows
+        .map((row) => String(row.content || ""))
+        .filter((content) => hasMenuLikeSignals(content))
+        .slice(0, 100);
+
+    if (!candidates.length) return "";
+
+    const merged = candidates.join("\n\n");
+    const entries = extractMenuEntries(merged);
+    if (entries.length < 3) return "";
+
+    return buildCanonicalMenuText(entries);
+}
+
 export const aiService = {
     async generateResponse(businessId: string, messages: ChatMessage[], options: GenerateOptions = {}) {
         try {
@@ -181,6 +208,7 @@ export const aiService = {
             const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
             const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
             const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
+            const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
 
             try {
                 if (lastUserMessage) {
@@ -198,6 +226,18 @@ export const aiService = {
                         if (seenUrls.has(file.url)) continue;
                         availableFiles.push(file);
                         seenUrls.add(file.url);
+                    }
+                }
+
+                // Fase 3.1+: Si el retriever no trae contexto útil para menú/precios,
+                // usamos un fallback determinístico con conocimiento existente.
+                if (asksMenuOrPrice && (!ragContext || !hasPriceSignals(ragContext))) {
+                    const fallbackMenuContext = await loadMenuFallbackContext(businessId);
+                    if (fallbackMenuContext) {
+                        ragContext = ragContext
+                            ? `${ragContext}\n\n[MENU_CANONICO_FALLBACK]\n${fallbackMenuContext}`
+                            : `[MENU_CANONICO_FALLBACK]\n${fallbackMenuContext}`;
+                        console.log("[AIService] Menu fallback context injected");
                     }
                 }
             } catch (ragError) {
@@ -225,7 +265,6 @@ export const aiService = {
             systemPrompt += "\nREGLA ADICIONAL PARA PRECIOS: no reasignes precios entre productos. Si detectas duda o inconsistencia, responde solo con los items confirmados y marca el resto como 'precio no confirmado'.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
-            const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
 
             // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
             if (asksSensitiveData && !ragContext && availableFiles.length === 0) {

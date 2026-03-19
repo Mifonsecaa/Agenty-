@@ -374,7 +374,7 @@ export async function POST(req: Request) {
 
         // Kickoff best-effort para procesar rápido en entornos sin worker dedicado.
         if (ENABLE_INLINE_QUEUE_KICKOFF) {
-            void processKnowledgeQueueBatch(1).catch((queueError) => {
+            await processKnowledgeQueueBatch(1).catch((queueError) => {
                 console.error("[API Knowledge] Queue kickoff error:", queueError);
             });
         }
