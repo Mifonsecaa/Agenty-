@@ -4,6 +4,19 @@ export type MenuEntry = {
   price: string;
 };
 
+export type MenuConsistencyConflict = {
+  item: string;
+  prices: string[];
+  sections: string[];
+};
+
+export type MenuConsistencyReport = {
+  hasMenuLikeData: boolean;
+  totalEntries: number;
+  uniqueItems: number;
+  conflicts: MenuConsistencyConflict[];
+};
+
 function normalizeWhitespace(value: string) {
   return String(value || "")
     .replace(/\r\n/g, "\n")
@@ -176,6 +189,15 @@ function normalizeMenuKey(value: string) {
     .trim();
 }
 
+function normalizePriceKey(value: string) {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/^usd/, "$")
+    .replace(/^s\//, "s/")
+    .trim();
+}
+
 export function intersectMenuEntries(primary: MenuEntry[], secondary: MenuEntry[]) {
   if (!primary.length || !secondary.length) return [];
 
@@ -186,5 +208,65 @@ export function intersectMenuEntries(primary: MenuEntry[], secondary: MenuEntry[
   return primary.filter((entry) =>
     secondaryByKey.has(`${normalizeMenuKey(entry.item)}::${normalizeMenuKey(entry.price)}`)
   );
+}
+
+export function analyzeMenuConsistency(text: string): MenuConsistencyReport {
+  const hasMenuLikeData = hasMenuLikeSignals(text);
+  if (!hasMenuLikeData) {
+    return {
+      hasMenuLikeData: false,
+      totalEntries: 0,
+      uniqueItems: 0,
+      conflicts: [],
+    };
+  }
+
+  const entries = extractMenuEntries(text);
+  const byItem = new Map<
+    string,
+    {
+      itemLabel: string;
+      pricesByKey: Map<string, string>;
+      sections: Set<string>;
+    }
+  >();
+
+  for (const entry of entries) {
+    const itemKey = normalizeMenuKey(entry.item);
+    if (!itemKey) continue;
+    const priceKey = normalizePriceKey(entry.price);
+    if (!priceKey) continue;
+
+    const current = byItem.get(itemKey) || {
+      itemLabel: normalizeWhitespace(entry.item),
+      pricesByKey: new Map<string, string>(),
+      sections: new Set<string>(),
+    };
+
+    if (!current.pricesByKey.has(priceKey)) {
+      current.pricesByKey.set(priceKey, normalizeWhitespace(entry.price));
+    }
+    if (entry.section) current.sections.add(normalizeWhitespace(entry.section));
+    byItem.set(itemKey, current);
+  }
+
+  const conflicts: MenuConsistencyConflict[] = [];
+  for (const row of byItem.values()) {
+    const prices = Array.from(row.pricesByKey.values());
+    if (prices.length > 1) {
+      conflicts.push({
+        item: row.itemLabel,
+        prices,
+        sections: Array.from(row.sections.values()),
+      });
+    }
+  }
+
+  return {
+    hasMenuLikeData,
+    totalEntries: entries.length,
+    uniqueItems: byItem.size,
+    conflicts,
+  };
 }
 
