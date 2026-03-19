@@ -248,7 +248,7 @@ async function handleIncomingMessage(
             aiResponse = lastMsg.content as string;
 
             // Extraer media de la respuesta si existe
-            const requestOrigin = new URL(req.url).origin;
+            const requestOrigin = new URL(request.url).origin;
             const parsedReply = extractMediaFromAgentReply(aiResponse, requestOrigin);
             aiResponse = parsedReply.cleanText;
             mediaUrls = parsedReply.mediaUrls;
