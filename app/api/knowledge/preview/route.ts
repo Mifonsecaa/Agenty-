@@ -10,20 +10,22 @@ function isSpreadsheetFile(fileName: string) {
 }
 
 function mapSheetPreview(sheet: any, XLSX: any) {
-  const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(sheet, {
+  // Utilizamos 'as any[][]' para blindar el código contra el compilador estricto de Vercel
+  const rows = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
     raw: false,
     blankrows: false,
-  });
+  }) as any[][];
 
-  const header = (rows[0] || []).map((cell: string | number | boolean | null, idx: number) => {
+  const firstRow = rows[0] || [];
+  const header = firstRow.map((cell: any, idx: number) => {
     const value = (cell ?? "").toString().trim();
     return value || `Col ${idx + 1}`;
   });
 
   const bodyRows = rows
-    .slice(1, 101)
-    .map((row: Array<string | number | boolean | null>) => row.map((cell: string | number | boolean | null) => (cell ?? "").toString()));
+      .slice(1, 101)
+      .map((row: any[]) => row.map((cell: any) => (cell ?? "").toString()));
 
   return {
     rowCount: rows.length,
@@ -71,6 +73,8 @@ export async function GET(req: Request) {
 
     const localPath = path.join(process.cwd(), "public", normalizedFileUrl.replace(/^\//, ""));
     const buffer = await readFile(localPath);
+
+    // El require se mantiene dentro de la función para no afectar el renderizado inicial
     const XLSX = require("xlsx");
     const workbook = XLSX.read(buffer, { type: "buffer" });
 
@@ -95,4 +99,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
