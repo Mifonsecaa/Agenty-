@@ -86,7 +86,7 @@ export async function sendTelegramTyping(botToken: string, chatId: number): Prom
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, action: "typing" }),
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 export async function sendTelegramMedia({
@@ -157,9 +157,14 @@ async function uploadTelegramMediaBinary({
     const formData = new FormData();
     formData.append("chat_id", String(chatId));
     if (caption) formData.append("caption", caption);
+<<<<<<< HEAD
+    const arrayBuffer = new Uint8Array(bytes).buffer as ArrayBuffer;
+    formData.append(mediaKey, new Blob([arrayBuffer], { type: mimeType || "application/octet-stream" }), fileName);
+=======
 
     // El cambio está aquí: agregamos "as any" a la variable bytes
     formData.append(mediaKey, new Blob([bytes as any], { type: mimeType || "application/octet-stream" }), fileName);
+>>>>>>> 2aaa3e2403694cdd4c69bd6c1fd3fc03f31ae8df
 
     const res = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
       method: "POST",
