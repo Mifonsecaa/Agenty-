@@ -5,45 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b21f2c49-2e24-44a8-8453-b374d9817347" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.next/dev/lock" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/pdf-parse-08f4573089f02674" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.next/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.next/node_modules/pdf-parse-08f4573089f02674" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/api/auth/login/page.tsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/api/auth/nextauth/route.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/api/onboarding/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/onboarding/route.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/api/webhooks/telegram/route.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/api/webhooks/whatsapp/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/webhooks/whatsapp/route.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/builder/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/builder/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/inbox/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/inbox/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/knowledge/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/knowledge/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/dashboard/tools/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/dashboard/tools/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/global.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/globals.css" beforeDir="false" afterPath="$PROJECT_DIR$/app/globals.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/login/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/login/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/register/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/register/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/Header.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/Header.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/InteractiveDemo.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/InteractiveDemo.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/onboarding/MagicBox.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/onboarding/MagicBox.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/onboarding/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/onboarding/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/components/ui/ParticleBackground.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/components/ui/ParticleBackground.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/next.config.js" beforeDir="false" afterPath="$PROJECT_DIR$/next.config.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/prisma/schema.prisma" beforeDir="false" afterPath="$PROJECT_DIR$/prisma/schema.prisma" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/ai/onboardingAgent.ts" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai/onboardingAgent.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/database/business.ts" beforeDir="false" afterPath="$PROJECT_DIR$/services/database/business.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/database/reservations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/services/database/reservations.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/index.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/types/ai.ts" beforeDir="false" afterPath="$PROJECT_DIR$/types/ai.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/node_modules/@prisma/client-2c3a283f134fdcb6" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/dev/node_modules/pdf-parse-08f4573089f02674" beforeDir="false" afterPath="$PROJECT_DIR$/.next/dev/node_modules/pdf-parse-08f4573089f02674" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/node_modules/@prisma/client-2c3a283f134fdcb6" beforeDir="false" afterPath="$PROJECT_DIR$/.next/node_modules/@prisma/client-2c3a283f134fdcb6" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.next/node_modules/pdf-parse-08f4573089f02674" beforeDir="false" afterPath="$PROJECT_DIR$/.next/node_modules/pdf-parse-08f4573089f02674" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -97,36 +62,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;JavaScript Debug.localhost:3000.executor&quot;: &quot;Debug&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;js.debugger.nextJs.config.created.server&quot;: &quot;true&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/migue/WebstormProjects/agenty/agenty&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.AcpAgentsConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;ts.external.directory.path&quot;: &quot;C:\\Users\\David\\PycharmProjects\\Agenty-\\node_modules\\typescript\\lib&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "JavaScript Debug.localhost:3000.executor": "Debug",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "js.debugger.nextJs.config.created.server": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "C:/Users/migue/WebstormProjects/agenty/agenty",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.AcpAgentsConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "ts.external.directory.path": "C:\\Users\\migue\\WebstormProjects\\agenty\\node_modules\\typescript\\lib",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;TEXT&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "TEXT"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\migue\WebstormProjects\agenty\agenty" />

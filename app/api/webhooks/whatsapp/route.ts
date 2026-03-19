@@ -74,7 +74,8 @@ export async function POST(req: NextRequest) {
                 // Procesar mensajes
                 if (value.messages && Array.isArray(value.messages)) {
                     for (const message of value.messages) {
-                        await handleIncomingMessage(message, value);
+                        // AQUÍ ESTÁ EL CAMBIO: Pasamos 'req' a la función
+                        await handleIncomingMessage(message, value, req);
                     }
                 }
 
@@ -101,7 +102,8 @@ export async function POST(req: NextRequest) {
  */
 async function handleIncomingMessage(
     message: any,
-    context: any
+    context: any,
+    req: NextRequest // AQUÍ ESTÁ EL CAMBIO: Recibimos el objeto req
 ) {
     try {
         const from = message.from; // Número del usuario (ej: "34123456789")
@@ -146,11 +148,6 @@ async function handleIncomingMessage(
         console.log(`[WhatsApp Message] From: ${from}, Text: "${messageText}"`);
 
         // Buscar qué Business está asociado a este webhook
-        // Nota: Meta NO nos dice cuál es el número, así que buscamos por último que recibió webhook
-        // En una setup real, guardarías en redis o usarías una colección intermediaria
-        
-        // Para ahora, buscar al primer business con credenciales configuradas
-        // TODO: Mejorar esto con mapeo de número → BusinessId
         const businesses = await prisma.business.findMany({
             where: {
                 whatsappPhoneNumberId: { not: null },
@@ -247,8 +244,8 @@ async function handleIncomingMessage(
             const lastMsg = result.messages[result.messages.length - 1];
             aiResponse = lastMsg.content as string;
 
-            // Extraer media de la respuesta si existe
-            const requestOrigin = new URL(request.url).origin;
+            // AQUÍ ESTÁ EL CAMBIO FINAL: Usamos req.url
+            const requestOrigin = new URL(req.url).origin;
             const parsedReply = extractMediaFromAgentReply(aiResponse, requestOrigin);
             aiResponse = parsedReply.cleanText;
             mediaUrls = parsedReply.mediaUrls;
@@ -415,4 +412,3 @@ async function sendMediaViaMeta(
         return false;
     }
 }
-
