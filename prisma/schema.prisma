@@ -1,31 +1,38 @@
-// agenty/prisma/schema.prisma
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
-// --- Modelos de Next-Auth ---
+enum KnowledgeIngestionJobStatus {
+  PENDING
+  PROCESSING
+  RETRY
+  COMPLETED
+  FAILED
+  DLQ
+}
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -39,18 +46,15 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?    @unique
   emailVerified DateTime?
   image         String?
-  password      String?   // Para el login con credenciales
-
-  accounts Account[]
-  sessions Session[]
-
-  // Relación: Un usuario (dueño) tiene un negocio
-  business Business?
+  password      String?
+  accounts      Account[]
+  businesses    Business[]
+  sessions      Session[]
 }
 
 model VerificationToken {
@@ -61,50 +65,138 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// --- Modelos de tu Aplicación ---
-
 model Business {
-  id          String   @id @default(cuid())
-  name        String
-  phone       String?  @unique
+  id           String        @id @default(cuid())
+  name         String
+  phone        String?       @unique
 
-  // El núcleo del MVP universal: Aquí vive la configuración de aforos y horarios
-  config      Json
+  // Telegram Integration
+  telegramBotToken    String?
+  telegramBotUsername String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // WhatsApp Integration
+  whatsappPhoneNumberId String?
+  whatsappAccessToken   String?
+  whatsappWebhookVerifyToken String?
 
-  // Relación con el Usuario (Dueño)
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Instagram Integration
+  instagramPageId      String?
+  instagramAppSecret   String?
+  instagramAccessToken String?
 
-  // Relación: Un negocio tiene muchas reservas
+  config       Json
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations Reservation[]
+  dailyMetrics DailyMetric[]
+  knowledgeItems KnowledgeItem[]
+  knowledgeIngestionJobs KnowledgeIngestionJob[]
+  conversations  Conversation[]
+}
+
+model DailyMetric {
+  id               String   @id @default(cuid())
+  businessId       String
+  date             DateTime // Fecha truncada (sólo día)
+  messagesReceived Int      @default(0)
+  messagesSent     Int      @default(0)
+  aiResponses      Int      @default(0)
+  tokensUsed       Int      @default(0)
+  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, date])
 }
 
 model Customer {
-  id          String   @id @default(cuid())
-  phone       String   @unique
-  name        String?
+  id               String        @id @default(cuid())
+  phone            String        @unique
+  name             String?
+  aiProfile        String?       @db.Text // Resumen generado por IA sobre gustos/perfil
+  lastProfileUpdate DateTime?
+  createdAt        DateTime      @default(now())
+  reservations     Reservation[]
+  conversations    Conversation[]
+}
 
-  createdAt   DateTime @default(now())
-  reservations Reservation[]
+model Conversation {
+  id           String    @id @default(cuid())
+  businessId   String
+  customerId   String
+  status       String    @default("ACTIVE") // ACTIVE, HANDOFF, RESOLVED
+  channel      String    @default("WHATSAPP") // WHATSAPP, WEB, INSTAGRAM
+  lastMessageAt DateTime @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@index([businessId, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           String       // user, assistant, system
+  content        String
+  createdAt      DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
 }
 
 model Reservation {
-  id          String   @id @default(cuid())
-  startTime   DateTime
-  endTime     DateTime
-  status      String   @default("CONFIRMED")
-
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  startTime  DateTime
+  endTime    DateTime
+  status     String   @default("CONFIRMED")
+  details    String?  // Detalles extra como "Corte y barba"
+  metadata   Json?    @default("{}") // Datos estructurados extra
+  businessId String
+  customerId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startTime])
+}
+
+model KnowledgeItem {
+  id         String   @id @default(cuid())
+  businessId String
+  content    String
+  embedding  Unsupported("vector")?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model KnowledgeIngestionJob {
+  id          String                      @id @default(cuid())
+  businessId  String
+  status      KnowledgeIngestionJobStatus @default(PENDING)
+  payload     Json
+  fingerprint String?
+  attempts    Int                         @default(0)
+  maxAttempts Int                         @default(3)
+  chunkCount  Int?
+  lastError   String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  nextRunAt   DateTime                    @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  business    Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@index([status, nextRunAt])
+  @@index([fingerprint])
 }

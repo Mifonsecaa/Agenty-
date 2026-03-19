@@ -13,6 +13,7 @@ export const ScheduleBlockSchema = z.object({
 export const BusinessConfigSchema = z.object({
     businessType: z.enum(["GROUP_CLASSES", "INDIVIDUAL_APPOINTMENTS"]).describe("Tipo de negocio"),
     businessName: z.string().describe("El nombre del negocio inferido del texto"),
+    businessDescription: z.string().describe("Todo el conocimiento clave: productos, precios, reglas de domicilio, detalles de los servicios y requerimientos especiales mencionados por el usuario."),
     schedules: z.array(ScheduleBlockSchema).describe("Lista de todos los horarios disponibles"),
     agentTone: z.string().describe("El tono que debe usar el bot (ej. 'Amable, profesional, paisa, directo')"),
     defaultDurationMinutes: z.number().describe("Duración en minutos de un turno estándar"),

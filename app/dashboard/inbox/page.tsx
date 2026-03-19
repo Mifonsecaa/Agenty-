@@ -1,190 +1,383 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Search, MoreVertical, PauseCircle, Send, Users, CheckCircle } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Search, MoreVertical, AlertCircle, Smartphone, Camera, Globe, Sparkles } from "lucide-react";
+import { useAgenty } from "@/context/AgentyContext";
+import { toast } from "sonner";
 
-export default function Inbox() {
-    const [takeover, setTakeover] = useState(false);
-    const [chats, setChats] = useState([
-        {
-            id: 1,
-            clientMatch: "Cliente Muestra",
-            lastMessage: "Hola, ¿Cómo estás?",
-            time: "10:42 AM"
-        }
-    ]);
+const CHATS_POLL_MS = 10000;
+const MESSAGES_POLL_MS = 5000;
+
+async function parseApiJson<T>(res: Response): Promise<T | null> {
+    const raw = await res.text();
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        console.error("[Inbox] API returned non-JSON response", {
+            status: res.status,
+            snippet: raw.slice(0, 180),
+        });
+        return null;
+    }
+}
+
+export default function LiveInbox() {
+    const { activeAgent } = useAgenty();
+    const [chats, setChats] = useState<any[]>([]);
+    const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [inputMessage, setInputMessage] = useState("");
+    const [isPageVisible, setIsPageVisible] = useState(true);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "active" | "handoff">("all");
+    const [isTakingControl, setIsTakingControl] = useState(false);
 
     useEffect(() => {
-        const savedConfig = localStorage.getItem("agenty_config");
-        if (savedConfig) {
-            try {
-                const config = JSON.parse(savedConfig);
-                if (config.fakeChats && config.fakeChats.length > 0) {
-                    setChats(config.fakeChats);
-                }
-            } catch (e) {
-                console.error("Error parsing config", e);
-            }
-        }
+        const handleVisibility = () => {
+            setIsPageVisible(!document.hidden);
+        };
+
+        handleVisibility();
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
     }, []);
 
+    // Cargar lista de chats
+    useEffect(() => {
+        if (!activeAgent?.id || !isPageVisible) return;
+
+        const fetchChats = async () => {
+            try {
+                const res = await fetch(`/api/chats?businessId=${activeAgent.id}`);
+                const data = await parseApiJson<{ success?: boolean; chats?: any[]; error?: string }>(res);
+                if (res.ok && data?.success && Array.isArray(data.chats)) {
+                    setChats(data.chats);
+                } else if (!res.ok && data?.error) {
+                    toast.error(data.error);
+                }
+            } catch (error) {
+                console.error("Error loading chats", error);
+            }
+        };
+
+        fetchChats();
+        const interval = setInterval(fetchChats, CHATS_POLL_MS);
+        return () => clearInterval(interval);
+    }, [activeAgent, isPageVisible]);
+
+    // Cargar historial de mensajes
+    useEffect(() => {
+        if (!selectedChatId || !isPageVisible) return;
+
+        const fetchMessages = async () => {
+            if (!selectedChatId) return;
+            try {
+                const res = await fetch(`/api/chats/${selectedChatId}/messages`);
+                const data = await parseApiJson<{ success?: boolean; history?: any[]; error?: string }>(res);
+                if (res.ok && data?.success && Array.isArray(data.history)) {
+                    const mapped = data.history.map((m: any) => ({
+                        id: m.id,
+                        role: m.role === 'assistant' ? 'agent' : m.role, // Mapping backend -> UI
+                        text: m.content || m.text,
+                        createdAt: m.createdAt
+                    }));
+                    setMessages(mapped);
+                } else if (!res.ok && data?.error) {
+                    toast.error(data.error);
+                }
+            } catch (error) {
+                console.error("Error loading messages", error);
+            }
+        };
+
+        fetchMessages();
+        const interval = setInterval(fetchMessages, MESSAGES_POLL_MS);
+        return () => clearInterval(interval);
+    }, [selectedChatId, isPageVisible]);
+
+    const handleSendMessage = async () => {
+        if (!selectedChatId || !inputMessage.trim()) return;
+
+        const tempId = 'temp-' + Date.now();
+        const tempMsg = { role: 'agent', text: inputMessage, id: tempId };
+        setMessages(prev => [...prev, tempMsg]);
+        setInputMessage("");
+
+        try {
+            const res = await fetch(`/api/chats/${selectedChatId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: tempMsg.text })
+            });
+
+            if (!res.ok) {
+                const data = await parseApiJson<{ error?: string }>(res);
+                throw new Error(data?.error || "No se pudo enviar el mensaje");
+            }
+
+            toast.success("Mensaje enviado");
+            // El polling actualizará el mensaje real
+        } catch (error: any) {
+            console.error("Error sending message", error);
+            // Si falla, quitamos el mensaje optimista para evitar inconsistencias.
+            setMessages(prev => prev.filter((m) => m.id !== tempId));
+            setInputMessage(tempMsg.text);
+            toast.error(error?.message || "No se pudo enviar el mensaje");
+        }
+    };
+
+    const handleTakeControl = async () => {
+        if (!selectedChatId || isTakingControl) return;
+
+        setIsTakingControl(true);
+        try {
+            const takeControlPromise = fetch(`/api/chats/${selectedChatId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "ACTIVE" }),
+            }).then(async (res) => {
+                if (!res.ok) {
+                    const data = await parseApiJson<{ error?: string }>(res);
+                    throw new Error(data?.error || "No se pudo tomar control de la conversación");
+                }
+                return res;
+            });
+
+            await toast.promise(takeControlPromise, {
+                loading: "Tomando control de la conversación...",
+                success: "Tomaste control de la conversación",
+                error: (err) => err?.message || "No se pudo tomar control de la conversación",
+            });
+
+            setChats((prev: any[]) =>
+                prev.map((chat) =>
+                    chat.id === selectedChatId ? { ...chat, status: "active" } : chat,
+                ),
+            );
+        } catch (error) {
+            console.error("Error taking control", error);
+        } finally {
+            setIsTakingControl(false);
+        }
+    };
+
+    const filteredChats = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+
+        return chats.filter((chat) => {
+            const matchesStatus = statusFilter === "all" ? true : chat.status === statusFilter;
+            if (!matchesStatus) return false;
+
+            if (!query) return true;
+
+            const haystack = `${chat.name || ""} ${chat.phone || ""} ${chat.preview || ""}`.toLowerCase();
+            return haystack.includes(query);
+        });
+    }, [chats, searchQuery, statusFilter]);
+
+    const agentName = activeAgent?.name || "Agent";
+    const activeChatData = chats.find(c => c.id === selectedChatId);
+
     return (
-        <div className="h-full flex flex-col relative z-10">
-            <div className="flex justify-between items-end mb-6">
+        <div className="h-full flex flex-col relative z-10 overflow-hidden">
+            <div className="flex justify-between items-end mb-6 shrink-0">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-                        Live Inbox <Users className="w-6 h-6 text-emerald-400" />
-                    </h1>
-                    <p className="text-white/60">Supervisa las conversaciones de tu agente y toma el control si es necesario.</p>
+                    <h1 className="text-3xl font-bold tracking-tight mb-2">Live Inbox (Monitor)</h1>
+                    <p className="text-white/60">Observa en tiempo real cómo <strong>{agentName}</strong> interactúa con tus clientes.</p>
                 </div>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+            <div className="flex-1 bg-black border border-white/10 rounded-2xl flex overflow-hidden shadow-2xl min-h-0">
 
-                {/* Left Column: Client List */}
-                <div className="col-span-1 bg-white/5 border border-white/10 rounded-2xl flex flex-col overflow-hidden backdrop-blur-sm">
-                    <div className="p-4 border-b border-white/10">
-                        <div className="relative">
+                {/* Left Sidebar: Conversaciones */}
+                <div className="w-80 border-r border-white/10 bg-[#0a0a0a] flex flex-col">
+                    <div className="p-4 border-b border-white/10 shrink-0">
+                        <div className="relative mb-4">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                             <input
                                 type="text"
-                                placeholder="Buscar cliente o número..."
-                                className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-500"
+                                placeholder="Search conversations..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full bg-[#111] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-white/20"
                             />
                         </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setStatusFilter("active")}
+                                className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded-md border transition-colors ${statusFilter === "active" ? "bg-blue-500/15 border-blue-500/30" : "bg-white/5 hover:bg-white/10 border-white/5"}`}
+                            >
+                                <i className="w-2 h-2 rounded-full bg-blue-500 not-italic" aria-hidden="true" /> Active
+                            </button>
+                            <button
+                                onClick={() => setStatusFilter("handoff")}
+                                className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded-md border transition-colors ${statusFilter === "handoff" ? "bg-amber-500/15 border-amber-500/30" : "bg-white/5 hover:bg-white/10 border-white/5"}`}
+                            >
+                                <i className="w-2 h-2 rounded-full bg-amber-500 not-italic" aria-hidden="true" /> Handoff
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setStatusFilter("all")}
+                            className="mt-2 w-full text-[11px] text-white/60 hover:text-white/80 transition-colors"
+                        >
+                            Limpiar filtros
+                        </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto">
-                        {/* Render Dynamic Chats */}
-                        {chats.map((chat, index) => (
-                            <div key={chat.id} className={`p-4 cursor-pointer transition-colors ${index === 0 ? 'bg-white/10 border-l-2 border-blue-500 hover:bg-white/15' : 'border-b border-white/5 hover:bg-white/5'}`}>
+                    <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                        {filteredChats.map((chat) => (
+                            <button
+                                key={chat.id}
+                                onClick={() => setSelectedChatId(chat.id)}
+                                className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${selectedChatId === chat.id ? 'bg-white/10' : ''}`}
+                            >
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className="font-semibold text-sm">{chat.clientMatch}</span>
-                                    <span className="text-[10px] text-white/40">{chat.time}</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-linear-to-tr from-white/10 to-white/5 flex items-center justify-center font-bold text-xs uppercase text-white/70 shadow-inner">
+                                            {chat.name.charAt(0)}
+                                        </div>
+                                        <span className="font-medium text-sm text-white/90 truncate max-w-30">{chat.name}</span>
+                                    </div>
+                                    <span className="text-[10px] text-white/40 whitespace-nowrap">{chat.time}</span>
                                 </div>
-                                <p className="text-xs text-white/60 truncate">{chat.lastMessage}</p>
-                                <div className="flex mt-2 gap-2">
-                                    {index === 0 ? (
-                                        <span className="bg-red-500/20 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">Urgente</span>
-                                    ) : (
-                                        <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 uppercase">
-                                            <CheckCircle className="w-3 h-3" /> Resuelto
-                                        </span>
-                                    )}
+                                <div className="pl-10">
+                                    <p className="text-xs text-white/60 truncate pr-6">{chat.preview}</p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                        {chat.source === 'whatsapp' && <Smartphone className="w-3 h-3 text-emerald-400" />}
+                                        {chat.source === 'instagram' && <Camera className="w-3 h-3 text-rose-400" />}
+                                        {chat.source === 'web' && <Globe className="w-3 h-3 text-blue-400" />}
+
+                                        {chat.status === 'resolved' && <span className="text-[9px] text-emerald-400 border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5 rounded">Resolved by AI</span>}
+                                        {chat.status === 'active' && <span className="text-[9px] text-blue-400 border border-blue-400/20 bg-blue-400/10 px-1.5 py-0.5 rounded">AI Talking</span>}
+                                        {chat.status === 'handoff' && <span className="text-[9px] text-amber-400 border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 rounded">Needs Human</span>}
+                                    </div>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </div>
 
-                {/* Right Column: Chat Window */}
-                <div className="col-span-1 lg:col-span-2 bg-black border border-white/10 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
-
-                    {/* Header */}
-                    <div className="bg-[#111111] px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-stone-500 to-stone-700 flex items-center justify-center font-bold text-lg">
-                                J
+                {/* Right Area: Log de Lectura */}
+                <div className="flex-1 flex flex-col bg-[#111111] relative">
+                    {activeChatData ? (
+                        <>
+                            {/* Cabecera del chat */}
+                            <div className="h-16 border-b border-white/10 bg-[#161616] flex items-center justify-between px-6 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm text-white/70 shadow-inner">
+                                        {activeChatData.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h2 className="font-medium text-white/90">{activeChatData.name}</h2>
+                                        <p className="text-xs text-white/50">{activeChatData.phone}</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {activeChatData.status === 'handoff' && (
+                                        <button
+                                            onClick={handleTakeControl}
+                                            disabled={isTakingControl}
+                                            className="text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors shadow-lg shadow-blue-500/20"
+                                        >
+                                            {isTakingControl ? "Tomando control..." : "Tomar Control (Handoff)"}
+                                        </button>
+                                    )}
+                                    <button className="p-2 border border-white/10 hover:bg-white/5 rounded-lg transition-colors text-white/50">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
-                            <div>
-                                <p className="font-semibold">Juan Pérez (+57 300 123 4567)</p>
-                                {takeover ? (
-                                    <p className="text-xs text-orange-400 flex items-center gap-1 font-medium">
-                                        <PauseCircle className="w-3 h-3" /> <span>Agente Pausado. Estás respondiendo tú.</span>
-                                    </p>
-                                ) : (
-                                    <p className="text-xs text-emerald-400 flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                        <span>Agente AI manejando la conversación</span>
-                                    </p>
+
+                            {/* Alerta si es handoff */}
+                            {activeChatData.status === 'handoff' && (
+                                <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-3 flex items-center gap-2 text-xs text-amber-500">
+                                    <AlertCircle className="w-4 h-4" />
+                                    El agente de IA detuvo la conversación. Este cliente necesita atención humana crítica.
+                                </div>
+                            )}
+
+                            {/* Historial (Conectado a API) */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                <div className="text-center text-[10px] text-white/30 font-medium tracking-widest uppercase mb-8">
+                                    Conversación en {activeChatData.source}
+                                </div>
+
+                                {messages.map((msg, i) => {
+                                    if (msg.role === "system") {
+                                        return (
+                                            <div key={i} className="flex justify-center my-6">
+                                                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium shadow-sm">
+                                                    {msg.text}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                                            <div className="flex items-end gap-2 max-w-[70%]">
+                                                {msg.role === 'user' && (
+                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white/50 shrink-0">
+                                                        {activeChatData.name.charAt(0)}
+                                                    </div>
+                                                )}
+
+                                                <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.role === 'user'
+                                                    ? 'bg-[#222222] text-white/90 rounded-bl-none border border-white/5'
+                                                    : 'bg-linear-to-tr from-blue-600 to-purple-600 text-white rounded-br-none shadow-md shadow-purple-500/10'
+                                                    }`}>
+                                                    {msg.text}
+                                                </div>
+
+                                                {msg.role === 'agent' && (
+                                                    <div className="w-6 h-6 rounded-full bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
+                                                        <Sparkles className="w-3 h-3 text-white" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {activeChatData.status === 'active' && messages.length > 0 && messages[messages.length - 1].role === 'user' && (
+                                    <div className="flex justify-end pr-8">
+                                        <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 animate-pulse">
+                                            <i className="w-1.5 h-1.5 bg-emerald-400 rounded-full not-italic" aria-hidden="true" /> IA pensando respuesta...
+                                        </div>
+                                    </div>
                                 )}
                             </div>
-                        </div>
 
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setTakeover(!takeover)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${takeover
-                                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/20 hover:bg-orange-500/30'
-                                    : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                            >
-                                <PauseCircle className="w-4 h-4" />
-                                {takeover ? "Reactivar IA" : "Pausar IA (Takeover)"}
-                            </button>
-                            <button className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors">
-                                <MoreVertical className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#0a0a0a]">
-                        {/* User message */}
-                        <div className="flex justify-start">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm">
-                                Hola, compré unos zapatos ayer pero me quedaron pequeños. ¿Hacen cambios?
-                                <p className="text-[10px] text-white/40 text-right mt-1">10:40 AM</p>
+                            {/* Input Habilitado */}
+                            <div className="p-4 border-t border-white/10 bg-[#161616]">
+                                <form 
+                                    onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+                                    className="bg-[#0a0a0a] border border-white/5 rounded-xl p-2 flex gap-2 items-center"
+                                >
+                                    <input 
+                                        type="text" 
+                                        className="flex-1 bg-transparent border-none text-white text-sm px-3 focus:outline-none"
+                                        placeholder="Escribe un mensaje..."
+                                        value={inputMessage}
+                                        onChange={(e) => setInputMessage(e.target.value)}
+                                    />
+                                    <button 
+                                        type="submit"
+                                        className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition-colors"
+                                        disabled={!inputMessage.trim()}
+                                    >
+                                        <span className="sr-only">Enviar</span>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    </button>
+                                </form>
                             </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-white/30">
+                            <Sparkles className="w-12 h-12 mb-4 opacity-20" />
+                            <p className="text-sm">Selecciona una conversación para leer el historial.</p>
                         </div>
-
-                        {/* AI message */}
-                        <div className="flex justify-end">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-blue-600/20 border border-blue-500/30 text-white/90 rounded-br-none shadow-sm relative">
-                                <div className="absolute -top-2.5 -right-2 bg-blue-500 text-[9px] font-bold px-1.5 py-0.5 rounded text-white tracking-widest uppercase">
-                                    AI Respondió
-                                </div>
-                                ¡Hola Juan! Claro que sí. Tienes 30 días para cambios. ¿Qué talla necesitas para revisar el inventario? 👟
-                                <p className="text-[10px] text-blue-200/50 text-right mt-1">10:40 AM</p>
-                            </div>
-                        </div>
-
-                        {/* User message */}
-                        <div className="flex justify-start">
-                            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-white/10 text-white/90 rounded-bl-none border border-white/5 shadow-sm">
-                                Necesito talla 42 pero la verdad me enoja porque en la página decía que la horma era grande. Necesito un reembolso, no un cambio.
-                                <p className="text-[10px] text-white/40 text-right mt-1">10:42 AM</p>
-                            </div>
-                        </div>
-
-                        {/* System Notification */}
-                        <div className="flex justify-center my-6">
-                            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-4 py-2 rounded-full font-medium">
-                                ⚠️ El cliente solicitó un reembolso. Notificando a un humano.
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Input Area */}
-                    <div className={`p-4 border-t transition-colors ${takeover ? 'bg-orange-950/20 border-orange-500/20' : 'bg-[#111111] border-white/10'}`}>
-                        <div className="flex relative">
-                            <input
-                                type="text"
-                                placeholder={takeover ? "Escribe un mensaje como humano..." : "La IA tiene el control. Pausa para intervenir."}
-                                disabled={!takeover}
-                                className={`w-full rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none transition-colors border ${takeover
-                                    ? 'bg-[#0a0a0a] border-orange-500/30 text-white placeholder-white/40 focus:border-orange-500'
-                                    : 'bg-black/50 border-white/5 text-white/50 placeholder-white/20 cursor-not-allowed'
-                                    }`}
-                            />
-                            <button
-                                disabled={!takeover}
-                                className={`absolute right-2 top-1.5 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${takeover
-                                    ? 'bg-orange-500 hover:bg-orange-400 shadow-lg shadow-orange-500/20 opacity-100'
-                                    : 'bg-white/10 opacity-50 cursor-not-allowed'
-                                    }`}
-                            >
-                                <Send className={`w-4 h-4 ${takeover ? 'text-black' : 'text-white/40'}`} />
-                            </button>
-                        </div>
-                        {takeover && (
-                            <p className="text-[10px] text-orange-400/80 mt-2 ml-1">
-                                Envía este mensaje por WhatsApp a nombre de tu negocio.
-                            </p>
-                        )}
-                    </div>
-
+                    )}
                 </div>
-
             </div>
         </div>
     );

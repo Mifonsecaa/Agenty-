@@ -1,26 +1,35 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google"; // 1. Import Inter Font
 import "./globals.css";
 import Header from "@/components/Header";
-import Providers from "@/components/Providers"; // Asegurémonos de que Providers se importe
+import Footer from "@/components/Footer";
+import Providers from "@/components/Providers";
+import { Toaster } from "sonner";
+
+// 2. Configure font subset
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "Agenty | IA para tu Negocio",
-    description: "Crea tu agente de automatización describiendo tu negocio con IA.",
+  title: "Agenty | IA para tu Negocio",
+  description: "Crea tu agente de automatización describiendo tu negocio con IA.",
 };
 
 export default function RootLayout({
-                                       children,
-                                   }: Readonly<{
-    children: React.ReactNode;
+  children,
+}: Readonly<{
+  children: React.ReactNode;
 }>) {
-    return (
-        <html lang="es">
-        <body>
-          <Providers>
-            <Header />
-            {children}
-          </Providers>
-        </body>
-        </html>
-    );
+  return (
+    <html lang="es">
+      {/* 3. Apply font className to body */}
+      <body className={inter.className}>
+        <Providers>
+          <Header />
+          {children}
+          <Footer />
+          <Toaster theme="dark" position="top-center" richColors />
+        </Providers>
+      </body>
+    </html>
+  );
 }

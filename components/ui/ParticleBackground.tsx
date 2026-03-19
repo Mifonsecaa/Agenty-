@@ -10,11 +10,17 @@ export default function ParticleBackground() {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
+        const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const isMobile = window.innerWidth < 768;
+        const particleCount = prefersReducedMotion ? 40 : isMobile ? 90 : 160;
+
         // Hacer que el canvas ocupe toda la ventana
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
         let particlesArray: Particle[] = [];
+        let animationFrameId: number | null = null;
+        let isAnimating = true;
 
         // Rastrear la posición del mouse
         let mouse = {
@@ -68,6 +74,11 @@ export default function ParticleBackground() {
                     let dy = mouse.y - this.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
+                    if (distance === 0) {
+                        this.draw();
+                        return;
+                    }
+
                     let forceDirectionX = dx / distance;
                     let forceDirectionY = dy / distance;
 
@@ -98,8 +109,8 @@ export default function ParticleBackground() {
         // Inicializar los puntos
         function init() {
             particlesArray = [];
-            // Generar 300 puntos en pantalla
-            for (let i = 0; i < 300; i++) {
+            // Generar puntos adaptativos según dispositivo/preferencia
+            for (let i = 0; i < particleCount; i++) {
                 let x = Math.random() * canvas!.width;
                 let y = Math.random() * canvas!.height;
                 particlesArray.push(new Particle(x, y));
@@ -108,13 +119,30 @@ export default function ParticleBackground() {
 
         // El motor de animación
         function animate() {
+            if (!isAnimating) return;
             if (!ctx) return;
             ctx.clearRect(0, 0, canvas!.width, canvas!.height);
             for (let i = 0; i < particlesArray.length; i++) {
                 particlesArray[i].update();
             }
-            requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
         }
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                isAnimating = false;
+                if (animationFrameId !== null) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                return;
+            }
+
+            if (!isAnimating) {
+                isAnimating = true;
+                animate();
+            }
+        };
 
         init();
         animate();
@@ -126,10 +154,16 @@ export default function ParticleBackground() {
             init();
         };
         window.addEventListener("resize", handleResize);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
             window.removeEventListener("resize", handleResize);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            isAnimating = false;
+            if (animationFrameId !== null) {
+                cancelAnimationFrame(animationFrameId);
+            }
         };
     }, []);
 
