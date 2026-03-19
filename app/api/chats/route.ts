@@ -56,16 +56,23 @@ export async function GET(req: Request) {
         }));
 
         // Formatear para el frontend
-        const formatted = conversationsWithMessages.map(c => ({
-            id: c.id,
-            name: c.customer.name || c.customer.phone,
-            phone: c.customer.phone,
-            source: c.channel.toLowerCase(),
-            status: c.status.toLowerCase(),
-            time: c.lastMessageAt.toISOString(), // Frontend deberá formatear "2 min ago"
-            preview: c.messages[0]?.content || "Nueva conversación",
-            role: c.messages[0]?.role || "system"
-        }));
+        const formatted = conversationsWithMessages.map(c => {
+            const parsedLastMessageAt = c.lastMessageAt ? new Date(c.lastMessageAt) : null;
+            const safeTime = parsedLastMessageAt && !Number.isNaN(parsedLastMessageAt.getTime())
+                ? parsedLastMessageAt.toISOString()
+                : new Date().toISOString();
+
+            return {
+                id: c.id,
+                name: c.customer.name || c.customer.phone,
+                phone: c.customer.phone,
+                source: c.channel.toLowerCase(),
+                status: c.status.toLowerCase(),
+                time: safeTime, // Frontend deberá formatear "2 min ago"
+                preview: c.messages[0]?.content || "Nueva conversación",
+                role: c.messages[0]?.role || "system"
+            };
+        });
 
         return NextResponse.json({ success: true, chats: formatted });
 

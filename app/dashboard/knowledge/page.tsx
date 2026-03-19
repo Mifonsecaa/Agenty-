@@ -234,66 +234,88 @@ export default function KnowledgeBase() {
         try {
             const reader = new FileReader();
             reader.onload = async (e: ProgressEvent<FileReader>) => {
-                const result = e.target?.result as string;
-                if (!result || !result.includes(",")) {
-                    throw new Error(copy.knowledge.uploadError);
-                }
+                try {
+                    const result = e.target?.result as string;
+                    if (!result || !result.includes(",")) {
+                        throw new Error(copy.knowledge.uploadError);
+                    }
 
-                // Siempre enviamos base64 para preservar bytes originales del archivo.
-                const content = result.split(",")[1] || "";
-                setProgress(40);
+                    // Siempre enviamos base64 para preservar bytes originales del archivo.
+                    const content = result.split(",")[1] || "";
+                    setProgress(40);
 
-                const res = await fetch("/api/knowledge", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        businessId,
-                        text: content,
-                        encoding: "base64",
-                        name: file.name,
-                        type: file.type
-                    })
-                });
+                    const res = await fetch("/api/knowledge", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            businessId,
+                            text: content,
+                            encoding: "base64",
+                            name: file.name,
+                            type: file.type
+                        })
+                    });
 
-                if (!res.ok) {
-                    let errorMessage: string = copy.knowledge.uploadError;
-                    try {
-                        const errorData = await res.json();
-                        errorMessage = errorData.error || errorMessage;
-                    } catch (e) {
-                         // Fallback if response is text (e.g., 413 Payload Too Large from server/proxy)
-                        const text = await res.text();
-                        if (text.includes("Too Large")) {
-                            errorMessage = "El archivo es demasiado grande para el servidor.";
+                    if (!res.ok) {
+                        let errorMessage: string = copy.knowledge.uploadError;
+                        try {
+                            const errorData = await res.json();
+                            errorMessage = errorData.error || errorMessage;
+                        } catch (e) {
+                            // Fallback if response is text (e.g., 413 Payload Too Large from server/proxy)
+                            const text = await res.text();
+                            if (text.includes("Too Large")) {
+                                errorMessage = "El archivo es demasiado grande para el servidor.";
+                            }
+                        }
+                        throw new Error(errorMessage);
+                    }
+
+                    const data: KnowledgeListResponse = await res.json();
+
+                    if (data.queued && data.jobId) {
+                        setProgress(55);
+                        toast.info(data.message || copy.knowledge.uploadQueued);
+                        try {
+                            await waitForJobCompletion(data.jobId);
+                        } catch (jobError) {
+                            // En producción serverless el job puede tardar más que el polling.
+                            // No dejamos la UI colgada: notificamos y continuamos.
+                            console.warn("Knowledge job still processing:", jobError);
+                            toast.info("El documento quedó en cola y seguirá procesándose en segundo plano.");
                         }
                     }
-                    throw new Error(errorMessage);
-                }
 
-                const data: KnowledgeListResponse = await res.json();
-
-                if (data.queued && data.jobId) {
-                    setProgress(55);
-                    toast.info(data.message || copy.knowledge.uploadQueued);
-                    await waitForJobCompletion(data.jobId);
-                }
-
-                setProgress(100);
-                setUploadState("success");
-                toast.success(copy.knowledge.uploadSuccess);
-                setTimeout(() => {
+                    setProgress(100);
+                    setUploadState("success");
+                    toast.success(copy.knowledge.uploadSuccess);
+                    setTimeout(() => {
+                        setUploadState("idle");
+                        setUploadingFileName("");
+                        fetchKnowledge();
+                        void fetchQueueHealth({ silent: true });
+                    }, 1200);
+                } catch (error) {
+                    console.error("Upload error:", error);
                     setUploadState("idle");
+                    setProgress(0);
                     setUploadingFileName("");
-                    fetchKnowledge();
-                    void fetchQueueHealth({ silent: true });
-                }, 1200);
+                    toast.error(error instanceof Error ? error.message : copy.knowledge.uploadError);
+                }
+            };
+
+            reader.onerror = () => {
+                setUploadState("idle");
+                setProgress(0);
+                setUploadingFileName("");
+                toast.error("No se pudo leer el archivo localmente.");
             };
 
             reader.readAsDataURL(file);
-
         } catch (error) {
             console.error("Upload error:", error);
             setUploadState("idle");
+            setProgress(0);
             setUploadingFileName("");
             toast.error(copy.knowledge.uploadError);
         }
