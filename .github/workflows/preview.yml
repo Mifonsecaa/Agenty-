@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write # Permite al bot comentar en GitHub
+      pull-requests: write
 
     steps:
       - name: Checkout del código
@@ -26,12 +26,9 @@ jobs:
       - name: Descargar información del entorno
         run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
 
-      - name: Construir el proyecto
-        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Desplegar en Vercel
+      - name: Desplegar en Vercel (Dejando que Vercel compile)
         run: |
-          PREVIEW_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          PREVIEW_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
           echo "PREVIEW_URL=$PREVIEW_URL" >> $GITHUB_ENV
 
       - name: Comentar en el Pull Request
@@ -43,5 +40,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: ` **¡Despliegue de Preview Exitoso!**\n\n🔗 Puedes probar los cambios de esta rama aquí: ${process.env.PREVIEW_URL}`
+              body: `🚀 **¡Despliegue de Preview Exitoso!**\n\n🔗 Puedes probar los cambios de esta rama aquí: ${process.env.PREVIEW_URL}`
             })
