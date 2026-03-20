@@ -4,34 +4,26 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import path from "path";
 import { readFile } from "fs/promises";
+import { isSpreadsheetFileName, workbookToPreview } from "@/lib/knowledge/spreadsheet";
 
-function isSpreadsheetFile(fileName: string) {
-  return /\.(xlsx|xlsm)$/i.test(fileName);
-}
+async function loadSpreadsheetBufferFromUrl(fileUrl: string) {
+  const normalizedFileUrl = fileUrl.trim();
 
-function mapSheetPreview(sheet: any, XLSX: any) {
-  // Utilizamos 'as any[][]' para blindar el código contra el compilador estricto de Vercel
-  const rows = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    raw: false,
-    blankrows: false,
-  }) as any[][];
+  if (normalizedFileUrl.startsWith("/uploads/")) {
+    const localPath = path.join(process.cwd(), "public", normalizedFileUrl.replace(/^\//, ""));
+    return readFile(localPath);
+  }
 
-  const firstRow = rows[0] || [];
-  const header = firstRow.map((cell: any, idx: number) => {
-    const value = (cell ?? "").toString().trim();
-    return value || `Col ${idx + 1}`;
-  });
+  if (/^https?:\/\//i.test(normalizedFileUrl)) {
+    const response = await fetch(normalizedFileUrl);
+    if (!response.ok) {
+      throw new Error(`REMOTE_FILE_FETCH_FAILED:${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
 
-  const bodyRows = rows
-      .slice(1, 101)
-      .map((row: any[]) => row.map((cell: any) => (cell ?? "").toString()));
-
-  return {
-    rowCount: rows.length,
-    headers: header,
-    rows: bodyRows,
-  };
+  throw new Error("UNSUPPORTED_FILE_URL");
 }
 
 export async function GET(req: Request) {
@@ -62,29 +54,13 @@ export async function GET(req: Request) {
     }
 
     const normalizedFileUrl = fileUrl.trim();
-    if (!normalizedFileUrl.startsWith("/uploads/")) {
-      return NextResponse.json({ error: "Archivo no soportado para previsualizacion" }, { status: 400 });
-    }
-
     const fileName = decodeURIComponent(normalizedFileUrl.split("/").pop() || "");
-    if (!isSpreadsheetFile(fileName)) {
+    if (!isSpreadsheetFileName(fileName)) {
       return NextResponse.json({ error: "Solo se pueden previsualizar archivos .xlsx y .xlsm" }, { status: 400 });
     }
 
-    const localPath = path.join(process.cwd(), "public", normalizedFileUrl.replace(/^\//, ""));
-    const buffer = await readFile(localPath);
-
-    // El require se mantiene dentro de la función para no afectar el renderizado inicial
-    const XLSX = require("xlsx");
-    const workbook = XLSX.read(buffer, { type: "buffer" });
-
-    const sheets = workbook.SheetNames.slice(0, 8).map((sheetName: string) => {
-      const sheet = workbook.Sheets[sheetName];
-      return {
-        name: sheetName,
-        ...mapSheetPreview(sheet, XLSX),
-      };
-    });
+    const buffer = await loadSpreadsheetBufferFromUrl(normalizedFileUrl);
+    const sheets = workbookToPreview(buffer, { maxSheets: 8, maxRows: 100 });
 
     return NextResponse.json({
       success: true,
