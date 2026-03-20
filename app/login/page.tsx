@@ -13,14 +13,26 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
     const [googleLoading, setGoogleLoading] = useState(false);
+    const [resendLoading, setResendLoading] = useState(false);
+    const [showResendButton, setShowResendButton] = useState(false);
 
     useEffect(() => {
         const registered = searchParams.get("registered") === "1";
+        const verifyEmail = searchParams.get("verifyEmail") === "1";
+        const verified = searchParams.get("verified") === "1";
         const incomingEmail = searchParams.get("email")?.trim() || "";
         const authError = searchParams.get("error");
 
         if (registered) {
-            setSuccessMessage("Cuenta creada con éxito. Inicia sesión para continuar.");
+            setSuccessMessage(
+                verifyEmail
+                    ? "Cuenta creada. Revisa tu correo y confirma tu registro antes de iniciar sesión."
+                    : "Cuenta creada con éxito. Inicia sesión para continuar."
+            );
+        }
+
+        if (verified) {
+            setSuccessMessage("Correo confirmado correctamente. Ya puedes iniciar sesión.");
         }
 
         if (incomingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(incomingEmail)) {
@@ -28,6 +40,7 @@ export default function LoginPage() {
         }
 
         if (authError) {
+            setShowResendButton(false);
             const oauthErrors: Record<string, string> = {
                 OAuthSignin: "No se pudo iniciar el flujo con Google.",
                 OAuthCallback: "La respuesta de Google fue inválida o incompleta.",
@@ -35,10 +48,46 @@ export default function LoginPage() {
                 Callback: "No se pudo completar la autenticación.",
                 AccessDenied: "Acceso denegado por el proveedor.",
                 Configuration: "Error de configuración de autenticación en el servidor.",
+                invalid_verification_link: "El enlace de verificación es inválido.",
+                verification_link_expired: "El enlace de verificación expiró. Solicita uno nuevo.",
             };
             setError(oauthErrors[authError] || "Error al iniciar sesión con Google.");
+            if (authError === "verification_link_expired") {
+                setShowResendButton(true);
+            }
         }
     }, [searchParams]);
+
+    const handleResendVerification = async () => {
+        if (!email) {
+            setError("Ingresa tu correo para reenviar la confirmación.");
+            return;
+        }
+
+        setResendLoading(true);
+        setError("");
+
+        try {
+            const response = await fetch("/api/auth/resend-verification", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                setError(data.error || "No se pudo reenviar el correo de confirmación.");
+                return;
+            }
+
+            setSuccessMessage(data.message || "Te enviamos un nuevo correo de confirmación.");
+            setShowResendButton(false);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "No se pudo reenviar el correo de confirmación.");
+        } finally {
+            setResendLoading(false);
+        }
+    };
 
     const handleGoogleSignIn = async () => {
         setError("");
@@ -71,7 +120,12 @@ export default function LoginPage() {
             });
 
             if (result?.error) {
-                setError(result.error);
+                if (result.error === "EMAIL_NOT_VERIFIED") {
+                    setError("Debes confirmar tu correo antes de iniciar sesión.");
+                    setShowResendButton(true);
+                } else {
+                    setError(result.error);
+                }
                 return;
             }
 
@@ -135,6 +189,16 @@ export default function LoginPage() {
                         {error && (
                             <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
                                 {error}
+                                {showResendButton && (
+                                    <button
+                                        type="button"
+                                        onClick={handleResendVerification}
+                                        disabled={resendLoading}
+                                        className="mt-3 w-full rounded-lg border border-red-400/40 px-3 py-2 text-xs text-red-200 hover:bg-red-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                        {resendLoading ? "Reenviando..." : "Reenviar correo de confirmación"}
+                                    </button>
+                                )}
                             </div>
                         )}
 
