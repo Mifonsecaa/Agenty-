@@ -6,6 +6,13 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
     try {
+        if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
+            return NextResponse.json(
+                { error: "Falta configuración de WhatsApp (EVOLUTION_API_URL / EVOLUTION_API_KEY)" },
+                { status: 500 }
+            );
+        }
+
         const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -97,6 +104,22 @@ export async function POST(req: Request) {
 
     } catch (error) {
         console.error("[API WhatsApp Connect] Error:", error);
+        const message = error instanceof Error ? error.message : "Error desconocido";
+
+        if (message.includes("EVOLUTION_CONFIG_MISSING")) {
+            return NextResponse.json(
+                { error: "Configuración incompleta de WhatsApp en servidor" },
+                { status: 500 }
+            );
+        }
+
+        if (message.includes("EVOLUTION_HTTP_")) {
+            return NextResponse.json(
+                { error: "No se pudo conectar con el servicio de WhatsApp (Evolution API)" },
+                { status: 502 }
+            );
+        }
+
         return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
     }
 }

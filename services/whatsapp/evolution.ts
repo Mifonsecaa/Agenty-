@@ -1,6 +1,43 @@
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
+function ensureEvolutionConfig() {
+    if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+        throw new Error("EVOLUTION_CONFIG_MISSING: Configura EVOLUTION_API_URL y EVOLUTION_API_KEY");
+    }
+}
+
+function buildEvolutionUrl(path: string) {
+    ensureEvolutionConfig();
+    return `${EVOLUTION_API_URL}${path}`;
+}
+
+async function parseApiResponse(response: Response) {
+    const text = await response.text();
+    try {
+        return text ? JSON.parse(text) : {};
+    } catch {
+        return { raw: text };
+    }
+}
+
+async function evolutionRequest(path: string, init: RequestInit = {}) {
+    const url = buildEvolutionUrl(path);
+    const headers = {
+        apikey: EVOLUTION_API_KEY!,
+        ...(init.headers || {}),
+    };
+
+    const response = await fetch(url, { ...init, headers });
+    const data = await parseApiResponse(response);
+
+    if (!response.ok) {
+        throw new Error(`EVOLUTION_HTTP_${response.status}: ${JSON.stringify(data)}`);
+    }
+
+    return data;
+}
+
 export interface EvolutionInstance {
     instanceName: string;
     status: string;
@@ -11,11 +48,10 @@ export const evolutionService = {
     async createInstance(instanceName: string) {
         try {
             console.log(`[EvolutionService] Creating instance at: ${EVOLUTION_API_URL}/instance/create`);
-            const response = await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+            const data = await evolutionRequest(`/instance/create`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': EVOLUTION_API_KEY!
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     instanceName,
@@ -24,8 +60,6 @@ export const evolutionService = {
                     qrcode: true
                 })
             });
-
-            const data = await response.json();
             console.log("[EvolutionService] Create Instance full response:", JSON.stringify(data, null, 2));
             return data;
         } catch (error) {
@@ -37,14 +71,9 @@ export const evolutionService = {
     async getQR(instanceName: string) {
         try {
             console.log(`[EvolutionService] Getting QR at: ${EVOLUTION_API_URL}/instance/connect/${instanceName}`);
-            const response = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
+            const data = await evolutionRequest(`/instance/connect/${instanceName}`, {
                 method: 'GET',
-                headers: {
-                    'apikey': EVOLUTION_API_KEY!
-                }
             });
-
-            const data = await response.json();
             console.log("[EvolutionService] Get QR response:", data);
             return data;
         } catch (error) {
@@ -56,14 +85,9 @@ export const evolutionService = {
     async getInstanceStatus(instanceName: string) {
         try {
             console.log(`[EvolutionService] Getting status at: ${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`);
-            const response = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
+            const data = await evolutionRequest(`/instance/connectionState/${instanceName}`, {
                 method: 'GET',
-                headers: {
-                    'apikey': EVOLUTION_API_KEY!
-                }
             });
-
-            const data = await response.json();
             console.log("[EvolutionService] Get Status response:", data);
             return data;
         } catch (error) {
@@ -75,11 +99,8 @@ export const evolutionService = {
     async deleteInstance(instanceName: string) {
         try {
             console.log(`[EvolutionService] Deleting instance at: ${EVOLUTION_API_URL}/instance/delete/${instanceName}`);
-            await fetch(`${EVOLUTION_API_URL}/instance/delete/${instanceName}`, {
+            await evolutionRequest(`/instance/delete/${instanceName}`, {
                 method: 'DELETE',
-                headers: {
-                    'apikey': EVOLUTION_API_KEY!
-                }
             });
         } catch (error) {
             console.error("[EvolutionService] Error deleting instance:", error);
@@ -131,11 +152,10 @@ export const evolutionService = {
     async setWebhook(instanceName: string, url: string) {
         try {
             console.log(`[EvolutionService] Setting webhook for ${instanceName} to ${url}`);
-            const response = await fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
+            const data = await evolutionRequest(`/webhook/set/${instanceName}`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': EVOLUTION_API_KEY!
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     webhook: {
@@ -151,7 +171,6 @@ export const evolutionService = {
                     }
                 })
             });
-            const data = await response.json();
             console.log("[EvolutionService] Set Webhook response:", JSON.stringify(data, null, 2));
             return data;
         } catch (error) {
