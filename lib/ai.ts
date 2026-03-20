@@ -5,6 +5,7 @@ import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
+import type { MenuEntry } from '@/lib/rag/menu-precision';
 
 console.log("[AIService] Module Loading...");
 
@@ -166,6 +167,75 @@ function hasPriceSignals(text: string) {
     return /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(text || "");
 }
 
+function normalizeForMatch(value: string) {
+    return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function buildDeterministicMenuReply(params: {
+    userMessage: string;
+    ragContext: string;
+    availableFiles: Array<{ url: string; description: string }>;
+    includeFileTag: boolean;
+}) {
+    const { userMessage, ragContext, availableFiles, includeFileTag } = params;
+    const entries = extractMenuEntries(ragContext);
+    if (entries.length < 3) return null;
+
+    const normalizedQuery = normalizeForMatch(userMessage);
+    const sectionHints = ["panaderia", "pasteles", "postres", "bebidas"];
+    const targetSection = sectionHints.find((section) => normalizedQuery.includes(section));
+
+    let selected: MenuEntry[] = entries;
+    if (targetSection) {
+        selected = entries.filter((entry) => normalizeForMatch(entry.section).includes(targetSection));
+    } else {
+        const tokens = normalizedQuery.split(" ").filter((t) => t.length >= 3);
+        const itemMatches = entries.filter((entry) => {
+            const hay = `${normalizeForMatch(entry.item)} ${normalizeForMatch(entry.section)}`;
+            return tokens.some((token) => hay.includes(token));
+        });
+        if (itemMatches.length > 0 && itemMatches.length <= 12) {
+            selected = itemMatches;
+        }
+    }
+
+    if (selected.length === 0) return null;
+
+    const grouped = new Map<string, MenuEntry[]>();
+    for (const entry of selected) {
+        const section = entry.section || "General";
+        const bucket = grouped.get(section) || [];
+        bucket.push(entry);
+        grouped.set(section, bucket);
+    }
+
+    const lines: string[] = [];
+    lines.push("Aquí tienes los precios confirmados del menú:");
+    lines.push("");
+    for (const [section, rows] of grouped.entries()) {
+        lines.push(`### ${section}`);
+        for (const row of rows) {
+            lines.push(`- ${row.item}: ${row.price}`);
+        }
+        lines.push("");
+    }
+
+    let response = lines.join("\n").trim();
+
+    if (includeFileTag && availableFiles.length > 0) {
+        const mediaTag = `[MEDIA_URL: ${availableFiles[0].url}]`;
+        response = `${response}\n\n${mediaTag}`;
+    }
+
+    return response;
+}
+
 async function loadMenuFallbackContext(businessId: string) {
     const rows = await prisma.knowledgeItem.findMany({
         where: { businessId },
@@ -282,6 +352,18 @@ export const aiService = {
                         .join(", ");
 
                     return `Detecté inconsistencias en algunos precios de la base de conocimiento (${topConflicts}). Para evitar darte un dato incorrecto, te comparto solo precios confirmados o, si prefieres, puedo escalarlo para validación humana.`;
+                }
+
+                // Si el menú es consistente, respondemos de forma determinística para
+                // evitar que el LLM altere precios al redactar.
+                const deterministicMenuReply = buildDeterministicMenuReply({
+                    userMessage: lastUserMessage,
+                    ragContext,
+                    availableFiles,
+                    includeFileTag: asksForDocument,
+                });
+                if (deterministicMenuReply) {
+                    return deterministicMenuReply;
                 }
             }
 
