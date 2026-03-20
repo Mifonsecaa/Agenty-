@@ -61,6 +61,16 @@ function spreadsheetCellAddress(rowIndexZeroBased: number, colIndexZeroBased: nu
     return `${columnIndexToLabel(colIndexZeroBased)}${rowIndexZeroBased + 2}`;
 }
 
+function nextSpreadsheetRowNumber(rowCount: number) {
+    // rowCount incluye headers; la primera fila editable es la 2.
+    return Math.max(2, Number(rowCount || 0) + 1);
+}
+
+function parseRowNumberFromCellAddress(cell: string) {
+    const match = String(cell || "").toUpperCase().match(/^[A-Z]+([1-9][0-9]*)$/);
+    return match ? Number(match[1]) : null;
+}
+
 function ExcelViewerModal({
     businessId,
     files,
@@ -91,6 +101,7 @@ function ExcelViewerModal({
     const [activeSheetFilter, setActiveSheetFilter] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
     const [onlyMatchingRows, setOnlyMatchingRows] = useState(true);
+    const [editTargetSheet, setEditTargetSheet] = useState("");
     const [selectedCell, setSelectedCell] = useState<{
         key: string;
         sheet: string;
@@ -102,6 +113,8 @@ function ExcelViewerModal({
     } | null>(null);
     const [draftUpdates, setDraftUpdates] = useState<Array<{ key: string; sheet: string; cell: string; value: string }>>([]);
     const [editValue, setEditValue] = useState("");
+    const [newRowValues, setNewRowValues] = useState<Record<string, string>>({});
+    const [localNotice, setLocalNotice] = useState<string | null>(null);
     const [savingEdit, setSavingEdit] = useState(false);
 
     useEffect(() => {
@@ -109,9 +122,12 @@ function ExcelViewerModal({
         setActiveSheetFilter((prev) => (prev === "all" ? preview.sheets[0].name : prev));
         setSearchTerm("");
         setOnlyMatchingRows(true);
+        setEditTargetSheet(preview.sheets[0].name);
         setSelectedCell(null);
         setDraftUpdates([]);
         setEditValue("");
+        setNewRowValues({});
+        setLocalNotice(null);
     }, [preview?.fileUrl]);
 
     const selectedFileData = files.find((f) => f.fileUrl === selectedFile) || null;
@@ -123,7 +139,44 @@ function ExcelViewerModal({
         return map;
     }, [draftUpdates]);
 
+    const pendingRowsBySheet = useMemo(() => {
+        const map = new Map<string, number[]>();
+        for (const update of draftUpdates) {
+            const row = parseRowNumberFromCellAddress(update.cell);
+            if (!row) continue;
+            const list = map.get(update.sheet) || [];
+            list.push(row);
+            map.set(update.sheet, list);
+        }
+        return map;
+    }, [draftUpdates]);
+
     const normalizedSearch = searchTerm.trim().toLowerCase();
+    const targetSheet = useMemo(() => {
+        const sheets = preview?.sheets || [];
+        return sheets.find((sheet) => sheet.name === editTargetSheet) || sheets[0] || null;
+    }, [preview?.sheets, editTargetSheet]);
+
+    const getNextRowForSheet = (sheetName: string, sheetRowCount: number) => {
+        const pendingRows = pendingRowsBySheet.get(sheetName) || [];
+        const baseNext = nextSpreadsheetRowNumber(sheetRowCount);
+        if (!pendingRows.length) return baseNext;
+        return Math.max(baseNext, Math.max(...pendingRows) + 1);
+    };
+
+    useEffect(() => {
+        if (!targetSheet) {
+            setNewRowValues({});
+            return;
+        }
+
+        const initialValues: Record<string, string> = {};
+        for (const header of targetSheet.headers.slice(0, 18)) {
+            initialValues[header] = "";
+        }
+        setNewRowValues(initialValues);
+    }, [targetSheet?.name]);
+
     const visibleSheets = useMemo(() => {
         const allSheets = preview?.sheets || [];
         const filteredBySheet = activeSheetFilter === "all"
@@ -166,6 +219,8 @@ function ExcelViewerModal({
             value,
         });
         setEditValue(value);
+        setEditTargetSheet(params.sheet);
+        setLocalNotice(null);
     };
 
     const handleStageUpdate = () => {
@@ -182,6 +237,90 @@ function ExcelViewerModal({
             return [...withoutCurrent, next];
         });
         setSelectedCell((prev) => (prev ? { ...prev, value: editValue } : prev));
+        setLocalNotice(`Cambio agregado al borrador: ${selectedCell.sheet}!${selectedCell.cell}`);
+    };
+
+    const handleStageNewRow = () => {
+        if (!targetSheet) return;
+
+        const nextRow = getNextRowForSheet(targetSheet.name, targetSheet.rowCount);
+        const updates = targetSheet.headers
+            .map((header, colIndex) => {
+                const value = String(newRowValues[header] || "").trim();
+                if (!value) return null;
+
+                const cell = `${columnIndexToLabel(colIndex)}${nextRow}`;
+                return {
+                    key: `${targetSheet.name}|${nextRow - 2}|${colIndex}`,
+                    sheet: targetSheet.name,
+                    cell,
+                    value,
+                };
+            })
+            .filter((item): item is { key: string; sheet: string; cell: string; value: string } => Boolean(item));
+
+        if (updates.length === 0) {
+            setLocalNotice("Completa al menos una columna para agregar un registro nuevo.");
+            return;
+        }
+
+        setDraftUpdates((prev) => {
+            const map = new Map<string, { key: string; sheet: string; cell: string; value: string }>();
+            for (const item of prev) map.set(item.key, item);
+            for (const item of updates) map.set(item.key, item);
+            return Array.from(map.values());
+        });
+
+        const initialValues: Record<string, string> = {};
+        for (const header of targetSheet.headers) {
+            initialValues[header] = "";
+        }
+        setNewRowValues(initialValues);
+        setActiveSheetFilter(targetSheet.name);
+        setLocalNotice(`Registro nuevo agregado al borrador en ${targetSheet.name}, fila ${nextRow}.`);
+    };
+
+    const handleAddAndSaveNewRowNow = async () => {
+        if (!targetSheet || !selectedFileData) return;
+
+        const nextRow = getNextRowForSheet(targetSheet.name, targetSheet.rowCount);
+        const updates = targetSheet.headers
+            .map((header, colIndex) => {
+                const value = String(newRowValues[header] || "").trim();
+                if (!value) return null;
+                return {
+                    sheet: targetSheet.name,
+                    cell: `${columnIndexToLabel(colIndex)}${nextRow}`,
+                    value,
+                };
+            })
+            .filter((item): item is { sheet: string; cell: string; value: string } => Boolean(item));
+
+        if (updates.length === 0) {
+            setLocalNotice("Completa al menos una columna para guardar un registro nuevo.");
+            return;
+        }
+
+        setSavingEdit(true);
+        try {
+            await onApplyUpdate({
+                businessId,
+                file: selectedFileData,
+                updates,
+            });
+
+            const initialValues: Record<string, string> = {};
+            for (const header of targetSheet.headers) {
+                initialValues[header] = "";
+            }
+            setNewRowValues(initialValues);
+            setDraftUpdates([]);
+            setSelectedCell(null);
+            setEditValue("");
+            setLocalNotice(`Registro guardado y reindexado en ${targetSheet.name}, fila ${nextRow}.`);
+        } finally {
+            setSavingEdit(false);
+        }
     };
 
     const handleDiscardDrafts = () => {
@@ -189,6 +328,7 @@ function ExcelViewerModal({
         if (selectedCell) {
             setEditValue(selectedCell.value);
         }
+        setLocalNotice("Borrador descartado.");
     };
 
     const handleApplyEdit = async () => {
@@ -207,6 +347,7 @@ function ExcelViewerModal({
             setSelectedCell(null);
             setDraftUpdates([]);
             setEditValue("");
+            setLocalNotice("Cambios guardados y reindexados correctamente.");
         } finally {
             setSavingEdit(false);
         }
@@ -350,6 +491,76 @@ function ExcelViewerModal({
                                         : "Selecciona una celda en la grilla para editarla."}
                                 </p>
                             </div>
+
+                            <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+                                <p className="text-xs text-white/70">Agregar registro manual (nueva fila)</p>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                    <select
+                                        value={editTargetSheet}
+                                        onChange={(e) => setEditTargetSheet(e.target.value)}
+                                        className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                        disabled={!preview || savingEdit}
+                                    >
+                                        {(preview?.sheets || []).map((sheet) => (
+                                            <option key={`new-row-${sheet.name}`} value={sheet.name}>{sheet.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="md:col-span-3 text-[11px] text-white/50 self-center">
+                                        Se guardara en la siguiente fila disponible ({targetSheet ? getNextRowForSheet(targetSheet.name, targetSheet.rowCount) : "-"}).
+                                    </p>
+                                </div>
+
+                                <div className="max-h-48 overflow-auto pr-1">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                                        {(targetSheet?.headers || []).map((header, colIndex) => (
+                                            <input
+                                                key={`new-row-input-${header}-${colIndex}`}
+                                                value={newRowValues[header] || ""}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setNewRowValues((prev) => ({ ...prev, [header]: value }));
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key !== "Enter") return;
+                                                    e.preventDefault();
+                                                    if (e.ctrlKey || e.metaKey) {
+                                                        void handleAddAndSaveNewRowNow();
+                                                        return;
+                                                    }
+                                                    handleStageNewRow();
+                                                }}
+                                                placeholder={header || `Col ${colIndex + 1}`}
+                                                className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                                disabled={savingEdit || !targetSheet}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={handleStageNewRow}
+                                        disabled={savingEdit || !targetSheet}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-500 text-white disabled:opacity-40"
+                                    >
+                                        Agregar registro al borrador
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            void handleAddAndSaveNewRowNow();
+                                        }}
+                                        disabled={savingEdit || !targetSheet || !selectedFileData}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-black disabled:opacity-40"
+                                    >
+                                        Agregar y guardar ahora
+                                    </button>
+                                    <p className="text-[11px] text-white/50">Enter: borrador. Ctrl+Enter: guardar inmediato.</p>
+                                </div>
+                            </div>
+
+                            {localNotice && (
+                                <p className="mt-2 text-[11px] text-emerald-300">{localNotice}</p>
+                            )}
                         </div>
 
                         {loadingPreview ? (
