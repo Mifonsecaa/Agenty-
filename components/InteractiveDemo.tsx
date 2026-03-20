@@ -20,7 +20,7 @@ const TASKS = [
 
 export const InteractiveDemo = ({ onClose }: { onClose: () => void }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: '¡Hola! Soy AgentyBot 🤖, el experto en ventas de Agenty.ai. ¿Te gustaría saber cómo podemos automatizar la atención y reservas de tu negocio en WhatsApp? (O si prefieres, escribe el contexto de tu negocio a la derecha para probarme en vivo).' }
+    { role: 'assistant', content: '¡Hola! Soy AgentyBot 🤖, el experto en ventas de brainia. ¿Te gustaría saber cómo podemos automatizar la atención y reservas de tu negocio en WhatsApp? (O si prefieres, escribe el contexto de tu negocio a la derecha para probarme en vivo).' }
   ]);
   const [userInput, setUserInput] = useState('');
   const [demoContext, setDemoContext] = useState('');

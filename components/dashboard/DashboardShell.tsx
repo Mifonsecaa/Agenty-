@@ -79,7 +79,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         {
             id: "welcome-dashboard",
             title: "¡Bienvenido al nuevo Dashboard!",
-            subtitle: "Explora las nuevas funciones de Agenty.ai",
+            subtitle: "Explora las nuevas funciones de brainia",
         },
     ]);
 

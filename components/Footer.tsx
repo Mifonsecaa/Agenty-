@@ -61,7 +61,7 @@ export default function Footer() {
                             <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Privacidad</Link></li>
                             <li><Link href="/terms" className="hover:text-blue-400 transition-colors">Términos</Link></li>
                             <li><Link href="/security" className="hover:text-blue-400 transition-colors">Seguridad</Link></li>
-                            <li><a href="mailto:contact@agenty.ai" className="hover:text-blue-400 transition-colors flex items-center gap-2"><Mail size={14} /> Contacto</a></li>
+                            <li><a href="mailto:contact@brainia" className="hover:text-blue-400 transition-colors flex items-center gap-2"><Mail size={14} /> Contacto</a></li>
                         </ul>
                     </div>
                 </div>

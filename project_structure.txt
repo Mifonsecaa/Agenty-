@@ -1,4 +1,4 @@
-# 🌳 ESTRUCTURA DEL PROYECTO AGENTY.AI
+# 🌳 ESTRUCTURA DEL PROYECTO brainia
 
 Este documento describe la arquitectura y el propósito de los directorios y archivos clave del proyecto.
 
@@ -102,4 +102,3 @@ services/
 └── database/
     └── business.ts     # FUNCIONES DE BD: Contiene lógica para interactuar con el modelo `Business` (ej. guardar credenciales).
 ```
-sapos
