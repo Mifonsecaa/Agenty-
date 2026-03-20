@@ -143,3 +143,81 @@ export async function PATCH(req: Request) {
   }
 }
 
+function isSpreadsheetByMeta(fileName?: string, fileType?: string) {
+  if (isSpreadsheetFileName(fileName || "")) return true;
+  return [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "application/vnd.ms-excel",
+  ].includes(fileType || "");
+}
+
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const businessId = String(searchParams.get("businessId") || "").trim();
+    if (!businessId) {
+      return NextResponse.json({ error: "businessId es requerido" }, { status: 400 });
+    }
+
+    const business = await prisma.business.findFirst({
+      where: {
+        id: businessId,
+        user: { email: session.user.email },
+      },
+      select: { id: true },
+    });
+
+    if (!business) {
+      return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+    }
+
+    const rows = await prisma.knowledgeItem.findMany({
+      where: { businessId },
+      orderBy: { createdAt: "desc" },
+      select: { metadata: true },
+      take: 2000,
+    });
+
+    const seen = new Set<string>();
+    const files: Array<{ fileUrl: string; fileName: string; fileType: string }> = [];
+    let missingFileUrlCount = 0;
+
+    for (const row of rows) {
+      const md = row.metadata;
+      if (!md || typeof md !== "object" || Array.isArray(md)) continue;
+
+      const meta = md as Record<string, unknown>;
+      const fileName = typeof meta.fileName === "string" ? meta.fileName : "archivo.xlsx";
+      const fileType = typeof meta.fileType === "string" ? meta.fileType : "";
+      const fileUrl = typeof meta.fileUrl === "string" ? meta.fileUrl : "";
+
+      if (!isSpreadsheetByMeta(fileName, fileType)) continue;
+      if (!fileUrl) {
+        missingFileUrlCount++;
+        continue;
+      }
+      if (seen.has(fileUrl)) continue;
+
+      seen.add(fileUrl);
+      files.push({ fileUrl, fileName, fileType });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        files,
+        missingFileUrlCount,
+      },
+    });
+  } catch (error) {
+    console.error("[Knowledge Spreadsheet GET] Error:", error);
+    return NextResponse.json({ error: "No se pudo listar archivos Excel" }, { status: 500 });
+  }
+}
+

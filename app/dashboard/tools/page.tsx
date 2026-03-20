@@ -380,25 +380,21 @@ export default function ToolsStore() {
         setSelectedExcelFileUrl(null);
 
         try {
-            const res = await fetch(`/api/knowledge?businessId=${activeAgent.id}`);
-            const data = await res.json();
-
-            const items = data?.data?.items || data?.items || [];
-            const seen = new Set<string>();
-            const files: ExcelKnowledgeFile[] = [];
-
-            for (const item of items) {
-                const fileUrl = item?.metadata?.fileUrl;
-                const fileName = item?.metadata?.fileName || "archivo.xlsx";
-                const fileType = item?.metadata?.fileType || "";
-
-                if (!fileUrl || seen.has(fileUrl)) continue;
-                if (!isSpreadsheetFile(fileName, fileType)) continue;
-                seen.add(fileUrl);
-                files.push({ fileUrl, fileName, fileType });
-            }
+            const res = await fetch(`/api/knowledge/spreadsheet?businessId=${activeAgent.id}`);
+            const data = await res.json().catch(() => ({}));
+            const files: ExcelKnowledgeFile[] = (data?.data?.files || []).filter((f: any) =>
+                f?.fileUrl && isSpreadsheetFile(f?.fileName || "", f?.fileType || "")
+            );
 
             setExcelFiles(files);
+
+            if ((data?.data?.missingFileUrlCount || 0) > 0) {
+                setStatusMessage({
+                    type: "error",
+                    text: "Hay archivos Excel en la base de conocimiento sin URL de archivo persistente. Re-subelos para visualizarlos.",
+                });
+            }
+
             if (files[0]) {
                 void loadExcelPreview(files[0]);
             }
