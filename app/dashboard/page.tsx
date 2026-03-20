@@ -97,7 +97,7 @@ export default function DashboardOverview() {
                     url: urlData.publicUrl, // Mandamos la URL mágica de Supabase
                     name: archivo.name,     // El nombre del archivo
                     type: archivo.type,     // El tipo (ej. application/pdf)
-                    businessId: activeAgent.id
+                    businessId: activeAgent?.id || ""
                 })
             });
 
