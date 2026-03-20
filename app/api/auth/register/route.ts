@@ -38,6 +38,10 @@ export async function POST(request: Request) {
         } catch (emailError) {
             await prisma.verificationToken.deleteMany({ where: { identifier: normalizedEmail } });
             await prisma.user.delete({ where: { id: newUser.id } });
+
+            // NUEVO: Esto imprimirá el error exacto de Resend en los logs de Vercel
+            console.error(" ERROR DE RESEND:", emailError);
+
             return NextResponse.json(
                 { error: "No se pudo enviar el correo de confirmación. Inténtalo de nuevo." },
                 { status: 500 }
