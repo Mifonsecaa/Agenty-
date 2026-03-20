@@ -43,6 +43,7 @@ providers.push(
             if (!credentials?.email || !credentials?.password) throw new Error("Credenciales inválidas");
             const user = await prisma.user.findUnique({ where: { email: credentials.email } });
             if (!user || !user.password) throw new Error("Usuario no encontrado");
+            if (!user.emailVerified) throw new Error("EMAIL_NOT_VERIFIED");
             const isPasswordCorrect = await bcrypt.compare(credentials.password, user.password);
             if (!isPasswordCorrect) throw new Error("Contraseña incorrecta");
             return user;

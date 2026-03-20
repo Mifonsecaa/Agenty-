@@ -56,20 +56,29 @@ export default function DashboardOverview() {
 
     const agentName = activeAgent?.name || "Asistente Virtual";
 
-    // --- LÓGICA DE SUBIDA DIRECTA A SUPABASE ---
+    // --- LÓGICA DE SUBIDA DIRECTA A SUPABASE (CON RASTREADORES) ---
     const manejarSubida = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        console.log("1. Función manejarSubida iniciada (Evento onChange disparado)");
+
         try {
             setSubiendo(true);
 
             const archivo = event.target.files?.[0];
-            if (!archivo) return;
+            console.log("2. Archivo capturado:", archivo?.name, "| Tamaño:", archivo?.size, "bytes");
+
+            if (!archivo) {
+                console.warn("2.1. No se detectó ningún archivo en el input. Cancelando.");
+                return;
+            }
 
             // Sanitizamos el nombre y creamos la ruta
             const prefijo = activeAgent?.id ? `business/${activeAgent.id}` : 'business/unassigned';
             const nombreSeguro = archivo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
             const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
+            console.log("3. Ruta generada para Supabase:", rutaArchivo);
 
             // Subimos a Supabase
+            console.log("4. Iniciando subida directa a Supabase...");
             const { data, error } = await supabase.storage
                 .from('knowledge-files') // <-- Asegúrate de que este bucket exista y sea público
                 .upload(rutaArchivo, archivo, {
@@ -77,17 +86,23 @@ export default function DashboardOverview() {
                     upsert: false
                 });
 
-            if (error) throw error;
+            if (error) {
+                console.error("4.1. Error DEVUELTO por Supabase:", error);
+                throw error;
+            }
+
+            console.log("5. Subida exitosa a Supabase. Datos:", data);
 
             // Obtenemos la URL pública
             const { data: urlData } = supabase.storage
                 .from('knowledge-files')
                 .getPublicUrl(data.path);
 
-            console.log("¡Éxito! URL del archivo:", urlData.publicUrl);
-            alert("¡Documento subido y listo para entrenar al agente!");
+            console.log("6. URL pública obtenida con éxito:", urlData.publicUrl);
+            // Descomentar si quieres la alerta visual: alert("¡Documento subido a la nube! Registrando...");
 
             // 5. Enviar la URL a tu API avanzada
+            console.log("7. Enviando petición POST a /api/knowledge-files...");
             const respuesta = await fetch('/api/knowledge-files', {
                 method: 'POST',
                 headers: {
@@ -101,19 +116,24 @@ export default function DashboardOverview() {
                 })
             });
 
+            console.log("8. Respuesta del servidor Vercel recibida. Status:", respuesta.status);
+
             if (!respuesta.ok) {
-                throw new Error('El archivo se subió, pero falló al guardarse en la base de datos');
+                const errorText = await respuesta.text();
+                console.error("8.1. El backend de Vercel rechazó la URL. Detalles:", errorText);
+                throw new Error(`El archivo se subió a Supabase, pero falló en Prisma (Status ${respuesta.status})`);
             }
 
-            console.log("¡Todo listo! Archivo guardado en Supabase y registrado en Prisma.");
+            console.log("9. ¡TODO LISTO! 🎉 Archivo guardado en Supabase y registrado en Prisma al 100%.");
 
         } catch (error: any) {
-            console.error('Error al subir:', error.message);
-            alert('Hubo un error al subir el archivo.');
+            console.error('ERROR CRÍTICO CAPTURADO EN CATCH:', error.message || error);
+            alert('Hubo un error al subir el archivo. Revisa la consola de desarrollador (F12).');
         } finally {
             setSubiendo(false);
             // Limpiamos el input para que pueda subir otro archivo si quiere
             event.target.value = '';
+            console.log("10. Proceso finalizado, input limpiado.");
         }
     };
 
