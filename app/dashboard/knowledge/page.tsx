@@ -219,8 +219,9 @@ export default function KnowledgeBase() {
             [
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-excel.sheet.macroEnabled.12",
+                "application/vnd.ms-excel",
             ].includes(file.type) ||
-            /\.(xlsx|xlsm)$/i.test(file.name);
+            /\.(xlsx|xlsm|xls)$/i.test(file.name);
 
         if (!isTextLike && !isImage && !isPdf && !isSpreadsheet) {
             toast.error(copy.knowledge.unsupportedFileType(file.type));

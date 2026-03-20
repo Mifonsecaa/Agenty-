@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     const normalizedFileUrl = fileUrl.trim();
     const fileName = decodeURIComponent(normalizedFileUrl.split("/").pop() || "");
     if (!isSpreadsheetFileName(fileName)) {
-      return NextResponse.json({ error: "Solo se pueden previsualizar archivos .xlsx y .xlsm" }, { status: 400 });
+      return NextResponse.json({ error: "Solo se pueden previsualizar archivos .xlsx, .xlsm o .xls" }, { status: 400 });
     }
 
     const buffer = await loadSpreadsheetBufferFromUrl(normalizedFileUrl);

@@ -237,6 +237,15 @@ export async function POST(req: Request) {
             }
         }
 
+        if (isSpreadsheet && !fileUrl) {
+            return NextResponse.json(
+                {
+                    error: "No se pudo guardar el archivo Excel para visualizacion. Configura storage persistente (Supabase Storage) y vuelve a subirlo.",
+                },
+                { status: 422 }
+            );
+        }
+
         if (safeType === "application/pdf") {
             try {
                 if (!text && !uploadedBuffer) {
