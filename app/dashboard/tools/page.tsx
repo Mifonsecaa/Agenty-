@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks, FileSpreadsheet } from "lucide-react";
 import { useAgenty } from "@/context/AgentyContext";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -46,6 +46,21 @@ function isSpreadsheetFile(fileName: string, fileType?: string) {
     ].includes(fileType || "");
 }
 
+function columnIndexToLabel(index: number) {
+    let value = index;
+    let label = "";
+    while (value >= 0) {
+        label = String.fromCharCode((value % 26) + 65) + label;
+        value = Math.floor(value / 26) - 1;
+    }
+    return label;
+}
+
+function spreadsheetCellAddress(rowIndexZeroBased: number, colIndexZeroBased: number) {
+    // rowIndex 0 corresponde a la fila 2 de Excel porque la fila 1 son headers.
+    return `${columnIndexToLabel(colIndexZeroBased)}${rowIndexZeroBased + 2}`;
+}
+
 function ExcelViewerModal({
     businessId,
     files,
@@ -70,34 +85,127 @@ function ExcelViewerModal({
     onApplyUpdate: (params: {
         businessId: string;
         file: ExcelKnowledgeFile;
-        sheet: string;
-        cell: string;
-        value: string;
+        updates: Array<{ sheet: string; cell: string; value: string }>;
     }) => Promise<void>;
 }) {
-    const [editSheet, setEditSheet] = useState("");
-    const [editCell, setEditCell] = useState("A1");
+    const [activeSheetFilter, setActiveSheetFilter] = useState("all");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [onlyMatchingRows, setOnlyMatchingRows] = useState(true);
+    const [selectedCell, setSelectedCell] = useState<{
+        key: string;
+        sheet: string;
+        rowIndex: number;
+        colIndex: number;
+        cell: string;
+        header: string;
+        value: string;
+    } | null>(null);
+    const [draftUpdates, setDraftUpdates] = useState<Array<{ key: string; sheet: string; cell: string; value: string }>>([]);
     const [editValue, setEditValue] = useState("");
     const [savingEdit, setSavingEdit] = useState(false);
 
     useEffect(() => {
         if (!preview?.sheets?.length) return;
-        setEditSheet((prev) => prev || preview.sheets[0].name);
-    }, [preview]);
+        setActiveSheetFilter((prev) => (prev === "all" ? preview.sheets[0].name : prev));
+        setSearchTerm("");
+        setOnlyMatchingRows(true);
+        setSelectedCell(null);
+        setDraftUpdates([]);
+        setEditValue("");
+    }, [preview?.fileUrl]);
 
     const selectedFileData = files.find((f) => f.fileUrl === selectedFile) || null;
+    const draftMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const update of draftUpdates) {
+            map.set(update.key, update.value);
+        }
+        return map;
+    }, [draftUpdates]);
+
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const visibleSheets = useMemo(() => {
+        const allSheets = preview?.sheets || [];
+        const filteredBySheet = activeSheetFilter === "all"
+            ? allSheets
+            : allSheets.filter((sheet) => sheet.name === activeSheetFilter);
+
+        return filteredBySheet.map((sheet) => {
+            const indexedRows = sheet.rows.map((row, rowIndex) => ({ row, rowIndex }));
+            const rows = !normalizedSearch || !onlyMatchingRows
+                ? indexedRows
+                : indexedRows.filter(({ row }) => {
+                    const haystack = row.join(" ").toLowerCase();
+                    return haystack.includes(normalizedSearch);
+                });
+
+            return {
+                ...sheet,
+                indexedRows: rows,
+            };
+        });
+    }, [preview?.sheets, activeSheetFilter, normalizedSearch, onlyMatchingRows]);
+
+    const handleCellClick = (params: {
+        sheet: string;
+        rowIndex: number;
+        colIndex: number;
+        header: string;
+        rawValue: string;
+    }) => {
+        const cell = spreadsheetCellAddress(params.rowIndex, params.colIndex);
+        const key = `${params.sheet}|${params.rowIndex}|${params.colIndex}`;
+        const value = draftMap.get(key) ?? params.rawValue;
+        setSelectedCell({
+            key,
+            sheet: params.sheet,
+            rowIndex: params.rowIndex,
+            colIndex: params.colIndex,
+            cell,
+            header: params.header,
+            value,
+        });
+        setEditValue(value);
+    };
+
+    const handleStageUpdate = () => {
+        if (!selectedCell) return;
+        const next = {
+            key: selectedCell.key,
+            sheet: selectedCell.sheet,
+            cell: selectedCell.cell,
+            value: editValue,
+        };
+
+        setDraftUpdates((prev) => {
+            const withoutCurrent = prev.filter((item) => item.key !== selectedCell.key);
+            return [...withoutCurrent, next];
+        });
+        setSelectedCell((prev) => (prev ? { ...prev, value: editValue } : prev));
+    };
+
+    const handleDiscardDrafts = () => {
+        setDraftUpdates([]);
+        if (selectedCell) {
+            setEditValue(selectedCell.value);
+        }
+    };
 
     const handleApplyEdit = async () => {
-        if (!selectedFileData || !editSheet.trim() || !editCell.trim()) return;
+        if (!selectedFileData || draftUpdates.length === 0) return;
         setSavingEdit(true);
         try {
             await onApplyUpdate({
                 businessId,
                 file: selectedFileData,
-                sheet: editSheet,
-                cell: editCell,
-                value: editValue,
+                updates: draftUpdates.map((item) => ({
+                    sheet: item.sheet,
+                    cell: item.cell,
+                    value: item.value,
+                })),
             });
+            setSelectedCell(null);
+            setDraftUpdates([]);
             setEditValue("");
         } finally {
             setSavingEdit(false);
@@ -144,42 +252,103 @@ function ExcelViewerModal({
 
                     <section className="lg:col-span-2 p-4 overflow-y-auto space-y-4">
                         <div className="rounded-xl border border-white/10 bg-white/3 p-3">
-                            <p className="text-xs text-white/60 mb-2">Editor rapido (actualiza una celda y reindexa la base de conocimiento)</p>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                            <p className="text-xs text-white/60 mb-2">Filtros y edicion (clic en una celda para editarla)</p>
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                                <input
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Buscar en filas (ej: David, 10:30, reserva)"
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white md:col-span-2"
+                                    disabled={!preview || savingEdit}
+                                />
                                 <select
-                                    value={editSheet}
-                                    onChange={(e) => setEditSheet(e.target.value)}
+                                    value={activeSheetFilter}
+                                    onChange={(e) => setActiveSheetFilter(e.target.value)}
                                     className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
                                     disabled={!preview || savingEdit}
                                 >
-                                    <option value="">Selecciona hoja</option>
+                                    <option value="all">Todas las hojas</option>
                                     {(preview?.sheets || []).map((sheet) => (
                                         <option key={sheet.name} value={sheet.name}>{sheet.name}</option>
                                     ))}
                                 </select>
+                                <label className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={onlyMatchingRows}
+                                        onChange={(e) => setOnlyMatchingRows(e.target.checked)}
+                                        disabled={!preview || savingEdit}
+                                    />
+                                    Solo coincidencias
+                                </label>
+                                <button
+                                    onClick={() => {
+                                        setSearchTerm("");
+                                        setOnlyMatchingRows(true);
+                                        setActiveSheetFilter(preview?.sheets?.[0]?.name || "all");
+                                    }}
+                                    className="rounded-lg bg-white/10 border border-white/15 px-2 py-2 text-xs text-white hover:bg-white/15"
+                                    disabled={!preview || savingEdit}
+                                >
+                                    Limpiar filtros
+                                </button>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-6 gap-2">
                                 <input
-                                    value={editCell}
-                                    onChange={(e) => setEditCell(e.target.value.toUpperCase())}
-                                    placeholder="Celda (ej. B3)"
+                                    value={selectedCell?.sheet || ""}
+                                    placeholder="Hoja"
                                     className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
-                                    disabled={savingEdit}
+                                    disabled
+                                />
+                                <input
+                                    value={selectedCell?.cell || ""}
+                                    placeholder="Celda"
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                    disabled
+                                />
+                                <input
+                                    value={selectedCell?.header || ""}
+                                    placeholder="Columna"
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                    disabled
                                 />
                                 <input
                                     value={editValue}
                                     onChange={(e) => setEditValue(e.target.value)}
-                                    placeholder="Nuevo valor"
+                                    placeholder="Nuevo valor para la celda seleccionada"
                                     className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white md:col-span-2"
-                                    disabled={savingEdit}
+                                    disabled={savingEdit || !selectedCell}
                                 />
+                                <button
+                                    onClick={handleStageUpdate}
+                                    disabled={!selectedCell || savingEdit}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-500 text-white disabled:opacity-40"
+                                >
+                                    Agregar cambio
+                                </button>
                             </div>
-                            <div className="mt-2">
+
+                            <div className="mt-2 flex items-center gap-2">
                                 <button
                                     onClick={handleApplyEdit}
-                                    disabled={!selectedFileData || !editSheet.trim() || !editCell.trim() || savingEdit}
+                                    disabled={!selectedFileData || draftUpdates.length === 0 || savingEdit}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-black disabled:opacity-40"
                                 >
-                                    {savingEdit ? "Guardando..." : "Guardar cambio"}
+                                    {savingEdit ? "Guardando..." : `Guardar ${draftUpdates.length} cambio(s)`}
                                 </button>
+                                <button
+                                    onClick={handleDiscardDrafts}
+                                    disabled={draftUpdates.length === 0 || savingEdit}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 text-white disabled:opacity-40"
+                                >
+                                    Descartar borrador
+                                </button>
+                                <p className="text-[11px] text-white/55">
+                                    {selectedCell
+                                        ? `Celda activa: ${selectedCell.sheet}!${selectedCell.cell}`
+                                        : "Selecciona una celda en la grilla para editarla."}
+                                </p>
                             </div>
                         </div>
 
@@ -190,7 +359,7 @@ function ExcelViewerModal({
                         ) : (
                             <div className="space-y-4">
                                 <h4 className="text-sm text-white/80">{preview.fileName}</h4>
-                                {preview.sheets.map((sheet) => (
+                                {visibleSheets.map((sheet) => (
                                     <div key={sheet.name} className="border border-white/10 rounded-xl overflow-hidden">
                                         <div className="px-3 py-2 text-xs bg-white/5 text-white/70 flex justify-between">
                                             <span>Hoja: {sheet.name}</span>
@@ -200,6 +369,7 @@ function ExcelViewerModal({
                                             <table className="min-w-full text-xs">
                                                 <thead className="bg-white/5">
                                                     <tr>
+                                                        <th className="px-2 py-1 text-left text-white/50 whitespace-nowrap border-b border-white/10">#</th>
                                                         {sheet.headers.slice(0, 18).map((header, idx) => (
                                                             <th key={`${sheet.name}-h-${idx}`} className="px-2 py-1 text-left text-white/70 whitespace-nowrap border-b border-white/10">
                                                                 {header}
@@ -208,15 +378,46 @@ function ExcelViewerModal({
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {sheet.rows.slice(0, 80).map((row, rowIdx) => (
-                                                        <tr key={`${sheet.name}-r-${rowIdx}`} className="border-b border-white/5">
-                                                            {sheet.headers.slice(0, 18).map((_, colIdx) => (
-                                                                <td key={`${sheet.name}-c-${rowIdx}-${colIdx}`} className="px-2 py-1 text-white/80 whitespace-nowrap">
-                                                                    {row[colIdx] || ""}
-                                                                </td>
-                                                            ))}
+                                                    {sheet.indexedRows.slice(0, 120).map(({ row, rowIndex }) => (
+                                                        <tr key={`${sheet.name}-r-${rowIndex}`} className="border-b border-white/5">
+                                                            <td className="px-2 py-1 text-white/40 whitespace-nowrap">{rowIndex + 2}</td>
+                                                            {sheet.headers.slice(0, 18).map((header, colIdx) => {
+                                                                const key = `${sheet.name}|${rowIndex}|${colIdx}`;
+                                                                const isSelected = selectedCell?.key === key;
+                                                                const hasDraft = draftMap.has(key);
+                                                                const value = draftMap.get(key) ?? row[colIdx] ?? "";
+
+                                                                return (
+                                                                    <td key={`${sheet.name}-c-${rowIndex}-${colIdx}`} className="p-0 whitespace-nowrap">
+                                                                        <button
+                                                                            onClick={() => handleCellClick({
+                                                                                sheet: sheet.name,
+                                                                                rowIndex,
+                                                                                colIndex: colIdx,
+                                                                                header,
+                                                                                rawValue: row[colIdx] || "",
+                                                                            })}
+                                                                            className={`w-full text-left px-2 py-1 transition-colors ${isSelected
+                                                                                ? "bg-emerald-500/25 text-white"
+                                                                                : hasDraft
+                                                                                    ? "bg-blue-500/20 text-white"
+                                                                                    : "text-white/80 hover:bg-white/10"
+                                                                                }`}
+                                                                        >
+                                                                            {value}
+                                                                        </button>
+                                                                    </td>
+                                                                );
+                                                            })}
                                                         </tr>
                                                     ))}
+                                                    {sheet.indexedRows.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan={Math.min(sheet.headers.length, 18) + 1} className="px-2 py-4 text-center text-white/50">
+                                                                No hay filas que coincidan con los filtros actuales.
+                                                            </td>
+                                                        </tr>
+                                                    )}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -454,15 +655,11 @@ export default function ToolsStore() {
     const applyExcelUpdate = async ({
         businessId,
         file,
-        sheet,
-        cell,
-        value,
+        updates,
     }: {
         businessId: string;
         file: ExcelKnowledgeFile;
-        sheet: string;
-        cell: string;
-        value: string;
+        updates: Array<{ sheet: string; cell: string; value: string }>;
     }) => {
         const res = await fetch("/api/knowledge/spreadsheet", {
             method: "PATCH",
@@ -471,7 +668,7 @@ export default function ToolsStore() {
                 businessId,
                 fileUrl: file.fileUrl,
                 fileName: file.fileName,
-                updates: [{ sheet, cell, value }],
+                updates,
             }),
         });
 
