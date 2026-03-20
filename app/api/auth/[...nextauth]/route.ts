@@ -7,38 +7,52 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { saveWhatsAppCredentials } from "@/services/database/business"; // 1. Importar nuestro nuevo servicio
 
-export const authOptions: NextAuthOptions = {
-    adapter: PrismaAdapter(prisma) as any,
-    providers: [
+const providers: NextAuthOptions["providers"] = [];
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push(
         GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID || "",
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-        }),
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        })
+    );
+}
+
+if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+    providers.push(
         FacebookProvider({
-            clientId: process.env.FACEBOOK_CLIENT_ID || "",
-            clientSecret: process.env.FACEBOOK_CLIENT_SECRET || "",
+            clientId: process.env.FACEBOOK_CLIENT_ID,
+            clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
             authorization: {
                 params: {
                     scope: "email,public_profile,whatsapp_business_management,whatsapp_business_messaging",
                 },
             },
-        }),
-        CredentialsProvider({
-            name: "credentials",
-            credentials: {
-                email: { label: "Email", type: "text" },
-                password: { label: "Password", type: "password" }
-            },
-            async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) throw new Error("Credenciales inválidas");
-                const user = await prisma.user.findUnique({ where: { email: credentials.email } });
-                if (!user || !user.password) throw new Error("Usuario no encontrado");
-                const isPasswordCorrect = await bcrypt.compare(credentials.password, user.password);
-                if (!isPasswordCorrect) throw new Error("Contraseña incorrecta");
-                return user;
-            }
         })
-    ],
+    );
+}
+
+providers.push(
+    CredentialsProvider({
+        name: "credentials",
+        credentials: {
+            email: { label: "Email", type: "text" },
+            password: { label: "Password", type: "password" }
+        },
+        async authorize(credentials) {
+            if (!credentials?.email || !credentials?.password) throw new Error("Credenciales inválidas");
+            const user = await prisma.user.findUnique({ where: { email: credentials.email } });
+            if (!user || !user.password) throw new Error("Usuario no encontrado");
+            const isPasswordCorrect = await bcrypt.compare(credentials.password, user.password);
+            if (!isPasswordCorrect) throw new Error("Contraseña incorrecta");
+            return user;
+        }
+    })
+);
+
+export const authOptions: NextAuthOptions = {
+    adapter: PrismaAdapter(prisma) as any,
+    providers,
     session: {
         strategy: "jwt",
     },

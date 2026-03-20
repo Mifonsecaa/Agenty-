@@ -1,9 +1,0 @@
-var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/business/connections/whatsapp/route.js")
-R.c("server/chunks/[root-of-the-server]__1b3a8f73._.js")
-R.c("server/chunks/node_modules_bcryptjs_index_42ebb250.js")
-R.c("server/chunks/node_modules_next_f2da0d3e._.js")
-R.c("server/chunks/_2da97420._.js")
-R.c("server/chunks/[root-of-the-server]__24f8fcd9._.js")
-R.c("server/chunks/ce889_server_app_api_business_connections_whatsapp_route_actions_5c69b72e.js")
-R.m(64)
-module.exports=R.m(64).exports
