@@ -385,13 +385,19 @@ export default function ToolsStore() {
             const files: ExcelKnowledgeFile[] = (data?.data?.files || []).filter((f: any) =>
                 f?.fileUrl && isSpreadsheetFile(f?.fileName || "", f?.fileType || "")
             );
+            const missingFileUrlCount = Number(data?.data?.missingFileUrlCount || 0);
 
             setExcelFiles(files);
 
-            if ((data?.data?.missingFileUrlCount || 0) > 0) {
+            if (files.length === 0 && missingFileUrlCount > 0) {
                 setStatusMessage({
                     type: "error",
                     text: "Hay archivos Excel en la base de conocimiento sin URL de archivo persistente. Re-subelos para visualizarlos.",
+                });
+            } else if (files.length > 0 && missingFileUrlCount > 0) {
+                setStatusMessage({
+                    type: "success",
+                    text: "Se encontraron archivos Excel visualizables. Algunos registros antiguos sin URL persistente fueron omitidos.",
                 });
             }
 
