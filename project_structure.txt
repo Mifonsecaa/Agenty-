@@ -102,3 +102,4 @@ services/
 └── database/
     └── business.ts     # FUNCIONES DE BD: Contiene lógica para interactuar con el modelo `Business` (ej. guardar credenciales).
 ```
+sapos
