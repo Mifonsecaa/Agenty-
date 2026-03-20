@@ -12,10 +12,12 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
+    const [googleLoading, setGoogleLoading] = useState(false);
 
     useEffect(() => {
         const registered = searchParams.get("registered") === "1";
         const incomingEmail = searchParams.get("email")?.trim() || "";
+        const authError = searchParams.get("error");
 
         if (registered) {
             setSuccessMessage("Cuenta creada con éxito. Inicia sesión para continuar.");
@@ -24,7 +26,35 @@ export default function LoginPage() {
         if (incomingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(incomingEmail)) {
             setEmail(incomingEmail.toLowerCase());
         }
+
+        if (authError) {
+            const oauthErrors: Record<string, string> = {
+                OAuthSignin: "No se pudo iniciar el flujo con Google.",
+                OAuthCallback: "La respuesta de Google fue inválida o incompleta.",
+                OAuthAccountNotLinked: "Este correo ya existe con otro método de acceso.",
+                Callback: "No se pudo completar la autenticación.",
+                AccessDenied: "Acceso denegado por el proveedor.",
+                Configuration: "Error de configuración de autenticación en el servidor.",
+            };
+            setError(oauthErrors[authError] || "Error al iniciar sesión con Google.");
+        }
     }, [searchParams]);
+
+    const handleGoogleSignIn = async () => {
+        setError("");
+        setSuccessMessage("");
+        setGoogleLoading(true);
+
+        try {
+            await signIn("google", {
+                callbackUrl: "/dashboard",
+                prompt: "select_account",
+            });
+        } catch (err) {
+            setGoogleLoading(false);
+            setError(err instanceof Error ? err.message : "Error al iniciar sesión con Google");
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -133,7 +163,8 @@ export default function LoginPage() {
 
                     <button
                         type="button"
-                        onClick={() => signIn("google", { callbackUrl: "/" })}
+                        onClick={handleGoogleSignIn}
+                        disabled={googleLoading || loading}
                         className="w-full mt-4 flex items-center justify-center gap-3 bg-white/5 border border-white/10 text-white font-semibold py-3 rounded-xl hover:bg-white/10 transition-all duration-200"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -142,7 +173,7 @@ export default function LoginPage() {
                             <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                             <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                         </svg>
-                        Google
+                        {googleLoading ? "Redirigiendo a Google..." : "Google"}
                     </button>
 
                     {/* Footer */}
