@@ -73,6 +73,35 @@ Reglas:
     }
 }
 
+function hasPriceOrMenuSignals(text: string) {
+    const value = String(text || "");
+    return hasMenuLikeSignals(value) || /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(value);
+}
+
+async function describePdfForKnowledge(buffer: Buffer): Promise<string> {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            `Extrae texto útil de este PDF para entrenar un agente.
+Si es menu/lista de precios:
+1) Mantén secciones.
+2) Formato: producto | precio exacto.
+3) No inventes ni completes datos.
+4) Si no se lee un precio, usa [PRECIO_NO_LEGIBLE].`,
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: "application/pdf"
+                }
+            }
+        ]);
+        return result.response.text() || "";
+    } catch (error) {
+        console.error("Error extrayendo PDF con Gemini:", error);
+        return "";
+    }
+}
+
 export async function POST(req: Request) {
     try {
         console.log("[Onboarding] Recibiendo solicitud de onboarding...");
@@ -138,8 +167,23 @@ export async function POST(req: Request) {
                            try {
                                const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM
                                const data = await pdf(buffer);
-                               fileText = data.text;
-                               console.log(`[Onboarding] PDF procesado: ${file.name} (${fileText.length} chars)`);
+                               fileText = (data.text || "").replace(/\0/g, "").trim();
+                               console.log(`[Onboarding] PDF procesado (pdf-parse): ${file.name} (${fileText.length} chars)`);
+
+                               // Para PDFs escaneados, usamos fallback agentico si el texto es débil.
+                               if (!hasPriceOrMenuSignals(fileText) || fileText.length < 180) {
+                                   const geminiText = await describePdfForKnowledge(buffer);
+                                   if (geminiText && geminiText.trim().length > 0) {
+                                       const menuEntries = hasMenuLikeSignals(geminiText) ? extractMenuEntries(geminiText) : [];
+                                       if (menuEntries.length >= 3) {
+                                           const canonicalMenu = buildCanonicalMenuText(menuEntries);
+                                           fileText = `[PDF_MENU: ${file.name}]\n${canonicalMenu}`;
+                                       } else {
+                                           fileText = `[PDF_ANALYZED: ${file.name}]\n${geminiText}`;
+                                       }
+                                       console.log(`[Onboarding] PDF fallback Gemini aplicado: ${file.name}`);
+                                   }
+                               }
                            } catch (pdfErr) {
                                console.error(`[Onboarding] Error parseando PDF ${file.name}:`, pdfErr);
                            }

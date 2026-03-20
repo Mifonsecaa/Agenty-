@@ -86,6 +86,43 @@ Reglas estrictas:
     }
 }
 
+function hasPriceOrMenuSignals(text: string) {
+    const value = String(text || "");
+    return hasMenuLikeSignals(value) || /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(value);
+}
+
+async function describePdfForKnowledge(buffer: Buffer) {
+    if (!process.env.GEMINI_API_KEY) {
+        return "";
+    }
+
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            `Extrae texto útil de este PDF para base de conocimiento.
+Si contiene menu/lista de precios:
+- transcribe item + precio EXACTO
+- conserva secciones
+- no inventes ni normalices
+- si un precio no es legible usa [PRECIO_NO_LEGIBLE]
+
+Formato objetivo:
+[SECCION: <nombre>]
+<producto> | <precio>`,
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: "application/pdf",
+                },
+            },
+        ]);
+        return result.response.text() || "";
+    } catch (error) {
+        console.error("[API Knowledge] Error extrayendo PDF con Gemini:", error);
+        return "";
+    }
+}
+
 function extractSpreadsheetText(buffer: Buffer) {
     const XLSX = require("xlsx");
     const workbook = XLSX.read(buffer, { type: "buffer" });
@@ -277,7 +314,23 @@ export async function POST(req: Request) {
                 // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
                 const parsedText = sanitizeUtf8Text(data.text || "");
                 text = parsedText;
-                console.log(`[API Knowledge] PDF procesado: ${name} (${parsedText.length} caracteres)`);
+                console.log(`[API Knowledge] PDF procesado (pdf-parse): ${name} (${parsedText.length} caracteres)`);
+
+                // Para PDFs escaneados (imagen), pdf-parse suele devolver texto pobre.
+                // Fallback agentico: extraemos con Gemini para mejorar fidelidad de precios.
+                if (!hasPriceOrMenuSignals(parsedText) || parsedText.length < 180) {
+                    const geminiText = await describePdfForKnowledge(buffer);
+                    if (geminiText && geminiText.trim().length > 0) {
+                        const menuEntries = hasMenuLikeSignals(geminiText) ? extractMenuEntries(geminiText) : [];
+                        if (menuEntries.length >= 3) {
+                            const canonicalMenu = buildCanonicalMenuText(menuEntries);
+                            text = `[PDF_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
+                        } else {
+                            text = `[PDF_ANALYZED: ${name || "archivo"}]\n${sanitizeUtf8Text(geminiText)}`;
+                        }
+                        console.log(`[API Knowledge] PDF fallback Gemini aplicado: ${name}`);
+                    }
+                }
             } catch (pdfError: any) {
                 console.error("[API Knowledge] Error parseando PDF:", pdfError);
                 return NextResponse.json({
