@@ -15,6 +15,13 @@ import type {
     KnowledgeJobCleanupResponse,
 } from "@/types/knowledge";
 import { toast } from "sonner";
+import { createClient } from "@supabase/supabase-js";
+
+// INICIALIZAMOS SUPABASE PARA EL FRONTEND
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const KNOWLEDGE_LOADING_PHRASES = [
     "Escaneando documento...",
@@ -103,7 +110,6 @@ export default function KnowledgeBase() {
     }, []);
 
     useEffect(() => {
-        // Limpia ids seleccionados que ya no existen tras refrescar la lista.
         setSelectedIds((prev) => {
             if (prev.size === 0) return prev;
             const available = new Set(activeFiles.map((file) => file.id));
@@ -198,11 +204,12 @@ export default function KnowledgeBase() {
         }
     };
 
+    // --- NUEVA LÓGICA DE SUBIDA DIRECTA ---
     const handleUpload = async (file: File) => {
         if (!activeAgent?.id || uploadState === "uploading") return;
 
-        // Check file size
-        const MAX_SIZE_MB = 10;
+        // Aumentamos el límite visual a 50MB (o lo que permite Supabase)
+        const MAX_SIZE_MB = 50;
         if (file.size > MAX_SIZE_MB * 1024 * 1024) {
             toast.error(`El archivo es demasiado grande (max ${MAX_SIZE_MB}MB).`);
             return;
@@ -233,106 +240,91 @@ export default function KnowledgeBase() {
         setUploadingFileName(file.name);
 
         try {
-            const reader = new FileReader();
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            // 1. Crear ruta única en Supabase
+            const prefijo = `business/${businessId}`;
+            const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
+
+            setProgress(30);
+
+            // 2. Subir a Supabase DIRECTAMENTE desde el navegador
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('knowledge-files')
+                .upload(rutaArchivo, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (uploadError) throw new Error(`Error en Supabase: ${uploadError.message}`);
+
+            setProgress(60);
+
+            // 3. Obtener URL pública de Supabase
+            const { data: urlData } = supabase.storage
+                .from('knowledge-files')
+                .getPublicUrl(uploadData.path);
+
+            setProgress(80);
+
+            // 4. Enviar SOLO LA URL a nuestra API para que la descargue e indexe
+            const res = await fetch("/api/knowledge", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    businessId,
+                    url: urlData.publicUrl, // ¡Magia! Solo enviamos la URL
+                    name: file.name,
+                    type: file.type
+                })
+            });
+
+            if (!res.ok) {
+                let errorMessage = `Error ${res.status}: ${copy.knowledge.uploadError}`;
                 try {
-                    const result = e.target?.result as string;
-                    if (!result || !result.includes(",")) {
-                        setUploadState("idle");
-                        setProgress(0);
-                        setUploadingFileName("");
-                        toast.error(copy.knowledge.uploadError);
-                        return;
+                    const errorData = await res.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    const text = await res.text();
+                    if (text.includes("Too Large")) {
+                        errorMessage = "El archivo sigue siendo demasiado grande para el servidor.";
                     }
-
-                    // Siempre enviamos base64 para preservar bytes originales del archivo.
-                    const content = result.split(",")[1] || "";
-                    setProgress(40);
-
-                    const res = await fetch("/api/knowledge", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            businessId,
-                            text: content,
-                            encoding: "base64",
-                            name: file.name,
-                            type: file.type
-                        })
-                    });
-
-                    if (!res.ok) {
-                        let errorMessage: string = `Error ${res.status}: ${copy.knowledge.uploadError}`;
-                        try {
-                            const errorData = await res.json();
-                            const detailedMessage = Array.isArray(errorData?.details)
-                                ? errorData.details[0]?.message
-                                : undefined;
-                            errorMessage = detailedMessage || errorData?.error || errorMessage;
-                        } catch (e) {
-                            // Fallback if response is text (e.g., 413 Payload Too Large from server/proxy)
-                            const text = await res.text();
-                            if (text.includes("Too Large")) {
-                                errorMessage = "El archivo es demasiado grande para el servidor.";
-                            }
-                        }
-
-                        setUploadState("idle");
-                        setProgress(0);
-                        setUploadingFileName("");
-                        toast.error(errorMessage);
-                        return;
-                    }
-
-                    const data: KnowledgeListResponse = await res.json();
-
-                    if (data.queued && data.jobId) {
-                        setProgress(55);
-                        toast.info(data.message || copy.knowledge.uploadQueued);
-                        try {
-                            await waitForJobCompletion(data.jobId);
-                        } catch (jobError) {
-                            // En producción serverless el job puede tardar más que el polling.
-                            // No dejamos la UI colgada: notificamos y continuamos.
-                            console.warn("Knowledge job still processing:", jobError);
-                            toast.info("El documento quedó en cola y seguirá procesándose en segundo plano.");
-                        }
-                    }
-
-                    setProgress(100);
-                    setUploadState("success");
-                    toast.success(copy.knowledge.uploadSuccess);
-                    setTimeout(() => {
-                        setUploadState("idle");
-                        setUploadingFileName("");
-                        fetchKnowledge();
-                        void fetchQueueHealth({ silent: true });
-                    }, 1200);
-                } catch (error) {
-                    console.error("Upload error:", error);
-                    setUploadState("idle");
-                    setProgress(0);
-                    setUploadingFileName("");
-                    toast.error(error instanceof Error ? error.message : copy.knowledge.uploadError);
                 }
-            };
+                throw new Error(errorMessage);
+            }
 
-            reader.onerror = () => {
+            const data: KnowledgeListResponse = await res.json();
+
+            if (data.queued && data.jobId) {
+                setProgress(95);
+                toast.info(data.message || copy.knowledge.uploadQueued);
+                try {
+                    await waitForJobCompletion(data.jobId);
+                } catch (jobError) {
+                    console.warn("Knowledge job still processing:", jobError);
+                    toast.info("El documento quedó en cola y seguirá procesándose en segundo plano.");
+                }
+            }
+
+            setProgress(100);
+            setUploadState("success");
+            toast.success(copy.knowledge.uploadSuccess);
+
+            setTimeout(() => {
                 setUploadState("idle");
-                setProgress(0);
                 setUploadingFileName("");
-                toast.error("No se pudo leer el archivo localmente.");
-            };
+                fetchKnowledge();
+                void fetchQueueHealth({ silent: true });
+            }, 1200);
 
-            reader.readAsDataURL(file);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Upload error:", error);
             setUploadState("idle");
             setProgress(0);
             setUploadingFileName("");
-            toast.error(copy.knowledge.uploadError);
+            toast.error(error.message || copy.knowledge.uploadError);
         }
     };
+    // --- FIN LÓGICA DE SUBIDA ---
 
     const openSingleDeleteConfirm = (itemId: string) => {
         setPendingDeleteItemId(itemId);
@@ -649,7 +641,7 @@ export default function KnowledgeBase() {
                             className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all min-h-55 ${uploadState === "uploading" ? 'border-blue-500/50 bg-blue-500/5 cursor-wait' :
                                 isDragging ? 'border-blue-400 bg-blue-500/10' :
                                     'border-white/20 hover:border-white/40 hover:bg-white/5 cursor-pointer'
-                                }`}
+                            }`}
                         >
                             {uploadState === "uploading" ? (
                                 <>
@@ -760,22 +752,22 @@ export default function KnowledgeBase() {
                                 </div>
                             )}
                             <div className="flex items-center gap-2">
-                            <button
-                                onClick={toggleSelectAll}
-                                disabled={activeFiles.length === 0}
-                                className="text-xs px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {selectedIds.size === activeFiles.length && activeFiles.length > 0 ? "Limpiar selección" : "Seleccionar todo"}
-                            </button>
-                            <button
-                                onClick={openBulkDeleteConfirm}
-                                disabled={selectedIds.size === 0 || isBulkDeleting}
-                                className="text-xs px-3 py-1 rounded-full border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1"
-                            >
-                                {isBulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                                Borrar seleccionados ({selectedIds.size})
-                            </button>
-                            <span className="bg-white/5 text-white/70 text-xs px-3 py-1 rounded-full border border-white/10 font-medium tracking-wide">
+                                <button
+                                    onClick={toggleSelectAll}
+                                    disabled={activeFiles.length === 0}
+                                    className="text-xs px-3 py-1 rounded-full border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {selectedIds.size === activeFiles.length && activeFiles.length > 0 ? "Limpiar selección" : "Seleccionar todo"}
+                                </button>
+                                <button
+                                    onClick={openBulkDeleteConfirm}
+                                    disabled={selectedIds.size === 0 || isBulkDeleting}
+                                    className="text-xs px-3 py-1 rounded-full border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1"
+                                >
+                                    {isBulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                    Borrar seleccionados ({selectedIds.size})
+                                </button>
+                                <span className="bg-white/5 text-white/70 text-xs px-3 py-1 rounded-full border border-white/10 font-medium tracking-wide">
                                 {activeFiles.length} Fragmentos Activos
                             </span>
                             </div>
