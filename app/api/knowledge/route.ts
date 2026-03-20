@@ -149,13 +149,15 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const validation = validateData<KnowledgeCreateInput>(body, knowledgeCreateSchema);
-        
+
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
 
         let { businessId, text, encoding, name, type, url } = validation.data!;
-        const safeType = type || "application/octet-stream";
+
+        // --- CAMBIOS APLICADOS AQUÍ PARA SOPORTAR ARCHIVOS DE SUPABASE ---
+        let safeType = type || "application/octet-stream";
         let fileUrl: string | null = null;
         let uploadedBuffer: Buffer | null = null;
 
@@ -165,14 +167,30 @@ export async function POST(req: Request) {
                 if (!response.ok) {
                     return NextResponse.json({ error: "No se pudo leer la URL" }, { status: 422 });
                 }
-                const html = await response.text();
-                text = stripHtmlToText(html);
-                name = name || new URL(url).hostname;
-                type = type || "text/html";
+
+                // NUEVO: Detectar si la URL es un archivo de nuestra nube (Supabase) o un PDF
+                const isSupabaseFile = url.includes("supabase.co/storage");
+                const contentType = response.headers.get("content-type") || safeType;
+
+                if (isSupabaseFile || contentType.includes("pdf") || contentType.includes("excel") || contentType.includes("spreadsheet") || contentType.includes("octet-stream") || contentType.includes("image/")) {
+                    // En lugar de leerlo como texto HTML, lo descargamos como archivo a la memoria
+                    const arrayBuffer = await response.arrayBuffer();
+                    uploadedBuffer = Buffer.from(arrayBuffer);
+                    safeType = contentType; // Actualizamos al tipo real (ej. application/pdf)
+                    fileUrl = url; // Ya está guardado permanentemente en la nube
+                } else {
+                    // Comportamiento original para páginas web normales
+                    const html = await response.text();
+                    text = stripHtmlToText(html);
+                    name = name || new URL(url).hostname;
+                    type = type || "text/html";
+                    safeType = "text/html";
+                }
             } catch (urlError) {
                 return NextResponse.json({ error: "No se pudo extraer contenido de la URL" }, { status: 422 });
             }
         }
+        // --- FIN DE LOS CAMBIOS ---
 
         const isTextLike = safeType.startsWith("text/") || ["application/json", "text/csv"].includes(safeType) || /\.(txt|md|csv|json|xml)$/i.test(name || "");
         const isSpreadsheet =
@@ -212,27 +230,27 @@ export async function POST(req: Request) {
                     // Esto evita fallos en Vercel por filesystem read-only.
                     // Continuamos con el procesamiento del contenido.
                 } else {
-                try {
-                    const uploadDir = path.join(process.cwd(), "public", "uploads");
-                    await mkdir(uploadDir, { recursive: true });
-                    const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
-                    const outputPath = path.join(uploadDir, uniqueName);
-                    await writeFile(outputPath, uploadedBuffer);
-                    fileUrl = `/uploads/${uniqueName}`;
-                } catch (fileError: any) {
-                    const isReadOnlyFs =
-                        fileError?.code === "EROFS" ||
-                        String(fileError?.message || "").toLowerCase().includes("read-only file system");
+                    try {
+                        const uploadDir = path.join(process.cwd(), "public", "uploads");
+                        await mkdir(uploadDir, { recursive: true });
+                        const uniqueName = `${Date.now()}-${sanitizeFileName(name)}`;
+                        const outputPath = path.join(uploadDir, uniqueName);
+                        await writeFile(outputPath, uploadedBuffer);
+                        fileUrl = `/uploads/${uniqueName}`;
+                    } catch (fileError: any) {
+                        const isReadOnlyFs =
+                            fileError?.code === "EROFS" ||
+                            String(fileError?.message || "").toLowerCase().includes("read-only file system");
 
-                    if (isReadOnlyFs) {
-                        // En Vercel serverless el filesystem del deployment es read-only.
-                        // Continuamos la ingesta sin URL persistente de archivo.
-                        console.warn("[API Knowledge] Read-only filesystem detected; skipping local file persistence.");
-                        fileUrl = null;
-                    } else {
-                        throw fileError;
+                        if (isReadOnlyFs) {
+                            // En Vercel serverless el filesystem del deployment es read-only.
+                            // Continuamos la ingesta sin URL persistente de archivo.
+                            console.warn("[API Knowledge] Read-only filesystem detected; skipping local file persistence.");
+                            fileUrl = null;
+                        } else {
+                            throw fileError;
+                        }
                     }
-                }
                 }
             }
         }
@@ -289,7 +307,7 @@ export async function POST(req: Request) {
                 const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
                 text = `[IMAGEN_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
             } else {
-                text = `[IMAGEN: ${name || "archivo"}]\n${visualDescription}`;
+                text = `\n${visualDescription}`;
             }
         } else if (isSpreadsheet) {
             if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
@@ -306,7 +324,7 @@ export async function POST(req: Request) {
             text = sanitizeUtf8Text(text || "");
         } else {
             // Para archivos no textuales no-imagen guardamos un rastro recuperable.
-            text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`; 
+            text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`;
         }
 
         // Verificar que el negocio pertenece al usuario
@@ -387,7 +405,7 @@ export async function GET(req: Request) {
 
         const { searchParams } = new URL(req.url);
         const validation = validateData<KnowledgeQueryInput>({ businessId: searchParams.get("businessId") }, knowledgeQuerySchema);
-        
+
         if (!validation.success) {
             return validationErrorResponse(validation.errors!);
         }
@@ -467,7 +485,7 @@ export async function DELETE(req: Request) {
         });
 
         if (!business) {
-             return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
         }
 
         if (Array.isArray(itemIds) && itemIds.length > 0) {
@@ -486,13 +504,13 @@ export async function DELETE(req: Request) {
 
         if (itemId) {
             const result = await ingestionService.deleteKnowledgeItem(itemId, businessId);
-             return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
+            return NextResponse.json({ success: true, message: "Elemento eliminado.", deletedCount: result.count });
         } else {
             // Peligroso: Si no se envía itemId, borra todo.
             // Para seguridad, requerimos confirmación explícita o solo permitimos si es intencional.
             // Asumiremos que si no hay itemId, es un "Limpiar todo".
             await ingestionService.deleteAllKnowledge(businessId);
-             return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
+            return NextResponse.json({ success: true, message: "Base de conocimiento vaciada." });
         }
 
     } catch (error: any) {

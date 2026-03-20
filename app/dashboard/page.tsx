@@ -1,10 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
-import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2, ChevronRight, Settings } from "lucide-react";
+import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2, ChevronRight, Settings, UploadCloud, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAgenty } from "@/context/AgentyContext";
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
+
+// Inicializamos el cliente de Supabase FUERA del componente para no recrearlo en cada render
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function DashboardOverview() {
     const { activeAgent } = useAgenty();
@@ -16,6 +23,7 @@ export default function DashboardOverview() {
     });
 
     const [loading, setLoading] = useState(true);
+    const [subiendo, setSubiendo] = useState(false); // Estado para el subidor de archivos
 
     useEffect(() => {
         if (!activeAgent?.id) {
@@ -47,6 +55,67 @@ export default function DashboardOverview() {
     }, [activeAgent]);
 
     const agentName = activeAgent?.name || "Asistente Virtual";
+
+    // --- LÓGICA DE SUBIDA DIRECTA A SUPABASE ---
+    const manejarSubida = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        try {
+            setSubiendo(true);
+
+            const archivo = event.target.files?.[0];
+            if (!archivo) return;
+
+            // Sanitizamos el nombre y creamos la ruta
+            const prefijo = activeAgent?.id ? `business/${activeAgent.id}` : 'business/unassigned';
+            const nombreSeguro = archivo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
+
+            // Subimos a Supabase
+            const { data, error } = await supabase.storage
+                .from('knowledge-files') // <-- Asegúrate de que este bucket exista y sea público
+                .upload(rutaArchivo, archivo, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (error) throw error;
+
+            // Obtenemos la URL pública
+            const { data: urlData } = supabase.storage
+                .from('knowledge-files')
+                .getPublicUrl(data.path);
+
+            console.log("¡Éxito! URL del archivo:", urlData.publicUrl);
+            alert("¡Documento subido y listo para entrenar al agente!");
+
+            // 5. Enviar la URL a tu API avanzada
+            const respuesta = await fetch('/api/knowledge-files', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    url: urlData.publicUrl, // Mandamos la URL mágica de Supabase
+                    name: archivo.name,     // El nombre del archivo
+                    type: archivo.type,     // El tipo (ej. application/pdf)
+                    businessId: activeAgent.id
+                })
+            });
+
+            if (!respuesta.ok) {
+                throw new Error('El archivo se subió, pero falló al guardarse en la base de datos');
+            }
+
+            console.log("¡Todo listo! Archivo guardado en Supabase y registrado en Prisma.");
+
+        } catch (error: any) {
+            console.error('Error al subir:', error.message);
+            alert('Hubo un error al subir el archivo.');
+        } finally {
+            setSubiendo(false);
+            // Limpiamos el input para que pueda subir otro archivo si quiere
+            event.target.value = '';
+        }
+    };
 
     // Checklist Logic
     const steps = [
@@ -239,54 +308,103 @@ export default function DashboardOverview() {
                     </div>
                 </div>
 
-                {/* Recent Activity / Onboarding Checklist */}
-                <div className="col-span-1 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
-                    <h2 className="text-lg font-bold mb-4 flex justify-between items-center">
-                        <span>Guía de Inicio</span>
-                        <span className="text-xs font-normal text-white/40">{progress}% Completado</span>
-                    </h2>
+                {/* Right Column: Checklist & Upload Card */}
+                <div className="col-span-1 flex flex-col gap-6">
 
-                    {/* Progress Bar */}
-                    <div className="w-full bg-white/10 h-1.5 rounded-full mb-6 overflow-hidden">
-                        <div 
-                            className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-1000"
-                            style={{ width: `${progress}%` }}
-                        />
+                    {/* Onboarding Checklist */}
+                    <div className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
+                        <h2 className="text-lg font-bold mb-4 flex justify-between items-center">
+                            <span>Guía de Inicio</span>
+                            <span className="text-xs font-normal text-white/40">{progress}% Completado</span>
+                        </h2>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-white/10 h-1.5 rounded-full mb-6 overflow-hidden">
+                            <div
+                                className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-1000"
+                                style={{ width: `${progress}%` }}
+                            />
+                        </div>
+
+                        <div className="space-y-3">
+                            {steps.map((step) => (
+                                <Link
+                                    key={step.id}
+                                    href={step.href}
+                                    className={`flex items-center justify-between p-3 rounded-xl border transition-all group ${
+                                        step.completed
+                                            ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
+                                            : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                            step.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'
+                                        }`}>
+                                            {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <step.icon className="w-4 h-4" />}
+                                        </div>
+                                        <span className={`text-sm font-medium ${step.completed ? 'text-white/60 line-through' : 'text-white/90'}`}>
+                                            {step.title}
+                                        </span>
+                                    </div>
+                                    {!step.completed && (
+                                        <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-colors" />
+                                    )}
+                                </Link>
+                            ))}
+                        </div>
+
+                        {!steps.every(s => s.completed) && (
+                            <div className="mt-6 pt-4 border-t border-white/5 text-center">
+                                <p className="text-xs text-white/40">Completa estos pasos para activar tu agente al 100%.</p>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="space-y-3">
-                        {steps.map((step) => (
-                            <Link 
-                                key={step.id}
-                                href={step.href}
-                                className={`flex items-center justify-between p-3 rounded-xl border transition-all group ${
-                                    step.completed 
-                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10' 
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                    {/* NUEVO: Tarjeta de Subida de Documentos */}
+                    <div className="p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors" />
+
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                                <UploadCloud className="w-5 h-5" />
+                            </div>
+                            <h2 className="text-lg font-bold">Base de Conocimiento</h2>
+                        </div>
+
+                        <p className="text-sm text-white/60 mb-4">
+                            Sube PDFs o documentos grandes (hasta 50MB) para entrenar a tu agente.
+                        </p>
+
+                        <div className="relative">
+                            <input
+                                type="file"
+                                id="file-upload"
+                                accept=".pdf,.doc,.docx,.txt"
+                                onChange={manejarSubida}
+                                disabled={subiendo}
+                                className="hidden" // Ocultamos el input nativo para estilizarlo mejor
+                            />
+                            <label
+                                htmlFor="file-upload"
+                                className={`flex items-center justify-center w-full py-3 px-4 rounded-xl border border-dashed transition-all cursor-pointer
+                                    ${subiendo
+                                    ? 'border-blue-500/50 bg-blue-500/10 text-blue-400 cursor-not-allowed'
+                                    : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/40 text-white/80'
                                 }`}
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                        step.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'
-                                    }`}>
-                                        {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <step.icon className="w-4 h-4" />}
-                                    </div>
-                                    <span className={`text-sm font-medium ${step.completed ? 'text-white/60 line-through' : 'text-white/90'}`}>
-                                        {step.title}
-                                    </span>
-                                </div>
-                                {!step.completed && (
-                                    <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-colors" />
+                                {subiendo ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Subiendo a la nube...
+                                    </>
+                                ) : (
+                                    <span className="text-sm font-medium">Seleccionar archivo...</span>
                                 )}
-                            </Link>
-                        ))}
+                            </label>
+                        </div>
                     </div>
 
-                    {!steps.every(s => s.completed) && (
-                         <div className="mt-6 pt-4 border-t border-white/5 text-center">
-                            <p className="text-xs text-white/40">Completa estos pasos para activar tu agente al 100%.</p>
-                         </div>
-                    )}
                 </div>
             </motion.div>
         </div>
