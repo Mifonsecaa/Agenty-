@@ -277,7 +277,23 @@ export async function POST(req: Request) {
                 // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
                 const parsedText = sanitizeUtf8Text(data.text || "");
                 text = parsedText;
-                console.log(`[API Knowledge] PDF procesado: ${name} (${parsedText.length} caracteres)`);
+                console.log(`[API Knowledge] PDF procesado (pdf-parse): ${name} (${parsedText.length} caracteres)`);
+
+                // Para PDFs escaneados (imagen), pdf-parse suele devolver texto pobre.
+                // Fallback agentico: extraemos con Gemini para mejorar fidelidad de precios.
+                if (!hasPriceOrMenuSignals(parsedText) || parsedText.length < 180) {
+                    const geminiText = await describePdfForKnowledge(buffer);
+                    if (geminiText && geminiText.trim().length > 0) {
+                        const menuEntries = hasMenuLikeSignals(geminiText) ? extractMenuEntries(geminiText) : [];
+                        if (menuEntries.length >= 3) {
+                            const canonicalMenu = buildCanonicalMenuText(menuEntries);
+                            text = `[PDF_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
+                        } else {
+                            text = `[PDF_ANALYZED: ${name || "archivo"}]\n${sanitizeUtf8Text(geminiText)}`;
+                        }
+                        console.log(`[API Knowledge] PDF fallback Gemini aplicado: ${name}`);
+                    }
+                }
             } catch (pdfError: any) {
                 console.error("[API Knowledge] Error parseando PDF:", pdfError);
                 return NextResponse.json({
