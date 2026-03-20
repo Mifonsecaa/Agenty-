@@ -38,16 +38,18 @@ type SpreadsheetPreview = {
 };
 
 function isSpreadsheetFile(fileName: string, fileType?: string) {
-    if (/\.(xlsx|xlsm)$/i.test(fileName)) return true;
+    if (/\.(xlsx|xlsm|xls)$/i.test(fileName)) return true;
     return [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "application/vnd.ms-excel",
     ].includes(fileType || "");
 }
 
 function ExcelViewerModal({
     businessId,
     files,
+    missingFileUrlCount,
     loadingFiles,
     loadingPreview,
     preview,
@@ -58,6 +60,7 @@ function ExcelViewerModal({
 }: {
     businessId: string;
     files: ExcelKnowledgeFile[];
+    missingFileUrlCount: number;
     loadingFiles: boolean;
     loadingPreview: boolean;
     preview: SpreadsheetPreview["data"] | null;
@@ -107,7 +110,7 @@ function ExcelViewerModal({
                 <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                         <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-                        Visor Excel (.xlsx / .xlsm)
+                        Visor Excel (.xlsx / .xlsm / .xls)
                     </h3>
                     <button onClick={onClose} className="text-white/60 hover:text-white">Cerrar</button>
                 </div>
@@ -118,7 +121,11 @@ function ExcelViewerModal({
                         {loadingFiles ? (
                             <p className="text-sm text-white/60">Cargando archivos...</p>
                         ) : files.length === 0 ? (
-                            <p className="text-sm text-white/60">No hay archivos Excel en tu base de conocimiento.</p>
+                            <p className="text-sm text-white/60">
+                                {missingFileUrlCount > 0
+                                    ? "Hay archivos Excel en la base de conocimiento, pero no tienen URL persistente para abrirlos en el visor."
+                                    : "No hay archivos Excel en tu base de conocimiento."}
+                            </p>
                         ) : (
                             <div className="space-y-2">
                                 {files.map((file) => (
@@ -281,6 +288,7 @@ export default function ToolsStore() {
     const [pendingDeactivateToolId, setPendingDeactivateToolId] = useState<number | null>(null);
     const [excelViewerOpen, setExcelViewerOpen] = useState(false);
     const [excelFiles, setExcelFiles] = useState<ExcelKnowledgeFile[]>([]);
+    const [excelMissingFileUrlCount, setExcelMissingFileUrlCount] = useState(0);
     const [loadingExcelFiles, setLoadingExcelFiles] = useState(false);
     const [selectedExcelFileUrl, setSelectedExcelFileUrl] = useState<string | null>(null);
     const [excelPreview, setExcelPreview] = useState<SpreadsheetPreview["data"] | null>(null);
@@ -378,6 +386,7 @@ export default function ToolsStore() {
         setLoadingExcelFiles(true);
         setExcelPreview(null);
         setSelectedExcelFileUrl(null);
+        setExcelMissingFileUrlCount(0);
 
         try {
             const res = await fetch(`/api/knowledge/spreadsheet?businessId=${activeAgent.id}`);
@@ -388,6 +397,7 @@ export default function ToolsStore() {
             const missingFileUrlCount = Number(data?.data?.missingFileUrlCount || 0);
 
             setExcelFiles(files);
+            setExcelMissingFileUrlCount(missingFileUrlCount);
 
             if (files.length === 0 && missingFileUrlCount > 0) {
                 setStatusMessage({
@@ -590,6 +600,7 @@ export default function ToolsStore() {
                 <ExcelViewerModal
                     businessId={activeAgent?.id || ""}
                     files={excelFiles}
+                    missingFileUrlCount={excelMissingFileUrlCount}
                     loadingFiles={loadingExcelFiles}
                     loadingPreview={loadingExcelPreview}
                     preview={excelPreview}

@@ -219,8 +219,9 @@ export default function KnowledgeBase() {
             [
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-excel.sheet.macroEnabled.12",
+                "application/vnd.ms-excel",
             ].includes(file.type) ||
-            /\.(xlsx|xlsm)$/i.test(file.name);
+            /\.(xlsx|xlsm|xls)$/i.test(file.name);
 
         if (!isTextLike && !isImage && !isPdf && !isSpreadsheet) {
             toast.error(copy.knowledge.unsupportedFileType(file.type));
@@ -237,7 +238,11 @@ export default function KnowledgeBase() {
                 try {
                     const result = e.target?.result as string;
                     if (!result || !result.includes(",")) {
-                        throw new Error(copy.knowledge.uploadError);
+                        setUploadState("idle");
+                        setProgress(0);
+                        setUploadingFileName("");
+                        toast.error(copy.knowledge.uploadError);
+                        return;
                     }
 
                     // Siempre enviamos base64 para preservar bytes originales del archivo.
@@ -257,10 +262,13 @@ export default function KnowledgeBase() {
                     });
 
                     if (!res.ok) {
-                        let errorMessage: string = copy.knowledge.uploadError;
+                        let errorMessage: string = `Error ${res.status}: ${copy.knowledge.uploadError}`;
                         try {
                             const errorData = await res.json();
-                            errorMessage = errorData.error || errorMessage;
+                            const detailedMessage = Array.isArray(errorData?.details)
+                                ? errorData.details[0]?.message
+                                : undefined;
+                            errorMessage = detailedMessage || errorData?.error || errorMessage;
                         } catch (e) {
                             // Fallback if response is text (e.g., 413 Payload Too Large from server/proxy)
                             const text = await res.text();
@@ -268,7 +276,12 @@ export default function KnowledgeBase() {
                                 errorMessage = "El archivo es demasiado grande para el servidor.";
                             }
                         }
-                        throw new Error(errorMessage);
+
+                        setUploadState("idle");
+                        setProgress(0);
+                        setUploadingFileName("");
+                        toast.error(errorMessage);
+                        return;
                     }
 
                     const data: KnowledgeListResponse = await res.json();
