@@ -3,7 +3,7 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AgentState, AgentStateType } from "./state";
-import { createKnowledgeTool } from "../tools/knowledge-tool";
+import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
 import { createBookingTool } from "../tools/booking-tool";
 import { SystemMessage } from "@langchain/core/messages";
 
@@ -11,6 +11,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     // 1. Definir herramientas habilitadas para este agente
     const tools = [
         createKnowledgeTool(businessId),
+        createSpreadsheetUpdateTool(businessId),
         // Booking requiere phone para CREATE; se inyecta desde el canal (WhatsApp/Telegram)
         createBookingTool(businessId, customerPhone),
     ];
@@ -64,7 +65,10 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             `2) No menciones fechas pasadas ni años pasados (por ejemplo 2023) en tu respuesta final al cliente.\n` +
             `3) Si la fecha del usuario es ambigua o antigua, ofrece una alternativa próxima con fecha completa en español (ejemplo: 16 de marzo del 2026).\n` +
             `4) No confirmes una reserva sin pasar por booking_manager action="CREATE".\n` +
-            `5) No confirmes una cancelación sin pasar por booking_manager action="CANCEL".`;
+            `5) No confirmes una cancelación sin pasar por booking_manager action="CANCEL".` +
+            `\n\nTambien tienes una herramienta de edicion Excel llamada knowledge_spreadsheet_editor.` +
+            `\n- Si el usuario pide actualizar catalogo, precios o celdas de un .xlsm/.xlsx, usa action="LIST" y luego action="UPDATE_CELL".` +
+            `\n- Pide confirmacion breve del archivo, hoja y celda antes de modificar si hay ambiguedad.`;
 
         const response = await model.invoke([
             new SystemMessage(systemPrompt),

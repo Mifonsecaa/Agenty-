@@ -46,6 +46,7 @@ function isSpreadsheetFile(fileName: string, fileType?: string) {
 }
 
 function ExcelViewerModal({
+    businessId,
     files,
     loadingFiles,
     loadingPreview,
@@ -53,7 +54,9 @@ function ExcelViewerModal({
     selectedFile,
     onClose,
     onSelectFile,
+    onApplyUpdate,
 }: {
+    businessId: string;
     files: ExcelKnowledgeFile[];
     loadingFiles: boolean;
     loadingPreview: boolean;
@@ -61,7 +64,43 @@ function ExcelViewerModal({
     selectedFile: string | null;
     onClose: () => void;
     onSelectFile: (file: ExcelKnowledgeFile) => void;
+    onApplyUpdate: (params: {
+        businessId: string;
+        file: ExcelKnowledgeFile;
+        sheet: string;
+        cell: string;
+        value: string;
+    }) => Promise<void>;
 }) {
+    const [editSheet, setEditSheet] = useState("");
+    const [editCell, setEditCell] = useState("A1");
+    const [editValue, setEditValue] = useState("");
+    const [savingEdit, setSavingEdit] = useState(false);
+
+    useEffect(() => {
+        if (!preview?.sheets?.length) return;
+        setEditSheet((prev) => prev || preview.sheets[0].name);
+    }, [preview]);
+
+    const selectedFileData = files.find((f) => f.fileUrl === selectedFile) || null;
+
+    const handleApplyEdit = async () => {
+        if (!selectedFileData || !editSheet.trim() || !editCell.trim()) return;
+        setSavingEdit(true);
+        try {
+            await onApplyUpdate({
+                businessId,
+                file: selectedFileData,
+                sheet: editSheet,
+                cell: editCell,
+                value: editValue,
+            });
+            setEditValue("");
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center">
             <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/15 bg-[#090b12]">
@@ -96,7 +135,47 @@ function ExcelViewerModal({
                         )}
                     </aside>
 
-                    <section className="lg:col-span-2 p-4 overflow-y-auto">
+                    <section className="lg:col-span-2 p-4 overflow-y-auto space-y-4">
+                        <div className="rounded-xl border border-white/10 bg-white/3 p-3">
+                            <p className="text-xs text-white/60 mb-2">Editor rapido (actualiza una celda y reindexa la base de conocimiento)</p>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                <select
+                                    value={editSheet}
+                                    onChange={(e) => setEditSheet(e.target.value)}
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                    disabled={!preview || savingEdit}
+                                >
+                                    <option value="">Selecciona hoja</option>
+                                    {(preview?.sheets || []).map((sheet) => (
+                                        <option key={sheet.name} value={sheet.name}>{sheet.name}</option>
+                                    ))}
+                                </select>
+                                <input
+                                    value={editCell}
+                                    onChange={(e) => setEditCell(e.target.value.toUpperCase())}
+                                    placeholder="Celda (ej. B3)"
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white"
+                                    disabled={savingEdit}
+                                />
+                                <input
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    placeholder="Nuevo valor"
+                                    className="rounded-lg bg-black/30 border border-white/15 px-2 py-2 text-xs text-white md:col-span-2"
+                                    disabled={savingEdit}
+                                />
+                            </div>
+                            <div className="mt-2">
+                                <button
+                                    onClick={handleApplyEdit}
+                                    disabled={!selectedFileData || !editSheet.trim() || !editCell.trim() || savingEdit}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-black disabled:opacity-40"
+                                >
+                                    {savingEdit ? "Guardando..." : "Guardar cambio"}
+                                </button>
+                            </div>
+                        </div>
+
                         {loadingPreview ? (
                             <p className="text-sm text-white/60">Cargando previsualizacion...</p>
                         ) : !preview ? (
@@ -301,25 +380,27 @@ export default function ToolsStore() {
         setSelectedExcelFileUrl(null);
 
         try {
-            const res = await fetch(`/api/knowledge?businessId=${activeAgent.id}`);
-            const data = await res.json();
-
-            const items = data?.data?.items || data?.items || [];
-            const seen = new Set<string>();
-            const files: ExcelKnowledgeFile[] = [];
-
-            for (const item of items) {
-                const fileUrl = item?.metadata?.fileUrl;
-                const fileName = item?.metadata?.fileName || "archivo.xlsx";
-                const fileType = item?.metadata?.fileType || "";
-
-                if (!fileUrl || seen.has(fileUrl)) continue;
-                if (!isSpreadsheetFile(fileName, fileType)) continue;
-                seen.add(fileUrl);
-                files.push({ fileUrl, fileName, fileType });
-            }
+            const res = await fetch(`/api/knowledge/spreadsheet?businessId=${activeAgent.id}`);
+            const data = await res.json().catch(() => ({}));
+            const files: ExcelKnowledgeFile[] = (data?.data?.files || []).filter((f: any) =>
+                f?.fileUrl && isSpreadsheetFile(f?.fileName || "", f?.fileType || "")
+            );
+            const missingFileUrlCount = Number(data?.data?.missingFileUrlCount || 0);
 
             setExcelFiles(files);
+
+            if (files.length === 0 && missingFileUrlCount > 0) {
+                setStatusMessage({
+                    type: "error",
+                    text: "Hay archivos Excel en la base de conocimiento sin URL de archivo persistente. Re-subelos para visualizarlos.",
+                });
+            } else if (files.length > 0 && missingFileUrlCount > 0) {
+                setStatusMessage({
+                    type: "success",
+                    text: "Se encontraron archivos Excel visualizables. Algunos registros antiguos sin URL persistente fueron omitidos.",
+                });
+            }
+
             if (files[0]) {
                 void loadExcelPreview(files[0]);
             }
@@ -358,6 +439,39 @@ export default function ToolsStore() {
         } finally {
             setLoadingExcelPreview(false);
         }
+    };
+
+    const applyExcelUpdate = async ({
+        businessId,
+        file,
+        sheet,
+        cell,
+        value,
+    }: {
+        businessId: string;
+        file: ExcelKnowledgeFile;
+        sheet: string;
+        cell: string;
+        value: string;
+    }) => {
+        const res = await fetch("/api/knowledge/spreadsheet", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                businessId,
+                fileUrl: file.fileUrl,
+                fileName: file.fileName,
+                updates: [{ sheet, cell, value }],
+            }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.success) {
+            throw new Error(data?.error || "No se pudo actualizar el archivo Excel.");
+        }
+
+        setStatusMessage({ type: "success", text: "Archivo actualizado y reindexado correctamente." });
+        await loadExcelPreview(file);
     };
 
     const openDeactivateConfirm = (toolId: number) => {
@@ -474,6 +588,7 @@ export default function ToolsStore() {
 
             {excelViewerOpen && (
                 <ExcelViewerModal
+                    businessId={activeAgent?.id || ""}
                     files={excelFiles}
                     loadingFiles={loadingExcelFiles}
                     loadingPreview={loadingExcelPreview}
@@ -483,6 +598,7 @@ export default function ToolsStore() {
                     onSelectFile={(file) => {
                         void loadExcelPreview(file);
                     }}
+                    onApplyUpdate={applyExcelUpdate}
                 />
             )}
         </div>

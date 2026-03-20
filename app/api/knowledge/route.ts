@@ -12,6 +12,7 @@ import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
+import { extractSpreadsheetText } from "@/lib/knowledge/spreadsheet";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -86,34 +87,6 @@ Reglas estrictas:
     }
 }
 
-function extractSpreadsheetText(buffer: Buffer) {
-    const XLSX = require("xlsx");
-    const workbook = XLSX.read(buffer, { type: "buffer" });
-    const selectedSheets = workbook.SheetNames.slice(0, 4);
-    const blocks: string[] = [];
-
-    for (const sheetName of selectedSheets) {
-        const sheet = workbook.Sheets[sheetName];
-        if (!sheet) continue;
-
-        const rows = XLSX.utils.sheet_to_json(sheet, {
-            header: 1,
-            raw: false,
-            blankrows: false,
-        }) as unknown[][];
-
-        const limitedRows = rows.slice(0, 220);
-        const lines = limitedRows
-            .map((row: unknown[]) => row.map((cell: unknown) => (cell ?? "").toString().trim()).join(" | ").trim())
-            .filter(Boolean);
-
-        if (lines.length > 0) {
-            blocks.push(`[HOJA: ${sheetName}]\n${lines.join("\n")}`);
-        }
-    }
-
-    return blocks.join("\n\n");
-}
 
 function stripHtmlToText(html: string) {
     return html
