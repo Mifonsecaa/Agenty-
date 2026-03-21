@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { Calendar, CreditCard, ShoppingBag, Mail, Blocks, FileSpreadsheet } from "lucide-react";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
 import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
@@ -647,7 +647,7 @@ export default function ToolsStore() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const copy = getDashboardCopy(searchParams.get("lang") || undefined);
-    const { activeAgent, saveAgent, updateActiveAgentConfig } = useAgenty();
+    const { activeAgent, saveAgent, updateActiveAgentConfig } = useBrainia();
     const [tools, setTools] = useState<ToolCard[]>([
         {
             id: 1,

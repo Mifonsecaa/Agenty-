@@ -10,7 +10,7 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Agenty | IA para tu Negocio",
+  title: "brainia | IA para tu Negocio",
   description: "Crea tu agente de automatización describiendo tu negocio con IA.",
 };
 

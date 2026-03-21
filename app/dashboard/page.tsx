@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { MessageSquare, ArrowUpRight, Zap, Users, CheckCircle2, ChevronRight, Settings, UploadCloud, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,7 +14,7 @@ const supabase = createClient(
 );
 
 export default function DashboardOverview() {
-    const { activeAgent } = useAgenty();
+    const { activeAgent } = useBrainia();
     const [chartData, setChartData] = useState<any[]>([]);
     const [metrics, setMetrics] = useState({
         conversations: 0,

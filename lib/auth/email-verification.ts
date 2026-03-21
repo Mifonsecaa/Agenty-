@@ -51,7 +51,7 @@ export async function sendEmailVerificationMessage({
     <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
       <h2 style="margin-bottom: 8px;">Confirma tu correo</h2>
       <p style="line-height: 1.5;">${greeting}</p>
-      <p style="line-height: 1.5;">Gracias por registrarte en Agenty. Para activar tu cuenta, confirma tu correo haciendo clic en el siguiente boton:</p>
+      <p style="line-height: 1.5;">Gracias por registrarte en brainia. Para activar tu cuenta, confirma tu correo haciendo clic en el siguiente boton:</p>
       <p style="margin: 24px 0;">
         <a href="${verifyUrl}" style="background: #111827; color: #ffffff; padding: 12px 18px; border-radius: 8px; text-decoration: none; display: inline-block;">Confirmar correo</a>
       </p>
@@ -64,7 +64,7 @@ export async function sendEmailVerificationMessage({
   const text = [
     `${greeting}`,
     "",
-    "Gracias por registrarte en Agenty.",
+    "Gracias por registrarte en brainia.",
     "Confirma tu correo con este enlace:",
     verifyUrl,
     "",
@@ -80,7 +80,7 @@ export async function sendEmailVerificationMessage({
     body: JSON.stringify({
       from,
       to: [to],
-      subject: "Confirma tu registro en Agenty",
+      subject: "Confirma tu registro en brainia",
       html,
       text,
     }),
