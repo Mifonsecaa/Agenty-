@@ -38,7 +38,6 @@ export default function Footer() {
                     <div>
                         <h4 className="font-semibold text-white mb-4">Producto</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><Link href="/#features" className="hover:text-blue-400 transition-colors">Características</Link></li>
                             <li><Link href="/pricing" className="hover:text-blue-400 transition-colors">Precios</Link></li>
                             <li><Link href="/agents/default" className="hover:text-blue-400 transition-colors">Cómo funciona</Link></li>
                             <li><Link href="/dashboard/builder" className="hover:text-blue-400 transition-colors">Playground</Link></li>
@@ -48,9 +47,6 @@ export default function Footer() {
                     <div>
                         <h4 className="font-semibold text-white mb-4">Recursos</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><Link href="/about/team" className="hover:text-blue-400 transition-colors">Equipo</Link></li>
-                            <li><Link href="/about/history" className="hover:text-blue-400 transition-colors">Historia</Link></li>
-                            <li><Link href="/agents/default" className="hover:text-blue-400 transition-colors">Agentes por defecto</Link></li>
                             <li><Link href="/help" className="hover:text-blue-400 transition-colors">Centro de Ayuda</Link></li>
                         </ul>
                     </div>
@@ -60,7 +56,6 @@ export default function Footer() {
                         <ul className="space-y-2 text-sm">
                             <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Privacidad</Link></li>
                             <li><Link href="/terms" className="hover:text-blue-400 transition-colors">Términos</Link></li>
-                            <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Seguridad</Link></li>
                         </ul>
                     </div>
                 </div>
