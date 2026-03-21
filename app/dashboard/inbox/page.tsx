@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { Search, MoreVertical, AlertCircle, Smartphone, Camera, Globe, Sparkles } from "lucide-react";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import { toast } from "sonner";
 
 const CHATS_POLL_MS = 10000;
@@ -21,7 +21,7 @@ async function parseApiJson<T>(res: Response): Promise<T | null> {
 }
 
 export default function LiveInbox() {
-    const { activeAgent } = useAgenty();
+    const { activeAgent } = useBrainia();
     const [chats, setChats] = useState<any[]>([]);
     const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
     const [messages, setMessages] = useState<any[]>([]);

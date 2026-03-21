@@ -190,7 +190,7 @@ export async function POST(request: Request) {
       releaseConcurrency = demoConcurrency;
 
       let demoSystemPrompt =
-        "Eres 'AgentyBot', el asistente virtual experto de ventas para brainia. Responde corto, útil y amigable.";
+        "Eres 'brainiaBot', el asistente virtual experto de ventas para brainia. Responde corto, útil y amigable.";
 
       if (demoContext?.trim()) {
         demoSystemPrompt = `Eres un asistente virtual experto en atención al cliente. Actúa como este negocio: \"${demoContext}\". Responde en 2-3 oraciones, natural y directo.`;

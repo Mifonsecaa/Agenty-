@@ -24,7 +24,7 @@ const concurrencyBuckets = new Map<string, ConcurrencyBucket>();
 
 const STALE_CONCURRENCY_TTL_MS = 10 * 60 * 1000;
 const REDIS_CONCURRENCY_TTL_MS = 90 * 1000;
-const REDIS_PREFIX = process.env.REDIS_PREFIX || "agenty:traffic";
+const REDIS_PREFIX = process.env.REDIS_PREFIX || "brainia:traffic";
 
 let redisClientPromise: Promise<any | null> | null = null;
 let redisMetricsReported = {

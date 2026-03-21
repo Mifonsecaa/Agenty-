@@ -6,7 +6,7 @@ export async function generateBusinessConfig(userInput: string): Promise<Busines
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const systemPrompt = `
-    Eres el arquitecto de datos de 'Agenty', una plataforma de automatización para PyMEs.
+    Eres el arquitecto de datos de 'brainia', una plataforma de automatización para PyMEs.
     Tu objetivo es leer la descripción que hace el dueño sobre su negocio y extraer absolutamente todas las reglas, horarios y precios.
     
     REGLAS ESTRICTAS DE EXTRACCIÓN:

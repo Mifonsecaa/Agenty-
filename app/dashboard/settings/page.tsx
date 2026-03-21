@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Save, AlertCircle, CheckCircle2, Loader2, Bot, Sliders, Clock } from "lucide-react";
 import { motion } from "framer-motion";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import { useSearchParams } from "next/navigation";
 
 type Schedule = {
@@ -24,7 +24,7 @@ type AgentData = {
 
 export default function SettingsPage() {
     const searchParams = useSearchParams();
-    const { activeAgent, updateActiveAgentConfig } = useAgenty();
+    const { activeAgent, updateActiveAgentConfig } = useBrainia();
     const [isLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);

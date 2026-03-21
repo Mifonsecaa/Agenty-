@@ -1,10 +1,10 @@
 "use client";
 
 import ConnectionsManager from "@/components/dashboard/ConnectionsManager";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 
 export default function ConnectionsPage() {
-    const { activeAgent } = useAgenty();
+    const { activeAgent } = useBrainia();
 
     if (!activeAgent) {
         return (

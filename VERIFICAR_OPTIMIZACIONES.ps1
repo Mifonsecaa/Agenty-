@@ -1,9 +1,9 @@
 #!/usr/bin/env powershell
-# Verificación Rápida de Optimizaciones - Agenty
+# Verificación Rápida de Optimizaciones - brainia
 # Ejecutar: .\VERIFICAR_OPTIMIZACIONES.ps1
 
 Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║     VERIFICACIÓN DE OPTIMIZACIONES - AGENTY           ║" -ForegroundColor Cyan
+Write-Host "║     VERIFICACIÓN DE OPTIMIZACIONES - BRAINIA          ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 

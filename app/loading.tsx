@@ -14,7 +14,7 @@ export default function Loading() {
         {/* Text Animation */}
         <div className="flex flex-col items-center">
           <h2 className="text-xl font-bold text-white tracking-tight animate-pulse">
-            Agenty<span className="text-white/40">.ai</span>
+            brainia<span className="text-white/40">.ai</span>
           </h2>
           <p className="text-xs text-emerald-400 font-mono mt-2 flex items-center gap-2">
             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />

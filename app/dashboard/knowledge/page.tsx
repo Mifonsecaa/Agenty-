@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { UploadCloud, FileText, Database, Link as LinkIcon, CheckCircle2, Trash2, Loader2 } from "lucide-react";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
@@ -35,7 +35,7 @@ const JOB_POLL_TIMEOUT_MS = 120000;
 const HEALTH_POLL_MS = 15000;
 
 export default function KnowledgeBase() {
-    const { activeAgent } = useAgenty();
+    const { activeAgent } = useBrainia();
     const searchParams = useSearchParams();
     const copy = getDashboardCopy(searchParams.get("lang") || undefined);
     const [isDragging, setIsDragging] = useState(false);

@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { Bot, Save, Play, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
-import { useAgenty } from "@/context/AgentyContext";
+import { useBrainia } from "@/context/BrainiaContext";
 import { toast } from "sonner";
 import Image from 'next/image';
 
 export default function BuilderPlayground() {
-    const { activeAgent, saveAgent } = useAgenty();
+    const { activeAgent, saveAgent } = useBrainia();
     const [agentName, setAgentName] = useState("AgentBot");
     const [aiProvider, setAiProvider] = useState("openai");
     const [systemPrompt, setSystemPrompt] = useState("Cargando personalidad...");

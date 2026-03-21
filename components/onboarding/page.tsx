@@ -72,7 +72,7 @@ export default function OnboardingPage() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-white mx-auto mb-4" />
-                        <p className="text-white/60 animate-pulse">Agenty está configurando tu base de datos...</p>
+                        <p className="text-white/60 animate-pulse">brainia está configurando tu base de datos...</p>
                     </div>
                 </div>
             )}
