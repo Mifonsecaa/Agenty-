@@ -3,6 +3,7 @@ import { useState, Suspense, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import MagicBox from "../components/onboarding/MagicBox";
+import { AgenticArchitectureModal } from "@/components/AgenticArchitectureModal";
 import { SearchParamsHandler } from "@/components/SearchParamsHandler";
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
@@ -26,6 +27,7 @@ export default function HomePage() {
     const [loading, setLoading] = useState(false);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
     const [isDemoOpen, setIsDemoOpen] = useState(false);
+    const [isArchitectureOpen, setIsArchitectureOpen] = useState(false);
 
     useEffect(() => {
         setHasHydrated(true);
@@ -51,6 +53,14 @@ export default function HomePage() {
 
     const handleOpenDemo = () => {
         setIsDemoOpen(true);
+    };
+
+    const handleOpenArchitecture = () => {
+        setIsArchitectureOpen(true);
+    };
+
+    const handleCloseArchitecture = () => {
+        setIsArchitectureOpen(false);
     };
 
     const handleMagicSubmit = async (description: string, files?: File[]) => {
@@ -216,6 +226,12 @@ export default function HomePage() {
                         <p className="text-white/40 max-w-2xl mx-auto">
                             brainia se encarga del 80% de las consultas repetitivas, permitiéndote enfocarte en lo que realmente importa: hacer crecer tu negocio.
                         </p>
+                        <button
+                            onClick={handleOpenArchitecture}
+                            className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-white/15 bg-white/5 text-white/90 hover:bg-white/10 transition-colors"
+                        >
+                            Ver arquitectura agentica
+                        </button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -306,6 +322,7 @@ export default function HomePage() {
                 )}
             </main>
             {isDemoOpen && <InteractiveDemo onClose={handleCloseDemo} />}
+            <AgenticArchitectureModal isOpen={isArchitectureOpen} onCloseAction={handleCloseArchitecture} />
         </MotionConfig>
     );
 }
