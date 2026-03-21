@@ -12,9 +12,22 @@ import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { knowledgeAgent } from "@/services/ai/knowledgeAgent";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
-import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
+import { hasMenuLikeSignals } from "@/lib/rag/menu-precision";
+import { buildBestAgenticMenuContext } from "@/lib/knowledge/agentic-menu";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+function normalizeMimeType(value?: string | null) {
+    return String(value || "application/octet-stream")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+}
+
+function hasPriceOrMenuSignals(text: string) {
+    const value = String(text || "");
+    return hasMenuLikeSignals(value) || /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(value);
+}
 
 async function describeImage(buffer: Buffer, mimeType: string): Promise<string> {
     try {
@@ -48,27 +61,26 @@ Formato:
     }
 }
 
-async function verifyMenuImageTranscription(buffer: Buffer, mimeType: string): Promise<string> {
+async function describePdfForKnowledge(buffer: Buffer): Promise<string> {
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
-            `Transcribe SOLO menu con precision maxima.
-Reglas:
-1) Formato: "producto | precio".
-2) Usa lineas "[SECCION: nombre]" para categorias.
-3) No inventes, no completes, no normalices.
-4) Si no se ve el precio, omite ese item.
-`,
+            `Extrae texto util de este PDF para entrenar un agente empresarial.
+Si es menu/lista de precios:
+1) Mantén secciones.
+2) Usa formato: producto | precio exacto.
+3) No inventes ni normalices.
+4) Si no se lee un precio, usa [PRECIO_NO_LEGIBLE].`,
             {
                 inlineData: {
                     data: buffer.toString("base64"),
-                    mimeType: mimeType
+                    mimeType: "application/pdf"
                 }
             }
         ]);
         return result.response.text() || "";
     } catch (error) {
-        console.error("Error verificando transcripción de menú con Gemini:", error);
+        console.error("Error extrayendo PDF con Gemini:", error);
         return "";
     }
 }
@@ -163,24 +175,27 @@ export async function POST(req: Request) {
                        let fileText = "";
 
                        // Detectar PDF por tipo o extensión
-                       if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+                       const normalizedType = normalizeMimeType(file.type);
+                       if (normalizedType.includes("pdf") || file.name.endsWith(".pdf")) {
                            try {
                                const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM
                                const data = await pdf(buffer);
                                fileText = (data.text || "").replace(/\0/g, "").trim();
                                console.log(`[Onboarding] PDF procesado (pdf-parse): ${file.name} (${fileText.length} chars)`);
 
-                               // Para PDFs escaneados, usamos fallback agentico si el texto es débil.
-                               if (!hasPriceOrMenuSignals(fileText) || fileText.length < 180) {
+                               const agenticMenu = await buildBestAgenticMenuContext({
+                                   rawText: fileText,
+                                   binaryBuffer: buffer,
+                                   mimeType: "application/pdf",
+                                   fileName: file.name,
+                               });
+                               if (agenticMenu?.canonicalText) {
+                                   fileText = `[PDF_MENU: ${file.name}]\n${agenticMenu.canonicalText}`;
+                                   console.log(`[Onboarding] PDF agentic menu source=${agenticMenu.source} entries=${agenticMenu.entriesCount}`);
+                               } else if (!hasPriceOrMenuSignals(fileText) || fileText.length < 180) {
                                    const geminiText = await describePdfForKnowledge(buffer);
                                    if (geminiText && geminiText.trim().length > 0) {
-                                       const menuEntries = hasMenuLikeSignals(geminiText) ? extractMenuEntries(geminiText) : [];
-                                       if (menuEntries.length >= 3) {
-                                           const canonicalMenu = buildCanonicalMenuText(menuEntries);
-                                           fileText = `[PDF_MENU: ${file.name}]\n${canonicalMenu}`;
-                                       } else {
-                                           fileText = `[PDF_ANALYZED: ${file.name}]\n${geminiText}`;
-                                       }
+                                       fileText = `[PDF_ANALYZED: ${file.name}]\n${geminiText}`;
                                        console.log(`[Onboarding] PDF fallback Gemini aplicado: ${file.name}`);
                                    }
                                }
@@ -192,21 +207,15 @@ export async function POST(req: Request) {
                            console.log(`[Onboarding] Procesando imagen ${file.name} con IA...`);
                            const description = await describeImage(buffer, file.type);
                            if (description) {
-                               const menuEntriesPrimary = hasMenuLikeSignals(description) ? extractMenuEntries(description) : [];
-                               let menuEntriesFinal = menuEntriesPrimary;
-
-                               if (menuEntriesPrimary.length >= 3) {
-                                   const verificationText = await verifyMenuImageTranscription(buffer, file.type);
-                                   const menuEntriesSecondary = hasMenuLikeSignals(verificationText) ? extractMenuEntries(verificationText) : [];
-                                   const intersection = intersectMenuEntries(menuEntriesPrimary, menuEntriesSecondary);
-                                   if (intersection.length >= 3) {
-                                       menuEntriesFinal = intersection;
-                                   }
-                               }
-
-                               if (menuEntriesFinal.length >= 3) {
-                                   const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
-                                   fileText = `[IMAGEN_MENU: ${file.name}]\n${canonicalMenu}`;
+                               const agenticMenu = await buildBestAgenticMenuContext({
+                                   rawText: description,
+                                   binaryBuffer: buffer,
+                                   mimeType: file.type,
+                                   fileName: file.name,
+                               });
+                               if (agenticMenu?.canonicalText) {
+                                   fileText = `[IMAGEN_MENU: ${file.name}]\n${agenticMenu.canonicalText}`;
+                                   console.log(`[Onboarding] Image agentic menu source=${agenticMenu.source} entries=${agenticMenu.entriesCount}`);
                                } else {
                                    fileText = `[IMAGEN: ${file.name}]\nDescripción visual: ${description}`;
                                }

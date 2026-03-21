@@ -255,7 +255,67 @@ export default function KnowledgeBase() {
                     upsert: false
                 });
 
-            if (uploadError) throw new Error(`Error en Supabase: ${uploadError.message}`);
+            if (uploadError) {
+                // Fallback agentico: si falla subida directa a storage,
+                // reenviamos el archivo en base64 a la API para no bloquear flujo.
+                console.warn("Supabase direct upload failed, falling back to API payload:", uploadError.message);
+                const reader = new FileReader();
+                reader.onload = async (event: ProgressEvent<FileReader>) => {
+                    try {
+                        const result = event.target?.result as string;
+                        const content = result?.split(",")[1] || "";
+                        if (!content) throw new Error("No se pudo leer el archivo para fallback.");
+
+                        const fallbackRes = await fetch("/api/knowledge", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                businessId,
+                                text: content,
+                                encoding: "base64",
+                                name: file.name,
+                                type: file.type
+                            })
+                        });
+
+                        if (!fallbackRes.ok) {
+                            const err = await fallbackRes.json().catch(() => ({}));
+                            throw new Error(err.error || "Fallback API upload failed.");
+                        }
+
+                        const fallbackData: KnowledgeListResponse = await fallbackRes.json();
+                        if (fallbackData.queued && fallbackData.jobId) {
+                            setProgress(95);
+                            toast.info(fallbackData.message || copy.knowledge.uploadQueued);
+                            await waitForJobCompletion(fallbackData.jobId);
+                        }
+
+                        setProgress(100);
+                        setUploadState("success");
+                        toast.success(copy.knowledge.uploadSuccess);
+                        setTimeout(() => {
+                            setUploadState("idle");
+                            setUploadingFileName("");
+                            fetchKnowledge();
+                            void fetchQueueHealth({ silent: true });
+                        }, 1200);
+                    } catch (fallbackError: any) {
+                        console.error("Upload fallback error:", fallbackError);
+                        setUploadState("idle");
+                        setProgress(0);
+                        setUploadingFileName("");
+                        toast.error(fallbackError?.message || copy.knowledge.uploadError);
+                    }
+                };
+                reader.onerror = () => {
+                    setUploadState("idle");
+                    setProgress(0);
+                    setUploadingFileName("");
+                    toast.error("No se pudo leer el archivo para fallback.");
+                };
+                reader.readAsDataURL(file);
+                return;
+            }
 
             setProgress(60);
 

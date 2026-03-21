@@ -13,12 +13,25 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
 import { extractSpreadsheetText } from "@/lib/knowledge/spreadsheet";
+import { buildBestAgenticMenuContext } from "@/lib/knowledge/agentic-menu";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 function sanitizeFileName(name: string) {
     return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function normalizeMimeType(value?: string | null) {
+    return String(value || "application/octet-stream")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+}
+
+function hasPriceOrMenuSignals(text: string) {
+    const value = String(text || "");
+    return hasMenuLikeSignals(value) || /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(value);
 }
 
 async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
@@ -87,6 +100,34 @@ Reglas estrictas:
     }
 }
 
+async function describePdfForKnowledge(buffer: Buffer) {
+    if (!process.env.GEMINI_API_KEY) return "";
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent([
+            `Extrae texto útil de este PDF para base de conocimiento empresarial.
+Si contiene menu/lista de precios:
+- transcribe item + precio exacto
+- conserva secciones
+- no inventes ni normalices
+- si no lees precio, marca [PRECIO_NO_LEGIBLE]
+
+Formato:
+[SECCION: nombre]
+producto | precio`,
+            {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: "application/pdf",
+                },
+            },
+        ]);
+        return result.response.text() || "";
+    } catch (error) {
+        console.error("[API Knowledge] Error extrayendo PDF con Gemini:", error);
+        return "";
+    }
+}
 
 function stripHtmlToText(html: string) {
     return html
@@ -157,7 +198,7 @@ export async function POST(req: Request) {
         let { businessId, text, encoding, name, type, url } = validation.data!;
 
         // --- CAMBIOS APLICADOS AQUÍ PARA SOPORTAR ARCHIVOS DE SUPABASE ---
-        let safeType = type || "application/octet-stream";
+        let safeType = normalizeMimeType(type || "application/octet-stream");
         let fileUrl: string | null = null;
         let uploadedBuffer: Buffer | null = null;
 
@@ -170,7 +211,7 @@ export async function POST(req: Request) {
 
                 // NUEVO: Detectar si la URL es un archivo de nuestra nube (Supabase) o un PDF
                 const isSupabaseFile = url.includes("supabase.co/storage");
-                const contentType = response.headers.get("content-type") || safeType;
+                const contentType = normalizeMimeType(response.headers.get("content-type") || safeType);
 
                 if (isSupabaseFile || contentType.includes("pdf") || contentType.includes("excel") || contentType.includes("spreadsheet") || contentType.includes("octet-stream") || contentType.includes("image/")) {
                     // En lugar de leerlo como texto HTML, lo descargamos como archivo a la memoria
@@ -264,7 +305,7 @@ export async function POST(req: Request) {
             );
         }
 
-        if (safeType === "application/pdf") {
+        if (safeType.includes("pdf")) {
             try {
                 if (!text && !uploadedBuffer) {
                     return NextResponse.json({ error: "El PDF no contiene datos para procesar" }, { status: 400 });
@@ -277,21 +318,21 @@ export async function POST(req: Request) {
                 // Ensure text exists and remove control characters (0x00-0x1F except \n \r \t)
                 const parsedText = sanitizeUtf8Text(data.text || "");
                 text = parsedText;
-                console.log(`[API Knowledge] PDF procesado (pdf-parse): ${name} (${parsedText.length} caracteres)`);
+                console.log(`[API Knowledge] PDF procesado: ${name} (${parsedText.length} caracteres)`);
 
-                // Para PDFs escaneados (imagen), pdf-parse suele devolver texto pobre.
-                // Fallback agentico: extraemos con Gemini para mejorar fidelidad de precios.
-                if (!hasPriceOrMenuSignals(parsedText) || parsedText.length < 180) {
+                const agenticMenu = await buildBestAgenticMenuContext({
+                    rawText: parsedText,
+                    binaryBuffer: buffer,
+                    mimeType: "application/pdf",
+                    fileName: name || "archivo.pdf",
+                });
+                if (agenticMenu?.canonicalText) {
+                    text = `[PDF_MENU: ${name || "archivo"}]\n${agenticMenu.canonicalText}`;
+                    console.log(`[API Knowledge] PDF agentic menu source=${agenticMenu.source} entries=${agenticMenu.entriesCount}`);
+                } else if (!hasPriceOrMenuSignals(parsedText) || parsedText.length < 180) {
                     const geminiText = await describePdfForKnowledge(buffer);
                     if (geminiText && geminiText.trim().length > 0) {
-                        const menuEntries = hasMenuLikeSignals(geminiText) ? extractMenuEntries(geminiText) : [];
-                        if (menuEntries.length >= 3) {
-                            const canonicalMenu = buildCanonicalMenuText(menuEntries);
-                            text = `[PDF_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
-                        } else {
-                            text = `[PDF_ANALYZED: ${name || "archivo"}]\n${sanitizeUtf8Text(geminiText)}`;
-                        }
-                        console.log(`[API Knowledge] PDF fallback Gemini aplicado: ${name}`);
+                        text = `[PDF_ANALYZED: ${name || "archivo"}]\n${sanitizeUtf8Text(geminiText)}`;
                     }
                 }
             } catch (pdfError: any) {
@@ -307,6 +348,16 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "La imagen no contiene datos para procesar" }, { status: 400 });
             }
             const visualDescription = await describeImageForKnowledge(uploadedBuffer, safeType);
+            const agenticMenu = await buildBestAgenticMenuContext({
+                rawText: visualDescription,
+                binaryBuffer: uploadedBuffer,
+                mimeType: safeType,
+                fileName: name || "archivo",
+            });
+            if (agenticMenu?.canonicalText) {
+                text = `[IMAGEN_MENU: ${name || "archivo"}]\n${agenticMenu.canonicalText}`;
+                console.log(`[API Knowledge] Image agentic menu source=${agenticMenu.source} entries=${agenticMenu.entriesCount}`);
+            } else {
             const menuEntriesPrimary = hasMenuLikeSignals(visualDescription) ? extractMenuEntries(visualDescription) : [];
             let menuEntriesFinal = menuEntriesPrimary;
 
@@ -324,6 +375,7 @@ export async function POST(req: Request) {
                 text = `[IMAGEN_MENU: ${name || "archivo"}]\n${canonicalMenu}`;
             } else {
                 text = `\n${visualDescription}`;
+            }
             }
         } else if (isSpreadsheet) {
             if (!uploadedBuffer || uploadedBuffer.byteLength === 0) {
