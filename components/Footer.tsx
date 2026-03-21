@@ -51,7 +51,7 @@ export default function Footer() {
                             <li><Link href="/about/team" className="hover:text-blue-400 transition-colors">Equipo</Link></li>
                             <li><Link href="/about/history" className="hover:text-blue-400 transition-colors">Historia</Link></li>
                             <li><Link href="/agents/default" className="hover:text-blue-400 transition-colors">Agentes por defecto</Link></li>
-                            <li><Link href="/pricing" className="hover:text-blue-400 transition-colors">Centro de Ayuda</Link></li>
+                            <li><Link href="/help" className="hover:text-blue-400 transition-colors">Centro de Ayuda</Link></li>
                         </ul>
                     </div>
 

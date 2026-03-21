@@ -28,6 +28,7 @@ const menuItems = [
 		links: [
 			{ href: '/about/team', label: 'Equipo' },
 			{ href: '/about/history', label: 'Historia' },
+			{ href: '/help', label: 'Centro de Ayuda' },
 		],
 	},
 ];
