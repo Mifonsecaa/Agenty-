@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot, Twitter, Github, Linkedin, Mail } from 'lucide-react';
+import { Bot, Twitter, Github, Linkedin } from 'lucide-react';
 
 export default function Footer() {
     const pathname = usePathname();
@@ -61,7 +61,6 @@ export default function Footer() {
                             <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Privacidad</Link></li>
                             <li><Link href="/terms" className="hover:text-blue-400 transition-colors">Términos</Link></li>
                             <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Seguridad</Link></li>
-                            <li><a href="mailto:contact@brainia" className="hover:text-blue-400 transition-colors flex items-center gap-2"><Mail size={14} /> Contacto</a></li>
                         </ul>
                     </div>
                 </div>
