@@ -28,7 +28,7 @@ const faqs = [
 const plans = [
 	{
 		name: 'Starter',
-		price: '$29',
+		price: '$120.000',
 		description: 'Para negocios que quieren empezar a automatizar.',
 		features: [
 			'1 agente de IA',
@@ -42,7 +42,7 @@ const plans = [
 	},
 	{
 		name: 'Growth',
-		price: '$59',
+		price: '$250.000',
 		description: 'Para negocios en crecimiento que buscan más potencia.',
 		features: [
 			'1 agente más potente',
@@ -56,7 +56,7 @@ const plans = [
 	},
 	{
 		name: 'Business',
-		price: '$99',
+		price: '$400.000',
 		description: 'Para empresas con alto volumen de mensajes.',
 		features: [
 			'Múltiples automatizaciones',
@@ -194,7 +194,7 @@ const PricingPage = () => {
 				>
 					<p>
 						El costo de los tokens para el plan Business es de aproximadamente
-						$0.15 por millón de tokens de entrada y $0.60 por millón de tokens de
+						$600 COP por millón de tokens de entrada y $2.400 COP por millón de tokens de
 						salida, asegurando una alta rentabilidad.
 					</p>
 				</motion.div>
