@@ -1,44 +1,25 @@
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import DashboardShell from "@/components/dashboard/DashboardShell";
+import { authOptions } from "../api/auth/[...nextauth]/route";
+import Sidebar from "../../components/dashboard/Sidebar";
 
 export default async function DashboardLayout({
-    children,
-}: {
-    children: React.ReactNode;
+                                                children,
+                                              }: {
+  children: React.ReactNode;
 }) {
-    const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions);
 
-    if (!session?.user?.email) {
-        redirect("/login");
-    }
+  if (!session) {
+    redirect("/login");
+  }
 
-    // Get user from DB to get ID
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true }
-    });
-
-    if (!user) {
-        // Edge case: session exists but user not in DB (should not happen normally)
-        redirect("/login");
-    }
-
-    // Fetch user's agents on the server
-    const agents = await prisma.business.findMany({
-        where: { userId: user.id },
-        orderBy: { createdAt: 'desc' }
-    });
-
-    return (
-        <DashboardShell 
-            initialAgents={agents} 
-            userName={session.user.name} 
-            userEmail={session.user.email}
-        >
-            {children}
-        </DashboardShell>
-    );
+  return (
+      <div className="flex h-screen bg-gray-50 dark:bg-[#050505] text-gray-900 dark:text-white transition-colors duration-500">
+        <Sidebar user={session.user} />
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
+  );
 }

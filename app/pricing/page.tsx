@@ -88,8 +88,8 @@ const PricingPage = () => {
 	};
 
 	return (
-		<div className="min-h-screen bg-[#050505] text-white pt-24 sm:pt-32 relative overflow-hidden">
-			<div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
+		<div className="min-h-screen bg-white dark:bg-[#050505] text-gray-900 dark:text-white pt-24 sm:pt-32 relative overflow-hidden transition-colors duration-500">
+			<div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
 			<div className="container mx-auto px-6 py-12 relative z-10">
 				<motion.div
 					initial={{ opacity: 0, y: -20 }}
@@ -97,10 +97,10 @@ const PricingPage = () => {
 					transition={{ duration: 0.7 }}
 					className="text-center max-w-4xl mx-auto"
 				>
-					<h1 className="text-5xl md:text-6xl font-bold tracking-tight text-white mb-4">
+					<h1 className="text-5xl md:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
 						Planes diseñados para tu negocio
 					</h1>
-					<p className="text-lg text-white/60">
+					<p className="text-lg text-gray-600 dark:text-white/60">
 						Elige el plan que mejor se adapte a tus necesidades y empieza a
 						automatizar hoy mismo.
 					</p>
@@ -118,13 +118,13 @@ const PricingPage = () => {
 							key={plan.name}
 							className={`relative flex flex-col p-8 rounded-3xl transition-all duration-300 hover:-translate-y-2 ${
 								plan.isPopular
-									? 'border border-purple-500/30 bg-[#111111] shadow-2xl shadow-purple-500/10'
-									: 'border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md'
+									? 'border border-purple-500/30 bg-gray-50 dark:bg-[#111111] shadow-2xl shadow-purple-500/10 dark:shadow-purple-500/10'
+									: 'border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md'
 							}`}
 						>
 							{plan.isPopular && (
 								<div className="absolute top-0 -translate-y-1/2 w-full flex justify-center">
-									<span className="bg-purple-500/20 text-purple-400 border border-purple-500/30 text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest backdrop-blur-md">
+									<span className="bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/30 text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest backdrop-blur-md">
 										Más Popular
 									</span>
 								</div>
@@ -132,14 +132,14 @@ const PricingPage = () => {
 							<h3 className="text-2xl font-bold tracking-tight">
 								{plan.name}
 							</h3>
-							<p className="mt-2 text-sm text-white/60 min-h-[40px]">
+							<p className="mt-2 text-sm text-gray-600 dark:text-white/60 min-h-[40px]">
 								{plan.description}
 							</p>
 							<div className="mt-6">
 								<span className="text-5xl font-extrabold tracking-tight">
 									{plan.price}
 								</span>
-								<span className="text-lg text-white/40 font-medium">
+								<span className="text-lg text-gray-500 dark:text-white/40 font-medium">
 									/mes
 								</span>
 							</div>
@@ -147,10 +147,10 @@ const PricingPage = () => {
 								{plan.features.map((feature, index) => (
 									<li
 										key={index}
-										className="flex items-start text-sm text-white/80"
+										className="flex items-start text-sm text-gray-700 dark:text-white/80"
 									>
-										<div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
-											<Check className="w-3.5 h-3.5 text-emerald-400" />
+										<div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
+											<Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
 										</div>
 										<span>{feature}</span>
 									</li>
@@ -160,8 +160,8 @@ const PricingPage = () => {
 								href="/register"
 								className={`mt-10 w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 text-center ${
 									plan.isPopular
-										? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
-										: 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
+										? 'bg-purple-600 hover:bg-purple-700 dark:hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
+										: 'bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-900 dark:text-white'
 								}`}
 							>
 								Empezar con {plan.name}
@@ -174,7 +174,7 @@ const PricingPage = () => {
 				<div className="mt-32 max-w-3xl mx-auto">
 					<div className="text-center mb-12">
 						<h2 className="text-3xl font-bold mb-4">Preguntas Frecuentes</h2>
-						<p className="text-white/60">
+						<p className="text-gray-600 dark:text-white/60">
 							Resolvemos tus dudas antes de empezar.
 						</p>
 					</div>
@@ -190,7 +190,7 @@ const PricingPage = () => {
 					initial={{ opacity: 0 }}
 					animate={{ opacity: 1 }}
 					transition={{ duration: 1, delay: 0.8 }}
-					className="text-center mt-16 text-white/50 text-sm"
+					className="text-center mt-16 text-gray-500 dark:text-white/50 text-sm"
 				>
 					<p>
 						El costo de los tokens para el plan Business es de aproximadamente
@@ -207,16 +207,16 @@ function FAQItem({ faq }: { faq: { question: string; answer: string } }) {
 	const [isOpen, setIsOpen] = React.useState(false);
 
 	return (
-		<div className="border border-white/10 rounded-2xl bg-white/5 overflow-hidden transition-colors hover:bg-white/[0.07]">
+		<div className="border border-gray-200 dark:border-white/10 rounded-2xl bg-gray-50 dark:bg-white/5 overflow-hidden transition-colors hover:bg-gray-100 dark:hover:bg-white/[0.07]">
 			<button
 				onClick={() => setIsOpen(!isOpen)}
 				className="w-full flex items-center justify-between p-6 text-left"
 			>
-				<span className="font-medium text-white/90">{faq.question}</span>
+				<span className="font-medium text-gray-900 dark:text-white/90">{faq.question}</span>
 				{isOpen ? (
-					<ChevronUp className="w-5 h-5 text-white/60" />
+					<ChevronUp className="w-5 h-5 text-gray-500 dark:text-white/60" />
 				) : (
-					<ChevronDown className="w-5 h-5 text-white/60" />
+					<ChevronDown className="w-5 h-5 text-gray-500 dark:text-white/60" />
 				)}
 			</button>
 			<AnimatePresence>
@@ -227,7 +227,7 @@ function FAQItem({ faq }: { faq: { question: string; answer: string } }) {
 						exit={{ height: 0, opacity: 0 }}
 						transition={{ duration: 0.3 }}
 					>
-						<div className="px-6 pb-6 text-sm text-white/60 leading-relaxed">
+						<div className="px-6 pb-6 text-sm text-gray-600 dark:text-white/60 leading-relaxed">
 							{faq.answer}
 						</div>
 					</motion.div>

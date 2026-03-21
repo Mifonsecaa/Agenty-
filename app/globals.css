@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 :root {
+    --background: #ffffff;
+    --foreground: #111827;
+}
+
+.dark {
     --background: #050505;
     /* El negro profundo de Linear */
     --foreground: #ededed;
