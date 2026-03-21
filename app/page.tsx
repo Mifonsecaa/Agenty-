@@ -213,6 +213,7 @@ export default function HomePage() {
                 
                 {/* Features Section */}
                 <motion.div
+                    id="features"
                     initial={reduceMotionSafe ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
