@@ -85,35 +85,6 @@ Si es menu/lista de precios:
     }
 }
 
-function hasPriceOrMenuSignals(text: string) {
-    const value = String(text || "");
-    return hasMenuLikeSignals(value) || /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(value);
-}
-
-async function describePdfForKnowledge(buffer: Buffer): Promise<string> {
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent([
-            `Extrae texto útil de este PDF para entrenar un agente.
-Si es menu/lista de precios:
-1) Mantén secciones.
-2) Formato: producto | precio exacto.
-3) No inventes ni completes datos.
-4) Si no se lee un precio, usa [PRECIO_NO_LEGIBLE].`,
-            {
-                inlineData: {
-                    data: buffer.toString("base64"),
-                    mimeType: "application/pdf"
-                }
-            }
-        ]);
-        return result.response.text() || "";
-    } catch (error) {
-        console.error("Error extrayendo PDF con Gemini:", error);
-        return "";
-    }
-}
-
 export async function POST(req: Request) {
     try {
         console.log("[Onboarding] Recibiendo solicitud de onboarding...");
