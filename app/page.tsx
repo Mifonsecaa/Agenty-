@@ -299,62 +299,6 @@ export default function HomePage() {
                         </div>
                     </div>
                 </motion.div>
-
-                {/* Logo Cloud Preview */}
-                <motion.div
-                    initial={reduceMotionSafe ? { opacity: 1 } : { opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 1, delay: 1 }}
-                    className="mt-24 w-full max-w-5xl mx-auto relative z-10 pt-10"
-                >
-                    <p className="text-center text-sm text-gray-500 dark:text-white/30 mb-8 font-semibold uppercase tracking-widest">
-                        Startups que automatizan con nosotros
-                    </p>
-                    <div className="flex flex-wrap justify-center items-center gap-10 md:gap-20 opacity-40 grayscale hover:grayscale-0 transition-all duration-700">
-                        <div className="flex items-center gap-2 font-bold text-2xl text-gray-900 dark:text-white"><Command size={28} /> Acme</div>
-                        <div className="flex items-center gap-2 font-bold text-2xl text-gray-900 dark:text-white"><Cloud size={28} /> Nimbus</div>
-                        <div className="flex items-center gap-2 font-bold text-2xl text-gray-900 dark:text-white"><Hexagon size={28} /> Nexa</div>
-                        <div className="flex items-center gap-2 font-bold text-2xl text-gray-900 dark:text-white"><Activity size={28} /> Pulse</div>
-                        <div className="flex items-center gap-2 font-bold text-2xl text-gray-900 dark:text-white"><Triangle size={28} /> Vertex</div>
-                    </div>
-                </motion.div>
-
-                {loading && (
-                    <div className="fixed inset-0 bg-white/95 dark:bg-[#050505]/95 backdrop-blur-xl flex items-center justify-center z-50 transition-all duration-700">
-                        <div className="max-w-md w-full px-6 flex flex-col items-center">
-                            {/* Minimal Elegant Spinner */}
-                            <div className="relative w-12 h-12 mb-8 flex justify-center items-center">
-                                <motion.div
-                                    className="absolute w-full h-full border border-black/20 dark:border-white/20 rounded-full"
-                                    animate={reduceMotionSafe ? { rotate: 0 } : { rotate: 360 }}
-                                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 8, repeat: Infinity, ease: "linear" }}
-                                />
-                                <motion.div
-                                    className="absolute w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
-                                    animate={reduceMotionSafe ? { scale: 1, opacity: 0.6 } : { scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                                    transition={reduceMotionSafe ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                                />
-                                <SparklesIcon size={16} className="text-black dark:text-white relative z-10" />
-                            </div>
-
-                            {/* Crisp Text Transition */}
-                            <div className="h-10 relative w-full flex justify-center items-center overflow-hidden">
-                                <AnimatePresence mode="wait">
-                                    <motion.p
-                                        key={loadingPhraseIndex}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -20 }}
-                                        transition={{ duration: 0.5, ease: "easeInOut" }}
-                                        className="text-lg md:text-xl text-gray-900 dark:text-white/90 font-light tracking-wide absolute text-center w-full"
-                                    >
-                                        {loadingPhrases[loadingPhraseIndex]}
-                                    </motion.p>
-                                </AnimatePresence>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </main>
             {isDemoOpen && <InteractiveDemo onClose={handleCloseDemo} />}
             <AgenticArchitectureModal isOpen={isArchitectureOpen} onCloseAction={handleCloseArchitecture} />

@@ -37,18 +37,14 @@ const Footer = () => {
                         <ul className="space-y-3">
                             <li><Link href="/#features" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Características</Link></li>
                             <li><Link href="/pricing" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Precios</Link></li>
-                            <li><Link href="/integrations" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Integraciones</Link></li>
-                            <li><Link href="/changelog" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Actualizaciones</Link></li>
                         </ul>
                     </div>
 
                     <div>
-                        <h4 className="font-semibold text-gray-900 dark:text-white mb-4">Recursos</h4>
+                        <h4 className="font-semibold text-gray-900 dark:text-white mb-4">Soporte</h4>
                         <ul className="space-y-3">
                             <li><Link href="/help" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Centro de Ayuda</Link></li>
-                            <li><Link href="/blog" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Blog</Link></li>
-                            <li><Link href="/docs" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Documentación API</Link></li>
-                            <li><Link href="/community" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Comunidad</Link></li>
+                            <li><Link href="/help?contact=true" className="text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Contactar Soporte</Link></li>
                         </ul>
                     </div>
 
@@ -62,15 +58,10 @@ const Footer = () => {
                     </div>
                 </div>
 
-                <div className="pt-8 border-t border-gray-200 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="pt-8 border-t border-gray-200 dark:border-white/5 flex flex-col items-center justify-center gap-4">
                     <p className="text-sm text-gray-500 dark:text-gray-500">
                         © {new Date().getFullYear()} brainia.ai. Todos los derechos reservados.
                     </p>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-500">
-                        <span>Hecho con</span>
-                        <span className="text-red-500">♥</span>
-                        <span>para el futuro</span>
-                    </div>
                 </div>
             </div>
         </footer>
