@@ -50,7 +50,7 @@ export default function HistoryPage() {
                                 Nuestra Misión
                             </h3>
                             <p className="text-white/70 leading-relaxed p-6 rounded-3xl border border-white/5 bg-[#0a0a0a]/60 backdrop-blur-md shadow-xl">
-                                Queremos <strong className="text-purple-300">revolucionar el uso de agentes en Colombia</strong>. Nos dimos cuenta de que las PYMES necesitan más que simples chatbots; necesitan asistentes inteligentes capaces de tomar decisiones, agendar citas y cerrar ventas. Agenty.ai nace para ser ese puente, democratizando el acceso a la "Inteligencia Artificial Ejecutiva" en nuestro país.
+                                Queremos <strong className="text-purple-300">revolucionar el uso de agentes en Colombia</strong>. Nos dimos cuenta de que las PYMES necesitan más que simples chatbots; necesitan asistentes inteligentes capaces de tomar decisiones, agendar citas y cerrar ventas. brainia nace para ser ese puente, democratizando el acceso a la "Inteligencia Artificial Ejecutiva" en nuestro país.
                             </p>
                         </div>
                         <div className="hidden md:flex absolute left-1/2 top-6 w-8 h-8 rounded-full bg-[#050505] border-2 border-purple-500 items-center justify-center -translate-x-1/2 z-10 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
@@ -69,7 +69,7 @@ export default function HistoryPage() {
                                 <Rocket className="w-6 h-6 text-emerald-400 md:order-first" />
                             </h3>
                             <p className="text-white/70 leading-relaxed p-6 rounded-3xl border border-white/5 bg-[#0a0a0a]/60 backdrop-blur-md shadow-xl text-left md:text-right">
-                                Lo que empezó como un sueño universitario hoy es la arquitectura fundacional de Agenty.ai. Estamos construyendo una plataforma escalable, segura y profundamente integrada con los flujos de comunicación diarios de los colombianos (como WhatsApp). Cada línea de código que escribimos está pensada para empoderar a la próxima generación de negocios en Latinoamérica.
+                                Lo que empezó como un sueño universitario hoy es la arquitectura fundacional de brainia. Estamos construyendo una plataforma escalable, segura y profundamente integrada con los flujos de comunicación diarios de los colombianos (como WhatsApp). Cada línea de código que escribimos está pensada para empoderar a la próxima generación de negocios en Latinoamérica.
                             </p>
                         </div>
                         <div className="hidden md:flex absolute left-1/2 top-6 w-8 h-8 rounded-full bg-[#050505] border-2 border-emerald-500 items-center justify-center -translate-x-1/2 z-10 shadow-[0_0_15px_rgba(16,185,129,0.5)]">

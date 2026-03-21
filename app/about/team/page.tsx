@@ -17,7 +17,7 @@ const teamMembers = [
     {
         name: "Haisonbel",
         role: "Co-Founder & Product Designer",
-        bio: "Diseñador de producto y especialista en experiencia de usuario. Creador de la visión interactiva y premium de Agenty.ai.",
+        bio: "Diseñador de producto y especialista en experiencia de usuario. Creador de la visión interactiva y premium de brainia.",
         image: null,
         social: {
             github: "#",
@@ -47,7 +47,7 @@ export default function TeamPage() {
             <div className="container mx-auto px-6 py-12 relative z-10">
                 <div className="text-center max-w-3xl mx-auto mb-20">
                     <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-6">
-                        Conoce al equipo detrás de <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Agenty.ai</span>
+                        Conoce al equipo detrás de <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">brainia</span>
                     </h1>
                     <p className="text-lg text-white/60">
                         Somos un equipo de ingenieros, diseñadores y soñadores apasionados por democratizar el acceso a la inteligencia artificial para negocios de todos los tamaños.
