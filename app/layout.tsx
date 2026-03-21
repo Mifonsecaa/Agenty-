@@ -15,21 +15,22 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({
-  children,
-}: Readonly<{
+                                     children,
+                                   }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
-      {/* 3. Apply font className to body */}
-      <body className={inter.className}>
-        <Providers>
-          <Header />
-          {children}
-          <Footer />
-          <Toaster theme="dark" position="top-center" richColors />
-        </Providers>
+      <html lang="es" className="overscroll-none">
+      {/* 3. Combinamos la fuente con las clases para evitar el rebote */}
+      <body className={`${inter.className} overscroll-none bg-black`}>
+      <Providers>
+        <Header />
+        {children}
+        <Footer />
+        <Toaster theme="dark" position="top-center" richColors />
+      </Providers>
       </body>
-    </html>
+      </html>
   );
 }
+

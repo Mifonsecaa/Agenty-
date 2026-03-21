@@ -76,6 +76,14 @@ export const metricsQuerySchema = z.object({
   endDate: z.string().optional(),
 });
 
+// ============ HELP CENTER ============
+export const helpContactSchema = z.object({
+  name: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(80, "El nombre es demasiado largo"),
+  email: z.string().email("Email inválido"),
+  subject: z.string().min(4, "El asunto debe tener al menos 4 caracteres").max(140, "El asunto es demasiado largo"),
+  message: z.string().min(10, "Cuéntanos un poco más en el mensaje").max(2000, "El mensaje es demasiado largo"),
+});
+
 // ============ WEBHOOK (Telegram/WhatsApp) ============
 export const telegramWebhookSchema = z.object({
   update_id: z.number(),
@@ -118,4 +126,5 @@ export type KnowledgeCreateInput = z.infer<typeof knowledgeCreateSchema>;
 export type ChatInput = z.infer<typeof chatSchema>;
 export type ImproveDescriptionInput = z.infer<typeof improveDescriptionSchema>;
 export type MetricsQueryInput = z.infer<typeof metricsQuerySchema>;
+export type HelpContactInput = z.infer<typeof helpContactSchema>;
 
