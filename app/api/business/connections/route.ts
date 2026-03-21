@@ -20,8 +20,22 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const userEmail = typeof session.user.email === "string" ? session.user.email : "";
+    if (!userEmail) {
+      return NextResponse.json({ error: "Sesion sin email" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    }
+
     const business = await prisma.business.findFirst({
-      where: { id: businessId, userId: (session.user as any).id },
+      where: { id: businessId, userId: user.id },
       select: {
         id: true,
         whatsappPhoneNumberId: true,
@@ -38,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     let whatsappByQr = false;
     try {
-      const evolutionState = await evolutionService.getInstanceStatus(business.id);
+      const evolutionState = await evolutionService.getInstanceStatus(business.id, { timeoutMs: 1200 });
       whatsappByQr = evolutionState?.instance?.state === "open";
     } catch (err) {
       console.warn("[GET /connections] No se pudo consultar estado QR de WhatsApp:", err);

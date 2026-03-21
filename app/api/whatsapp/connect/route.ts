@@ -6,9 +6,28 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
     try {
-        if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
+        const evolutionUrl = String(process.env.EVOLUTION_API_URL || process.env.EVOLUTION_API_URI || "").trim();
+        const evolutionKey = String(process.env.EVOLUTION_API_KEY || "").trim();
+
+        if (!evolutionUrl || !evolutionKey) {
             return NextResponse.json(
                 { error: "Falta configuración de WhatsApp (EVOLUTION_API_URL / EVOLUTION_API_KEY)" },
+                { status: 500 }
+            );
+        }
+
+        // En Vercel/producción no debe apuntar a localhost.
+        if (/localhost|127\.0\.0\.1/i.test(evolutionUrl) && process.env.VERCEL) {
+            let detectedHost = "unknown";
+            try {
+                detectedHost = new URL(evolutionUrl).host || detectedHost;
+            } catch {
+                detectedHost = evolutionUrl;
+            }
+            return NextResponse.json(
+                {
+                    error: `EVOLUTION_API_URL inválida para producción. Host detectado: ${detectedHost}. Usa la URL pública HTTPS de Render, no localhost.`,
+                },
                 { status: 500 }
             );
         }
@@ -48,29 +67,33 @@ export async function POST(req: Request) {
         }
 
         // Siempre intentamos configurar el webhook al conectar.
-        // Prioridad: EVOLUTION_WEBHOOK_URL (manual) > URL pública actual.
+        // Prioridad: EVOLUTION_WEBHOOK_URL (manual) > NEXTAUTH_URL (dominio canonico) > URL pública actual.
         const requestOrigin = new URL(req.url).origin;
-        const webhookUrl = process.env.EVOLUTION_WEBHOOK_URL || `${requestOrigin}/api/whatsapp/webhook`;
-        try {
-            await evolutionService.setWebhook(instanceName, webhookUrl);
-        } catch (webhookErr) {
+        const canonicalOrigin = String(process.env.NEXTAUTH_URL || "").trim();
+        const webhookBase = String(process.env.EVOLUTION_WEBHOOK_URL || "").trim() || canonicalOrigin || requestOrigin;
+        const webhookUrl = webhookBase.endsWith("/api/whatsapp/webhook")
+            ? webhookBase
+            : `${webhookBase.replace(/\/$/, "")}/api/whatsapp/webhook`;
+        void evolutionService.setWebhook(instanceName, webhookUrl).catch((webhookErr) => {
             console.error(`[API WhatsApp Connect] Error setting webhook for ${instanceName}:`, webhookErr);
-        }
+        });
 
         // 3. Si ya está conectada, retornamos éxito inmediatamente después de asegurar el Webhook
         if (status.instance?.state === "open") {
             return NextResponse.json({ success: true, state: "CONNECTED" });
         }
 
-        // 3. Bucle de sondeo interno (máximo 30 segundos - 10 intentos x 3s)
-        // Esto le da a Evolution API el tiempo necesario para inicializar Baileys
+        // 3. Bucle de sondeo interno corto (intento inmediato + 6 reintentos x 1.5s)
         let attempts = 0;
         let base64 = null;
+        const maxAttempts = 7;
 
-        while (attempts < 10 && !base64) {
-            console.log(`[API WhatsApp Connect] Polling for QR... attempt ${attempts + 1}/10 for ${instanceName}`);
-            // Esperamos 3 segundos entre intentos
-            await new Promise(resolve => setTimeout(resolve, 3000));
+        while (attempts < maxAttempts && !base64) {
+            console.log(`[API WhatsApp Connect] Polling for QR... attempt ${attempts + 1}/${maxAttempts} for ${instanceName}`);
+
+            if (attempts > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
 
             const qrData = await evolutionService.getQR(instanceName);
             console.log(`[API WhatsApp Connect] QR Response attempt ${attempts + 1}:`, JSON.stringify(qrData));
@@ -94,8 +117,8 @@ export async function POST(req: Request) {
             });
         }
 
-        // Si después de 30s no hay QR, pedimos al frontend que reintente silenciosamente
-        console.log(`[API WhatsApp Connect] QR not found after 30s. Returning INITIALIZING.`);
+        // Si no hay QR en la ventana corta, frontend sigue haciendo polling silencioso
+        console.log(`[API WhatsApp Connect] QR not found after quick polling. Returning INITIALIZING.`);
         return NextResponse.json({
             success: true,
             state: "INITIALIZING",
@@ -114,13 +137,64 @@ export async function POST(req: Request) {
         }
 
         if (message.includes("EVOLUTION_HTTP_")) {
+            const statusMatch = message.match(/EVOLUTION_HTTP_(\d+)/);
+            const upstreamStatus = statusMatch ? Number(statusMatch[1]) : undefined;
+
+            let upstreamBody: any = null;
+            const jsonStart = message.indexOf("{");
+            if (jsonStart >= 0) {
+                try {
+                    upstreamBody = JSON.parse(message.slice(jsonStart));
+                } catch {
+                    upstreamBody = null;
+                }
+            }
+
+            let errorText = "No se pudo conectar con el servicio de WhatsApp (Evolution API)";
+            if (upstreamStatus === 401 || upstreamStatus === 403) {
+                errorText = "Evolution rechazo la API key (401/403). Verifica EVOLUTION_API_KEY en Vercel/Render.";
+            } else if (upstreamStatus === 404) {
+                errorText = "Evolution respondio 404. Verifica EVOLUTION_API_URL (sin /manager) y confirma endpoints activos en Render (/instance/create, /instance/connect/{id}).";
+            } else if (upstreamStatus && upstreamStatus >= 500) {
+                errorText = "Evolution API esta con error interno (5xx). Intenta de nuevo y revisa logs de Render.";
+            }
+
+            const attemptedUrls = Array.isArray(upstreamBody?.attempted)
+                ? upstreamBody.attempted.map((entry: any) => entry?.url).filter(Boolean).slice(0, 6)
+                : [];
+
             return NextResponse.json(
-                { error: "No se pudo conectar con el servicio de WhatsApp (Evolution API)" },
+                {
+                    error: errorText,
+                    upstreamStatus,
+                    attemptedUrls: attemptedUrls.length ? attemptedUrls : undefined,
+                    upstream: process.env.NODE_ENV === "development" ? upstreamBody : undefined,
+                },
                 { status: 502 }
             );
         }
 
-        return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+        if (
+            message.toLowerCase().includes("fetch failed") ||
+            message.includes("ECONNREFUSED") ||
+            message.includes("ENOTFOUND") ||
+            message.includes("ETIMEDOUT")
+        ) {
+            return NextResponse.json(
+                {
+                    error: "No se pudo alcanzar Evolution API. Verifica EVOLUTION_API_URL y que Render esté en línea.",
+                },
+                { status: 502 }
+            );
+        }
+
+        return NextResponse.json(
+            {
+                error: "Error interno del servidor",
+                detail: process.env.NODE_ENV === "development" ? message : undefined,
+            },
+            { status: 500 }
+        );
     }
 }
 

@@ -1,5 +1,6 @@
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || process.env.EVOLUTION_API_URI;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+let preferredEvolutionBase: string | null = null;
 
 function ensureEvolutionConfig() {
     if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
@@ -7,9 +8,31 @@ function ensureEvolutionConfig() {
     }
 }
 
-function buildEvolutionUrl(path: string) {
+function normalizeBaseUrl(baseUrl: string) {
+    const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
+    if (/\/manager$/i.test(trimmed)) {
+        return trimmed.replace(/\/manager$/i, "");
+    }
+    return trimmed;
+}
+
+function getEvolutionBaseCandidates() {
     ensureEvolutionConfig();
-    return `${EVOLUTION_API_URL}${path}`;
+    const primary = normalizeBaseUrl(EVOLUTION_API_URL!);
+    const candidates = new Set<string>([primary]);
+
+    if (!/\/api$/i.test(primary)) {
+        candidates.add(`${primary}/api`);
+    }
+    if (!/\/v2$/i.test(primary)) {
+        candidates.add(`${primary}/v2`);
+    }
+
+    const all = Array.from(candidates);
+    if (!preferredEvolutionBase) return all;
+
+    const preferred = normalizeBaseUrl(preferredEvolutionBase);
+    return [preferred, ...all.filter((base) => normalizeBaseUrl(base) !== preferred)];
 }
 
 async function parseApiResponse(response: Response) {
@@ -21,34 +44,96 @@ async function parseApiResponse(response: Response) {
     }
 }
 
-async function evolutionRequest(path: string, init: RequestInit = {}) {
-    const url = buildEvolutionUrl(path);
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function evolutionRequest(pathOrPaths: string | string[], init: RequestInit = {}, options?: { timeoutMs?: number }) {
     const headers = {
         apikey: EVOLUTION_API_KEY!,
         ...(init.headers || {}),
     };
 
-    const response = await fetch(url, { ...init, headers });
-    const data = await parseApiResponse(response);
+    const paths = Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths];
+    const bases = getEvolutionBaseCandidates();
+    const timeoutMs = options?.timeoutMs ?? 4500;
+    const attempted: Array<{ base: string; path: string; url: string; status: number; data: unknown }> = [];
 
-    if (!response.ok) {
-        throw new Error(`EVOLUTION_HTTP_${response.status}: ${JSON.stringify(data)}`);
+    for (const base of bases) {
+        for (const path of paths) {
+            const url = `${base}${path}`;
+            let response: Response;
+            try {
+                response = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+            } catch (error) {
+                attempted.push({
+                    base,
+                    path,
+                    url,
+                    status: 0,
+                    data: { message: error instanceof Error ? error.message : String(error) },
+                });
+                continue;
+            }
+            const data = await parseApiResponse(response);
+
+            if (response.ok) {
+                preferredEvolutionBase = base;
+                return data;
+            }
+
+            attempted.push({ base, path, url, status: response.status, data });
+
+            // Si el endpoint no existe en esta base/path, intentamos el siguiente.
+            if (response.status === 404) {
+                continue;
+            }
+
+            throw new Error(`EVOLUTION_HTTP_${response.status}@${base}: ${JSON.stringify(data)}`);
+        }
     }
 
-    return data;
+    throw new Error(
+        `EVOLUTION_HTTP_404: ${JSON.stringify({
+            paths,
+            attempted,
+            hint: "Revisa EVOLUTION_API_URL. Si usas Render, evita /manager y valida base /, /api o /v2.",
+        })}`
+    );
 }
 
-export interface EvolutionInstance {
-    instanceName: string;
-    status: string;
-    qrcode?: string;
+function parseEvolutionHttpError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const match = message.match(/^EVOLUTION_HTTP_(\d+)(?:@[^:]+)?:\s*(.*)$/);
+    if (!match) return null;
+
+    const status = Number(match[1]);
+    let payload: any = null;
+    try {
+        payload = match[2] ? JSON.parse(match[2]) : null;
+    } catch {
+        payload = { raw: match[2] };
+    }
+
+    return { status, payload, message };
 }
+
 
 export const evolutionService = {
     async createInstance(instanceName: string) {
         try {
             console.log(`[EvolutionService] Creating instance at: ${EVOLUTION_API_URL}/instance/create`);
-            const data = await evolutionRequest(`/instance/create`, {
+            const data = await evolutionRequest([
+                `/instance/create`,
+                `/instance/init`,
+            ], {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -71,9 +156,13 @@ export const evolutionService = {
     async getQR(instanceName: string) {
         try {
             console.log(`[EvolutionService] Getting QR at: ${EVOLUTION_API_URL}/instance/connect/${instanceName}`);
-            const data = await evolutionRequest(`/instance/connect/${instanceName}`, {
+            const data = await evolutionRequest([
+                `/instance/connect/${instanceName}`,
+                `/instance/qrcode/${instanceName}`,
+                `/instance/qr/${instanceName}`,
+            ], {
                 method: 'GET',
-            });
+            }, { timeoutMs: 6000 });
             console.log("[EvolutionService] Get QR response:", data);
             return data;
         } catch (error) {
@@ -82,17 +171,27 @@ export const evolutionService = {
         }
     },
 
-    async getInstanceStatus(instanceName: string) {
+    async getInstanceStatus(instanceName: string, options?: { timeoutMs?: number }) {
         try {
             console.log(`[EvolutionService] Getting status at: ${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`);
-            const data = await evolutionRequest(`/instance/connectionState/${instanceName}`, {
+            const data = await evolutionRequest([
+                `/instance/connectionState/${instanceName}`,
+                `/instance/status/${instanceName}`,
+                `/instance/connection-state/${instanceName}`,
+            ], {
                 method: 'GET',
-            });
+            }, { timeoutMs: options?.timeoutMs ?? 3500 });
             console.log("[EvolutionService] Get Status response:", data);
             return data;
         } catch (error) {
+            const upstream = parseEvolutionHttpError(error);
+            if (upstream?.status === 404) {
+                // La instancia aun no existe.
+                return { status: 404, error: "Not Found", instance: null };
+            }
+
             console.error("[EvolutionService] Error getting status:", error);
-            return { instance: { state: "DISCONNECTED" } };
+            throw error;
         }
     },
 
