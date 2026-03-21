@@ -55,49 +55,54 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
     }
 }
 
-async function evolutionRequest(path: string, init: RequestInit = {}, options?: { timeoutMs?: number }) {
+async function evolutionRequest(pathOrPaths: string | string[], init: RequestInit = {}, options?: { timeoutMs?: number }) {
     const headers = {
         apikey: EVOLUTION_API_KEY!,
         ...(init.headers || {}),
     };
 
+    const paths = Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths];
     const bases = getEvolutionBaseCandidates();
     const timeoutMs = options?.timeoutMs ?? 4500;
-    const attempted: Array<{ base: string; status: number; data: unknown }> = [];
+    const attempted: Array<{ base: string; path: string; url: string; status: number; data: unknown }> = [];
 
     for (const base of bases) {
-        const url = `${base}${path}`;
-        let response: Response;
-        try {
-            response = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
-        } catch (error) {
-            attempted.push({
-                base,
-                status: 0,
-                data: { message: error instanceof Error ? error.message : String(error) },
-            });
-            continue;
+        for (const path of paths) {
+            const url = `${base}${path}`;
+            let response: Response;
+            try {
+                response = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+            } catch (error) {
+                attempted.push({
+                    base,
+                    path,
+                    url,
+                    status: 0,
+                    data: { message: error instanceof Error ? error.message : String(error) },
+                });
+                continue;
+            }
+            const data = await parseApiResponse(response);
+
+            if (response.ok) {
+                preferredEvolutionBase = base;
+                return data;
+            }
+
+            attempted.push({ base, path, url, status: response.status, data });
+
+            // Si el endpoint no existe en esta base/path, intentamos el siguiente.
+            if (response.status === 404) {
+                continue;
+            }
+
+            throw new Error(`EVOLUTION_HTTP_${response.status}@${base}: ${JSON.stringify(data)}`);
         }
-        const data = await parseApiResponse(response);
-
-        if (response.ok) {
-            preferredEvolutionBase = base;
-            return data;
-        }
-
-        attempted.push({ base, status: response.status, data });
-
-        // Si el endpoint no existe en esta base, intentamos la siguiente.
-        if (response.status === 404) {
-            continue;
-        }
-
-        throw new Error(`EVOLUTION_HTTP_${response.status}@${base}: ${JSON.stringify(data)}`);
     }
 
     throw new Error(
         `EVOLUTION_HTTP_404: ${JSON.stringify({
-            path,
+            paths,
             attempted,
             hint: "Revisa EVOLUTION_API_URL. Si usas Render, evita /manager y valida base /, /api o /v2.",
         })}`
@@ -125,7 +130,10 @@ export const evolutionService = {
     async createInstance(instanceName: string) {
         try {
             console.log(`[EvolutionService] Creating instance at: ${EVOLUTION_API_URL}/instance/create`);
-            const data = await evolutionRequest(`/instance/create`, {
+            const data = await evolutionRequest([
+                `/instance/create`,
+                `/instance/init`,
+            ], {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -148,7 +156,11 @@ export const evolutionService = {
     async getQR(instanceName: string) {
         try {
             console.log(`[EvolutionService] Getting QR at: ${EVOLUTION_API_URL}/instance/connect/${instanceName}`);
-            const data = await evolutionRequest(`/instance/connect/${instanceName}`, {
+            const data = await evolutionRequest([
+                `/instance/connect/${instanceName}`,
+                `/instance/qrcode/${instanceName}`,
+                `/instance/qr/${instanceName}`,
+            ], {
                 method: 'GET',
             }, { timeoutMs: 6000 });
             console.log("[EvolutionService] Get QR response:", data);
@@ -162,7 +174,11 @@ export const evolutionService = {
     async getInstanceStatus(instanceName: string, options?: { timeoutMs?: number }) {
         try {
             console.log(`[EvolutionService] Getting status at: ${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`);
-            const data = await evolutionRequest(`/instance/connectionState/${instanceName}`, {
+            const data = await evolutionRequest([
+                `/instance/connectionState/${instanceName}`,
+                `/instance/status/${instanceName}`,
+                `/instance/connection-state/${instanceName}`,
+            ], {
                 method: 'GET',
             }, { timeoutMs: options?.timeoutMs ?? 3500 });
             console.log("[EvolutionService] Get Status response:", data);

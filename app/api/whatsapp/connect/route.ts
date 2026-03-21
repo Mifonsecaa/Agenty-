@@ -154,15 +154,20 @@ export async function POST(req: Request) {
             if (upstreamStatus === 401 || upstreamStatus === 403) {
                 errorText = "Evolution rechazo la API key (401/403). Verifica EVOLUTION_API_KEY en Vercel/Render.";
             } else if (upstreamStatus === 404) {
-                errorText = "Evolution respondio 404. Revisa EVOLUTION_API_URL y la version/paths del API en Render.";
+                errorText = "Evolution respondio 404. Verifica EVOLUTION_API_URL (sin /manager) y confirma endpoints activos en Render (/instance/create, /instance/connect/{id}).";
             } else if (upstreamStatus && upstreamStatus >= 500) {
                 errorText = "Evolution API esta con error interno (5xx). Intenta de nuevo y revisa logs de Render.";
             }
+
+            const attemptedUrls = Array.isArray(upstreamBody?.attempted)
+                ? upstreamBody.attempted.map((entry: any) => entry?.url).filter(Boolean).slice(0, 6)
+                : [];
 
             return NextResponse.json(
                 {
                     error: errorText,
                     upstreamStatus,
+                    attemptedUrls: attemptedUrls.length ? attemptedUrls : undefined,
                     upstream: process.env.NODE_ENV === "development" ? upstreamBody : undefined,
                 },
                 { status: 502 }
