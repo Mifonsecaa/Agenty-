@@ -121,34 +121,10 @@ function ConnectionModal({
   const isWhatsAppQrFlow = platform === "whatsapp";
   const qrSrc = qrCode ? (qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`) : null;
 
-  const pollWhatsAppStatus = async () => {
-    const res = await fetch(`/api/whatsapp/connect?agentId=${businessId}`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return;
+  const syncWhatsAppConnectResult = (data: any) => {
     if (data.state === "CONNECTED") {
       setWaState("CONNECTED");
       setWaMessage("WhatsApp conectado correctamente.");
-      onConnected("whatsapp");
-      setTimeout(() => onClose(), 900);
-    }
-  };
-
-  const startWhatsAppQrFlow = async () => {
-    setWaState("INITIALIZING");
-    setWaMessage("Generando QR...");
-    const res = await fetch("/api/whatsapp/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId: businessId }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error || "No se pudo conectar WhatsApp.");
-    }
-
-    if (data.state === "CONNECTED") {
-      setWaState("CONNECTED");
-      setWaMessage("WhatsApp ya estaba conectado.");
       onConnected("whatsapp");
       setTimeout(() => onClose(), 900);
       return;
@@ -165,13 +141,53 @@ function ConnectionModal({
     setWaMessage(data?.message || "Inicializando conexión...");
   };
 
+  const pollWhatsAppStatus = async () => {
+    const res = await fetch(`/api/whatsapp/connect?agentId=${businessId}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    if (data.state === "CONNECTED") {
+      setWaState("CONNECTED");
+      setWaMessage("WhatsApp conectado correctamente.");
+      onConnected("whatsapp");
+      setTimeout(() => onClose(), 900);
+    }
+  };
+
+  const refreshWhatsAppQr = async () => {
+    const res = await fetch("/api/whatsapp/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId: businessId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.error || "No se pudo regenerar el QR de WhatsApp.");
+    }
+
+    syncWhatsAppConnectResult(data);
+  };
+
+  const startWhatsAppQrFlow = async () => {
+    setWaState("INITIALIZING");
+    setWaMessage("Generando QR...");
+    setQrCode(null);
+    await refreshWhatsAppQr();
+  };
+
   useEffect(() => {
     if (!isWhatsAppQrFlow || (waState !== "READY" && waState !== "INITIALIZING")) return;
     const timer = setInterval(() => {
       void pollWhatsAppStatus();
+
+      // Si Evolution aún está iniciando y no hay QR visible, reintentamos obtenerlo.
+      if (waState === "INITIALIZING" && !qrCode) {
+        void refreshWhatsAppQr().catch((err) => {
+          console.warn("[ConnectionsManager] QR refresh warning:", err);
+        });
+      }
     }, 3500);
     return () => clearInterval(timer);
-  }, [isWhatsAppQrFlow, waState]);
+  }, [isWhatsAppQrFlow, waState, qrCode]);
 
   const handleSave = async () => {
     setSaving(true);

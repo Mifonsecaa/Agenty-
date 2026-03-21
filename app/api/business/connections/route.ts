@@ -20,8 +20,22 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const userEmail = typeof session.user.email === "string" ? session.user.email : "";
+    if (!userEmail) {
+      return NextResponse.json({ error: "Sesion sin email" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    }
+
     const business = await prisma.business.findFirst({
-      where: { id: businessId, userId: (session.user as any).id },
+      where: { id: businessId, userId: user.id },
       select: {
         id: true,
         whatsappPhoneNumberId: true,
