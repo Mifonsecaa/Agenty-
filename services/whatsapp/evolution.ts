@@ -38,6 +38,22 @@ async function evolutionRequest(path: string, init: RequestInit = {}) {
     return data;
 }
 
+function parseEvolutionHttpError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const match = message.match(/^EVOLUTION_HTTP_(\d+):\s*(.*)$/);
+    if (!match) return null;
+
+    const status = Number(match[1]);
+    let payload: any = null;
+    try {
+        payload = match[2] ? JSON.parse(match[2]) : null;
+    } catch {
+        payload = { raw: match[2] };
+    }
+
+    return { status, payload, message };
+}
+
 export interface EvolutionInstance {
     instanceName: string;
     status: string;
@@ -91,8 +107,14 @@ export const evolutionService = {
             console.log("[EvolutionService] Get Status response:", data);
             return data;
         } catch (error) {
+            const upstream = parseEvolutionHttpError(error);
+            if (upstream?.status === 404) {
+                // La instancia aun no existe.
+                return { status: 404, error: "Not Found", instance: null };
+            }
+
             console.error("[EvolutionService] Error getting status:", error);
-            return { instance: { state: "DISCONNECTED" } };
+            throw error;
         }
     },
 

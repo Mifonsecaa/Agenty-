@@ -137,8 +137,34 @@ export async function POST(req: Request) {
         }
 
         if (message.includes("EVOLUTION_HTTP_")) {
+            const statusMatch = message.match(/EVOLUTION_HTTP_(\d+)/);
+            const upstreamStatus = statusMatch ? Number(statusMatch[1]) : undefined;
+
+            let upstreamBody: any = null;
+            const jsonStart = message.indexOf("{");
+            if (jsonStart >= 0) {
+                try {
+                    upstreamBody = JSON.parse(message.slice(jsonStart));
+                } catch {
+                    upstreamBody = null;
+                }
+            }
+
+            let errorText = "No se pudo conectar con el servicio de WhatsApp (Evolution API)";
+            if (upstreamStatus === 401 || upstreamStatus === 403) {
+                errorText = "Evolution rechazo la API key (401/403). Verifica EVOLUTION_API_KEY en Vercel/Render.";
+            } else if (upstreamStatus === 404) {
+                errorText = "Evolution respondio 404. Revisa EVOLUTION_API_URL y la version/paths del API en Render.";
+            } else if (upstreamStatus && upstreamStatus >= 500) {
+                errorText = "Evolution API esta con error interno (5xx). Intenta de nuevo y revisa logs de Render.";
+            }
+
             return NextResponse.json(
-                { error: "No se pudo conectar con el servicio de WhatsApp (Evolution API)" },
+                {
+                    error: errorText,
+                    upstreamStatus,
+                    upstream: process.env.NODE_ENV === "development" ? upstreamBody : undefined,
+                },
                 { status: 502 }
             );
         }
