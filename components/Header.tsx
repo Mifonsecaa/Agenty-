@@ -13,7 +13,7 @@ const menuItems = [
 		title: 'Producto',
 		links: [
 			{ href: '/#features', label: 'Características' },
-			{ href: '/services/default-agents', label: 'Casos de Uso' },
+			{ href: '/agents/default', label: 'Casos de Uso' },
 			{ href: '/?demo=true', label: 'Prueba en Vivo' },
 		],
 	},
@@ -26,7 +26,8 @@ const menuItems = [
 		id: 'resources',
 		title: 'Recursos',
 		links: [
-			{ href: '/sources/blog', label: 'Blog' },
+			{ href: '/about/team', label: 'Equipo' },
+			{ href: '/about/history', label: 'Historia' },
 			{ href: '/help', label: 'Centro de Ayuda' },
 		],
 	},
