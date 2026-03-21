@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-      <html lang="es">
+      <html lang="es" className="overscroll-none">
       {/* 3. Combinamos la fuente con las clases para evitar el rebote */}
       <body className={`${inter.className} overscroll-none bg-black`}>
       <Providers>
