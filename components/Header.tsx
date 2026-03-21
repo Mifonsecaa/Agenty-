@@ -53,7 +53,7 @@ const Header = () => {
 						</div>
 
 						{/* Desktop Navigation */}
-						<div className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2 relative z-50">
+						<div className="hidden md:flex items-center gap-8 relative z-50">
 							<Link href="/#features" className="text-sm font-medium text-gray-300 hover:text-white transition-colors">
 								Características
 							</Link>
