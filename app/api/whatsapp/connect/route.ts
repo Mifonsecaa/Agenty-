@@ -6,9 +6,22 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
     try {
-        if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
+        const evolutionUrl = String(process.env.EVOLUTION_API_URL || "").trim();
+        const evolutionKey = String(process.env.EVOLUTION_API_KEY || "").trim();
+
+        if (!evolutionUrl || !evolutionKey) {
             return NextResponse.json(
                 { error: "Falta configuración de WhatsApp (EVOLUTION_API_URL / EVOLUTION_API_KEY)" },
+                { status: 500 }
+            );
+        }
+
+        // En Vercel/producción no debe apuntar a localhost.
+        if (/localhost|127\.0\.0\.1/i.test(evolutionUrl) && process.env.VERCEL) {
+            return NextResponse.json(
+                {
+                    error: "EVOLUTION_API_URL inválida para producción. Usa la URL pública HTTPS de Render, no localhost.",
+                },
                 { status: 500 }
             );
         }
@@ -120,7 +133,27 @@ export async function POST(req: Request) {
             );
         }
 
-        return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+        if (
+            message.toLowerCase().includes("fetch failed") ||
+            message.includes("ECONNREFUSED") ||
+            message.includes("ENOTFOUND") ||
+            message.includes("ETIMEDOUT")
+        ) {
+            return NextResponse.json(
+                {
+                    error: "No se pudo alcanzar Evolution API. Verifica EVOLUTION_API_URL y que Render esté en línea.",
+                },
+                { status: 502 }
+            );
+        }
+
+        return NextResponse.json(
+            {
+                error: "Error interno del servidor",
+                detail: process.env.NODE_ENV === "development" ? message : undefined,
+            },
+            { status: 500 }
+        );
     }
 }
 
