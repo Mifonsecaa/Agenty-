@@ -61,9 +61,13 @@ export async function POST(req: Request) {
         }
 
         // Siempre intentamos configurar el webhook al conectar.
-        // Prioridad: EVOLUTION_WEBHOOK_URL (manual) > URL pública actual.
+        // Prioridad: EVOLUTION_WEBHOOK_URL (manual) > NEXTAUTH_URL (dominio canonico) > URL pública actual.
         const requestOrigin = new URL(req.url).origin;
-        const webhookUrl = process.env.EVOLUTION_WEBHOOK_URL || `${requestOrigin}/api/whatsapp/webhook`;
+        const canonicalOrigin = String(process.env.NEXTAUTH_URL || "").trim();
+        const webhookBase = String(process.env.EVOLUTION_WEBHOOK_URL || "").trim() || canonicalOrigin || requestOrigin;
+        const webhookUrl = webhookBase.endsWith("/api/whatsapp/webhook")
+            ? webhookBase
+            : `${webhookBase.replace(/\/$/, "")}/api/whatsapp/webhook`;
         try {
             await evolutionService.setWebhook(instanceName, webhookUrl);
         } catch (webhookErr) {
