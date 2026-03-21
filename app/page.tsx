@@ -145,7 +145,7 @@ export default function HomePage() {
             <Suspense fallback={null}>
                 <SearchParamsHandler onDemoOpen={handleSetIsDemoOpen} />
             </Suspense>
-            <main className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-12 overflow-hidden">
+            <main className="relative min-h-screen flex flex-col items-center justify-center px-6 pb-12 overflow-hidden">
 
                 <div className="aurora-bg" />
                 <ParticleBackground />
@@ -154,7 +154,7 @@ export default function HomePage() {
                     initial={reduceMotionSafe ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 0.8, ease: "easeOut" }}
-                    className="text-center mb-16 max-w-3xl relative z-10"
+                    className="text-center mb-16 max-w-3xl relative z-10 pt-16"
                 >
                     <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-8 leading-tight">
                         Tu fuerza laboral <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Autónoma</span>

@@ -25,7 +25,9 @@ export default function RootLayout({
       <body className={`${inter.className} overscroll-none bg-black`}>
       <Providers>
         <Header />
-        {children}
+        <main className="min-h-screen">
+            {children}
+        </main>
         <Footer />
         <Toaster theme="dark" position="top-center" richColors />
       </Providers>
@@ -33,4 +35,3 @@ export default function RootLayout({
       </html>
   );
 }
-

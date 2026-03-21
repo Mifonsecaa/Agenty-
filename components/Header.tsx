@@ -38,7 +38,7 @@ const Header = () => {
 	return (
 		<>
 			<header className={`fixed top-0 w-full z-50 transition-transform duration-300 ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
-				<div className={`absolute inset-0 transition-all duration-300 ${isScrolled ? 'bg-[#050505]/80 backdrop-blur-md border-b border-white/5' : 'bg-transparent'}`} />
+				<div className={`absolute inset-0 transition-all duration-300 ${isScrolled ? 'bg-[#050505]/80 backdrop-blur-md border-b-0' : 'bg-transparent border-b-0'}`} />
 
 				<nav className="relative w-full max-w-7xl mx-auto px-6 py-4">
 					<div className="flex items-center justify-between">
