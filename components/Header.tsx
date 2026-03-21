@@ -73,10 +73,10 @@ const Header = () => {
 								) : session ? (
 									<div className="flex items-center gap-4">
 										<Link
-											href="/dashboard"
+											href="/dashboard/builder"
 											className="hidden sm:inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-lg transition-all"
 										>
-											Dashboard
+											Playground
 										</Link>
 										<span className="text-sm text-gray-300 hidden lg:inline-block">
 											Hola, <span className="text-white font-medium">{session.user?.name?.split(' ')[0] || session.user?.email}</span>

@@ -40,7 +40,7 @@ export default function Footer() {
                         <ul className="space-y-2 text-sm">
                             <li><Link href="/pricing" className="hover:text-blue-400 transition-colors">Precios</Link></li>
                             <li><Link href="/agents/default" className="hover:text-blue-400 transition-colors">Cómo funciona</Link></li>
-                            <li><Link href="/dashboard" className="hover:text-blue-400 transition-colors">Playground</Link></li>
+                            <li><Link href="/dashboard/builder" className="hover:text-blue-400 transition-colors">Playground</Link></li>
                         </ul>
                     </div>
 
