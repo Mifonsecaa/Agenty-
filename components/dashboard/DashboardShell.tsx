@@ -26,7 +26,7 @@ import {
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AgentyProvider, useAgenty } from "@/context/AgentyContext";
+import { BrainiaProvider, useBrainia } from "@/context/BrainiaContext";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
 import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
@@ -52,11 +52,11 @@ interface DashboardShellProps {
 
 export default function DashboardShell({ children, initialAgents, userName, userEmail }: DashboardShellProps) {
     return (
-        <AgentyProvider initialAgents={initialAgents}>
+        <BrainiaProvider initialAgents={initialAgents}>
             <DashboardContent userName={userName} userEmail={userEmail}>
                 {children}
             </DashboardContent>
-        </AgentyProvider>
+        </BrainiaProvider>
     );
 }
 
@@ -65,7 +65,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const copy = getDashboardCopy(searchParams.get("lang") || undefined);
-    const { agents, activeAgent, switchAgent, refreshAgents } = useAgenty();
+    const { agents, activeAgent, switchAgent, refreshAgents } = useBrainia();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isMounted, setIsMounted] = useState(false);

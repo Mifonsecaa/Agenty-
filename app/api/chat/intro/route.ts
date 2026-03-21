@@ -6,7 +6,7 @@ export async function GET() {
     // Buscamos el primer negocio en la base de datos
     const business = await prisma.business.findFirst();
 
-    let introMessage = "¡Hola! Soy el asistente de IA de Agenty. Como no hay un negocio configurado en la base de datos, simularé ser un asistente para un restaurante llamado 'La Brasserie Cósmica'. ¿En qué puedo ayudarte?";
+    let introMessage = "¡Hola! Soy el asistente de IA de brainia. Como no hay un negocio configurado en la base de datos, simularé ser un asistente para un restaurante llamado 'La Brasserie Cósmica'. ¿En qué puedo ayudarte?";
 
     if (business && business.config) {
       const config = business.config as any;

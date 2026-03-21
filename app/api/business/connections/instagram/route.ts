@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const token = params.get("hub.verify_token");
   const challenge = params.get("hub.challenge");
 
-  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || "agenty_webhook_token";
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || "brainia_webhook_token";
 
   if (mode === "subscribe" && token === verifyToken) {
     console.log("[Instagram Webhook] Verified");

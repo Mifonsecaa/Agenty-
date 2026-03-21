@@ -10,7 +10,7 @@ services:
       - "8080:8080"
     environment:
       - AUTHENTICATION_TYPE=apikey
-      - AUTHENTICATION_API_KEY=agenty_secret_key_123
+      - AUTHENTICATION_API_KEY=brainia_secret_key_123
       - SERVER_URL=http://localhost:8080
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql

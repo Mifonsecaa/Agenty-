@@ -22,7 +22,7 @@ export default function Footer() {
                             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center">
                                 <Bot className="w-5 h-5 text-white" />
                             </div>
-                            <span className="font-bold text-lg tracking-tight">Agenty</span>
+                            <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">
                             Plataforma de IA nativa para automatizar ventas y soporte en WhatsApp. Entrena tu agente en segundos.
@@ -67,7 +67,7 @@ export default function Footer() {
                 </div>
 
                 <div className="border-t border-white/5 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
-                    <p>&copy; {new Date().getFullYear()} Agenty Inc. Todos los derechos reservados.</p>
+                    <p>&copy; {new Date().getFullYear()} brainia Inc. Todos los derechos reservados.</p>
                     <div className="flex gap-6">
                         <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> All Systems Operational</span>
                     </div>

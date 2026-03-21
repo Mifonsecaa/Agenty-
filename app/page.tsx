@@ -111,13 +111,13 @@ export default function HomePage() {
                 };
             }
 
-            const existingAgentsStr = localStorage.getItem("agenty_agents");
+            const existingAgentsStr = localStorage.getItem("brainia_agents");
             const agentsArray = existingAgentsStr ? JSON.parse(existingAgentsStr) : [];
             agentsArray.push(newAgent);
 
-            localStorage.setItem("agenty_agents", JSON.stringify(agentsArray));
-            localStorage.setItem("agenty_active_agent_id", newAgent.id);
-            localStorage.setItem("agenty_config", JSON.stringify(newAgent));
+            localStorage.setItem("brainia_agents", JSON.stringify(agentsArray));
+            localStorage.setItem("brainia_active_agent_id", newAgent.id);
+            localStorage.setItem("brainia_config", JSON.stringify(newAgent));
 
             clearInterval(phraseInterval);
             setLoading(false);
@@ -214,7 +214,7 @@ export default function HomePage() {
                             Automatiza sin perder el toque humano
                         </h2>
                         <p className="text-white/40 max-w-2xl mx-auto">
-                            Agenty se encarga del 80% de las consultas repetitivas, permitiéndote enfocarte en lo que realmente importa: hacer crecer tu negocio.
+                            brainia se encarga del 80% de las consultas repetitivas, permitiéndote enfocarte en lo que realmente importa: hacer crecer tu negocio.
                         </p>
                     </div>
 
