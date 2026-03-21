@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     let whatsappByQr = false;
     try {
-      const evolutionState = await evolutionService.getInstanceStatus(business.id);
+      const evolutionState = await evolutionService.getInstanceStatus(business.id, { timeoutMs: 1200 });
       whatsappByQr = evolutionState?.instance?.state === "open";
     } catch (err) {
       console.warn("[GET /connections] No se pudo consultar estado QR de WhatsApp:", err);

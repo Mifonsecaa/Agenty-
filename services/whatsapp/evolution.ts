@@ -1,5 +1,6 @@
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || process.env.EVOLUTION_API_URI;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+let preferredEvolutionBase: string | null = null;
 
 function ensureEvolutionConfig() {
     if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
@@ -27,7 +28,11 @@ function getEvolutionBaseCandidates() {
         candidates.add(`${primary}/v2`);
     }
 
-    return Array.from(candidates);
+    const all = Array.from(candidates);
+    if (!preferredEvolutionBase) return all;
+
+    const preferred = normalizeBaseUrl(preferredEvolutionBase);
+    return [preferred, ...all.filter((base) => normalizeBaseUrl(base) !== preferred)];
 }
 
 async function parseApiResponse(response: Response) {
@@ -39,21 +44,44 @@ async function parseApiResponse(response: Response) {
     }
 }
 
-async function evolutionRequest(path: string, init: RequestInit = {}) {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function evolutionRequest(path: string, init: RequestInit = {}, options?: { timeoutMs?: number }) {
     const headers = {
         apikey: EVOLUTION_API_KEY!,
         ...(init.headers || {}),
     };
 
     const bases = getEvolutionBaseCandidates();
+    const timeoutMs = options?.timeoutMs ?? 4500;
     const attempted: Array<{ base: string; status: number; data: unknown }> = [];
 
     for (const base of bases) {
         const url = `${base}${path}`;
-        const response = await fetch(url, { ...init, headers });
+        let response: Response;
+        try {
+            response = await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+        } catch (error) {
+            attempted.push({
+                base,
+                status: 0,
+                data: { message: error instanceof Error ? error.message : String(error) },
+            });
+            continue;
+        }
         const data = await parseApiResponse(response);
 
         if (response.ok) {
+            preferredEvolutionBase = base;
             return data;
         }
 
@@ -122,7 +150,7 @@ export const evolutionService = {
             console.log(`[EvolutionService] Getting QR at: ${EVOLUTION_API_URL}/instance/connect/${instanceName}`);
             const data = await evolutionRequest(`/instance/connect/${instanceName}`, {
                 method: 'GET',
-            });
+            }, { timeoutMs: 6000 });
             console.log("[EvolutionService] Get QR response:", data);
             return data;
         } catch (error) {
@@ -131,12 +159,12 @@ export const evolutionService = {
         }
     },
 
-    async getInstanceStatus(instanceName: string) {
+    async getInstanceStatus(instanceName: string, options?: { timeoutMs?: number }) {
         try {
             console.log(`[EvolutionService] Getting status at: ${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`);
             const data = await evolutionRequest(`/instance/connectionState/${instanceName}`, {
                 method: 'GET',
-            });
+            }, { timeoutMs: options?.timeoutMs ?? 3500 });
             console.log("[EvolutionService] Get Status response:", data);
             return data;
         } catch (error) {

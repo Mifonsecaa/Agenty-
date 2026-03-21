@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
 import { useSearchParams } from "next/navigation";
 import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
@@ -117,6 +117,7 @@ function ConnectionModal({
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [waState, setWaState] = useState<"IDLE" | "INITIALIZING" | "READY" | "CONNECTED" | "ERROR">("IDLE");
   const [waMessage, setWaMessage] = useState("");
+  const qrRefreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const isWhatsAppQrFlow = platform === "whatsapp";
   const qrSrc = qrCode ? (qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`) : null;
@@ -154,17 +155,30 @@ function ConnectionModal({
   };
 
   const refreshWhatsAppQr = async () => {
-    const res = await fetch("/api/whatsapp/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId: businessId }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error || "No se pudo regenerar el QR de WhatsApp.");
+    if (qrRefreshInFlightRef.current) {
+      return qrRefreshInFlightRef.current;
     }
 
-    syncWhatsAppConnectResult(data);
+    const request = (async () => {
+      const res = await fetch("/api/whatsapp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: businessId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo regenerar el QR de WhatsApp.");
+      }
+
+      syncWhatsAppConnectResult(data);
+    })();
+
+    qrRefreshInFlightRef.current = request;
+    try {
+      await request;
+    } finally {
+      qrRefreshInFlightRef.current = null;
+    }
   };
 
   const startWhatsAppQrFlow = async () => {
