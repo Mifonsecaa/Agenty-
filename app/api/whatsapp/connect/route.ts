@@ -18,9 +18,15 @@ export async function POST(req: Request) {
 
         // En Vercel/producción no debe apuntar a localhost.
         if (/localhost|127\.0\.0\.1/i.test(evolutionUrl) && process.env.VERCEL) {
+            let detectedHost = "unknown";
+            try {
+                detectedHost = new URL(evolutionUrl).host || detectedHost;
+            } catch {
+                detectedHost = evolutionUrl;
+            }
             return NextResponse.json(
                 {
-                    error: "EVOLUTION_API_URL inválida para producción. Usa la URL pública HTTPS de Render, no localhost.",
+                    error: `EVOLUTION_API_URL inválida para producción. Host detectado: ${detectedHost}. Usa la URL pública HTTPS de Render, no localhost.`,
                 },
                 { status: 500 }
             );
