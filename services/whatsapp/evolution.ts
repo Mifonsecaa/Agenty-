@@ -7,9 +7,27 @@ function ensureEvolutionConfig() {
     }
 }
 
-function buildEvolutionUrl(path: string) {
+function normalizeBaseUrl(baseUrl: string) {
+    const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
+    if (/\/manager$/i.test(trimmed)) {
+        return trimmed.replace(/\/manager$/i, "");
+    }
+    return trimmed;
+}
+
+function getEvolutionBaseCandidates() {
     ensureEvolutionConfig();
-    return `${EVOLUTION_API_URL}${path}`;
+    const primary = normalizeBaseUrl(EVOLUTION_API_URL!);
+    const candidates = new Set<string>([primary]);
+
+    if (!/\/api$/i.test(primary)) {
+        candidates.add(`${primary}/api`);
+    }
+    if (!/\/v2$/i.test(primary)) {
+        candidates.add(`${primary}/v2`);
+    }
+
+    return Array.from(candidates);
 }
 
 async function parseApiResponse(response: Response) {
@@ -22,25 +40,45 @@ async function parseApiResponse(response: Response) {
 }
 
 async function evolutionRequest(path: string, init: RequestInit = {}) {
-    const url = buildEvolutionUrl(path);
     const headers = {
         apikey: EVOLUTION_API_KEY!,
         ...(init.headers || {}),
     };
 
-    const response = await fetch(url, { ...init, headers });
-    const data = await parseApiResponse(response);
+    const bases = getEvolutionBaseCandidates();
+    const attempted: Array<{ base: string; status: number; data: unknown }> = [];
 
-    if (!response.ok) {
-        throw new Error(`EVOLUTION_HTTP_${response.status}: ${JSON.stringify(data)}`);
+    for (const base of bases) {
+        const url = `${base}${path}`;
+        const response = await fetch(url, { ...init, headers });
+        const data = await parseApiResponse(response);
+
+        if (response.ok) {
+            return data;
+        }
+
+        attempted.push({ base, status: response.status, data });
+
+        // Si el endpoint no existe en esta base, intentamos la siguiente.
+        if (response.status === 404) {
+            continue;
+        }
+
+        throw new Error(`EVOLUTION_HTTP_${response.status}@${base}: ${JSON.stringify(data)}`);
     }
 
-    return data;
+    throw new Error(
+        `EVOLUTION_HTTP_404: ${JSON.stringify({
+            path,
+            attempted,
+            hint: "Revisa EVOLUTION_API_URL. Si usas Render, evita /manager y valida base /, /api o /v2.",
+        })}`
+    );
 }
 
 function parseEvolutionHttpError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const match = message.match(/^EVOLUTION_HTTP_(\d+):\s*(.*)$/);
+    const match = message.match(/^EVOLUTION_HTTP_(\d+)(?:@[^:]+)?:\s*(.*)$/);
     if (!match) return null;
 
     const status = Number(match[1]);
@@ -54,11 +92,6 @@ function parseEvolutionHttpError(error: unknown) {
     return { status, payload, message };
 }
 
-export interface EvolutionInstance {
-    instanceName: string;
-    status: string;
-    qrcode?: string;
-}
 
 export const evolutionService = {
     async createInstance(instanceName: string) {
