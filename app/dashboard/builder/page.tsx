@@ -36,28 +36,27 @@ export default function BuilderPlayground() {
             });
 
             const data = await res.json();
-            if (data.success) {
-                if (data.state === "CONNECTED") {
-                    setQrState("connected");
-                    setTimeout(() => setShowQrModal(false), 2000);
-                } else if (data.state === "READY" && data.qrcode) {
-                    setRealQrCode(data.qrcode);
-                    setQrState("ready");
-                    startPollingStatus();
-                } else if (data.state === "INITIALIZING") {
-                    // Si está inicializando, simplemente esperamos a que el polling haga su trabajo
-                    // o lanzamos un reintento silencioso después de 5 segundos si no hay QR aún
-                    if (qrState === "generating") {
-                        console.log("[Builder] Still initializing, retrying fetch in 5s...");
-                        setTimeout(() => handleDeploy(), 5000);
-                    }
-                }
+
+            // Aquí cambiamos a data.qrBase64 que es lo que manda nuestro backend
+            if (data.success && data.qrBase64) {
+                // Evolution a veces manda el base64 "pelado", le agregamos el prefijo para que el navegador lo entienda como imagen
+                const formattedQr = data.qrBase64.startsWith('data:image')
+                    ? data.qrBase64
+                    : `data:image/png;base64,${data.qrBase64}`;
+
+                setRealQrCode(formattedQr);
+                setQrState("ready");
+
+                // ¡Nota clave! Desactivamos el polling por ahora para evitar el error 405 en tu consola.
+                // startPollingStatus();
             } else {
-                toast.error(data.error || "Error al conectar con WhatsApp");
+                toast.error(data.error || "No se recibió el QR de Evolution API");
+                setShowQrModal(false);
             }
         } catch (error) {
             console.error("Error en handleDeploy:", error);
             toast.error("Error al iniciar la conexión");
+            setShowQrModal(false);
         }
     };
 
