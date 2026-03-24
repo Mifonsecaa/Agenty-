@@ -23,9 +23,10 @@ export async function POST(req: Request) {
                 apikey: API_KEY as string,
             },
             body: JSON.stringify({
-                instanceName: safeInstanceName, // Usamos el nombre limpio
+                instanceName: safeInstanceName,
                 token: safeInstanceName,
                 qrcode: true,
+                integration: "WHATSAPP-BAILEYS" // <--- ¡ESTA ES LA LÍNEA MÁGICA QUE FALTA!
             }),
         });
 
