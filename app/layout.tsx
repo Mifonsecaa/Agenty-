@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import Providers from "@/components/Providers";
 import { Toaster } from "sonner";
 import dynamic from 'next/dynamic';
+import { BrainiaProvider } from '@/context/BrainiaContext';
 
 const PlaygroundClient = dynamic(() => import('@/components/PlaygroundClient'));
 
@@ -27,13 +28,15 @@ export default function RootLayout({
       {/* 3. Combinamos la fuente con las clases para evitar el rebote */}
       <body className={`${inter.className} overscroll-none bg-black`}>
       <Providers>
-        <Header />
-        <main className="min-h-screen">
-            {children}
-        </main>
-        <Footer />
-        <PlaygroundClient />
-        <Toaster theme="dark" position="top-center" richColors />
+        <BrainiaProvider>
+          <Header />
+          <main className="min-h-screen">
+              {children}
+          </main>
+          <Footer />
+          <PlaygroundClient />
+          <Toaster theme="dark" position="top-center" richColors />
+        </BrainiaProvider>
       </Providers>
       </body>
       </html>
