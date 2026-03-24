@@ -77,6 +77,18 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     const callModel = async (state: AgentStateType) => {
         const { messages, businessName, config } = state;
         const lastUserMessage = getLastUserMessage(messages as BaseMessage[]);
+        
+        // 1. Revisar respuestas personalizadas (Reglas estrictas)
+        if (config?.customResponses && Array.isArray(config.customResponses)) {
+            for (const custom of config.customResponses) {
+                if (custom.trigger && custom.response && lastUserMessage.toLowerCase().includes(custom.trigger.toLowerCase())) {
+                    console.log(`[AgentGraph] Match found for custom response: ${custom.trigger}`);
+                    const { AIMessage } = await import("@langchain/core/messages");
+                    return { messages: [new AIMessage(custom.response)] };
+                }
+            }
+        }
+
         let ragContext = "";
         let availableFiles: Array<{ url: string; description: string }> = [];
 
@@ -90,10 +102,24 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             }
         }
 
+        const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
+
+        // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
+        if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
+            console.log(`[AgentGraph] Guardrail triggered for sensitive data. Using handoffMessage.`);
+            const { AIMessage } = await import("@langchain/core/messages");
+            const handoffMsg = config?.handoffMessage || "Dame un momento para confirmar esa información, por favor.";
+            return { messages: [new AIMessage(handoffMsg)] };
+        }
+
         // System Prompt dinámico
         let systemPrompt = config?.systemPrompt ||
             `Eres un asistente experto para ${businessName}. Sé amable y conciso.
        Utiliza tus herramientas si necesitas datos específicos sobre productos o políticas.`;
+
+        if (config?.welcomeMessage) {
+            systemPrompt += `\n\nAl iniciar una conversacion o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversacion ya esta en curso.`;
+        }
 
         systemPrompt += `\n\nTienes acceso a una herramienta de reservas llamada booking_manager.\n` +
             `- Usa action="CHECK" para consultar disponibilidad en una fecha (YYYY-MM-DD).\n` +
