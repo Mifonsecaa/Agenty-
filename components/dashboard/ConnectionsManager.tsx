@@ -470,7 +470,7 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{
                       background: isConnected ? config.bg : "rgba(30,41,59,0.8)",
                       color: isConnected ? config.color : "#475569",
@@ -488,7 +488,7 @@ export default function ConnectionsManager({ businessId }: { businessId: string 
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {loading ? (
                     <div className="w-20 h-8 rounded-lg animate-pulse" style={{ background: "rgba(148,163,184,0.1)" }} />
                   ) : isConnected ? (

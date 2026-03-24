@@ -89,7 +89,7 @@ const PricingPage = () => {
 
 	return (
 		<div className="min-h-screen bg-[#050505] text-white pt-24 sm:pt-32 relative overflow-hidden">
-			<div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
+			<div className="absolute top-0 left-1/2 -translate-x-1/2 w-250 h-125 bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
 			<div className="container mx-auto px-6 py-12 relative z-10">
 				<motion.div
 					initial={{ opacity: 0, y: -20 }}
@@ -132,7 +132,7 @@ const PricingPage = () => {
 							<h3 className="text-2xl font-bold tracking-tight">
 								{plan.name}
 							</h3>
-							<p className="mt-2 text-sm text-white/60 min-h-[40px]">
+							<p className="mt-2 text-sm text-white/60 min-h-10">
 								{plan.description}
 							</p>
 							<div className="mt-6">
@@ -143,13 +143,13 @@ const PricingPage = () => {
 									/mes
 								</span>
 							</div>
-							<ul className="mt-8 space-y-4 flex-grow">
+							<ul className="mt-8 space-y-4 grow">
 								{plan.features.map((feature, index) => (
 									<li
 										key={index}
 										className="flex items-start text-sm text-white/80"
 									>
-										<div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
+										<div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center mr-3 shrink-0 mt-0.5">
 											<Check className="w-3.5 h-3.5 text-emerald-400" />
 										</div>
 										<span>{feature}</span>

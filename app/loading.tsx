@@ -5,7 +5,7 @@ export default function Loading() {
         
         {/* Brand Animation */}
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center animate-pulse">
+          <div className="w-16 h-16 rounded-2xl bg-linear-to-tr from-blue-600 to-purple-600 flex items-center justify-center animate-pulse">
             <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
           <div className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl animate-pulse" />

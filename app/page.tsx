@@ -336,7 +336,7 @@ export default function HomePage() {
                                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 8, repeat: Infinity, ease: "linear" }}
                                 />
                                 <motion.div
-                                    className="absolute w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
+                                    className="absolute w-8 h-8 rounded-full bg-linear-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
                                     animate={reduceMotionSafe ? { scale: 1, opacity: 0.6 } : { scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: "easeInOut" }}
                                 />
