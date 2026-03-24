@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { Bot, Send, User } from 'lucide-react';
+import { Bot, Send, User, Trash2, X } from 'lucide-react';
 import i18n from './i18n';
 import { usePlayground } from '@/components/PlaygroundContext';
 import { useBrainia } from '@/context/BrainiaContext';
@@ -20,34 +20,34 @@ export default function PlaygroundUI() {
   return (
     <div className="fixed z-50 right-0 left-0 bottom-0 top-0 lg:top-20 lg:right-4 lg:left-auto lg:bottom-auto lg:w-105 lg:h-[80vh]">
       <div className="h-full bg-black border border-white/10 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-[#111111] border-b border-white/10">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-white/10">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-full bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <p className="text-sm font-semibold">{agentName || testAgentId || 'Playground'}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate max-w-[160px]">{agentName ? (String(agentName).length > 24 ? `${String(agentName).slice(0,20)}...` : agentName) : 'Playground'}</p>
               <p className="text-[10px] text-emerald-400">{i18n.onlineLabel}</p>
             </div>
           </div>
-              <div className="flex items-center gap-2">
-                  {showTestAgentInput ? (
-                    <div className="hidden sm:flex items-center gap-2">
-                      <input
-                        className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-36"
-                        placeholder="Test agent id (opcional)"
-                        value={testAgentId ?? ''}
-                        onChange={(e) => setTestAgentId(e.target.value || null)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="hidden sm:flex items-center gap-2 text-xs text-white/60 px-2 py-1 rounded bg-white/5">
-                      {activeAgent ? <span>Conectado: {activeAgent.name}</span> : (testAgentId ? <span>ID: {String(testAgentId).slice(0, 12)}...</span> : null)}
-                    </div>
-                  )}
-                <button onClick={clearHistory} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">{i18n.clearHistory}</button>
-                <button onClick={close} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">{i18n.closeButton}</button>
+          <div className="flex items-center gap-2">
+            {showTestAgentInput && (
+              <div className="hidden sm:flex items-center gap-2">
+                <input
+                  className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-36"
+                  placeholder="Test agent id (opcional)"
+                  value={testAgentId ?? ''}
+                  onChange={(e) => setTestAgentId(e.target.value || null)}
+                />
               </div>
+            )}
+            <button onClick={clearHistory} title={i18n.clearHistory} className="p-2 rounded-md text-white/70 hover:text-white hover:bg-white/5">
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button onClick={close} title={i18n.closeButton} className="p-2 rounded-md text-white/70 hover:text-white hover:bg-white/5">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
@@ -90,7 +90,7 @@ export default function PlaygroundUI() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={i18n.placeholder}
-              className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-12 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
+              className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
             />
             {/* Test agent input moved to header to avoid overlap; no absolute input here */}
             <button
