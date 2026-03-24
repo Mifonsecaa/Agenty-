@@ -21,7 +21,8 @@ import {
     User,
     CreditCard,
     Sparkles,
-    Share2
+    Share2,
+    MessageCircle
 } from 'lucide-react';
 
 import { useState, useEffect, useRef } from "react";
@@ -181,6 +182,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
         { href: '/dashboard/builder', label: 'Agente', icon: Bot },
         { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: Database },
+        { href: '/dashboard/responses', label: 'Respuestas', icon: MessageCircle },
         { href: '/dashboard/connections', label: 'Conexiones', icon: Share2 },
         { href: '/dashboard/tools', label: 'Tools Store', icon: Blocks },
         { href: '/dashboard/inbox', label: 'Live Inbox', icon: MessageSquare, badge: handoffCount || undefined },
@@ -526,4 +528,3 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
         </div>
     );
 }
-

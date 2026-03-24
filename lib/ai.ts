@@ -201,11 +201,23 @@ export const aiService = {
                 throw new Error("Negocio no encontrado en la base de datos");
             }
 
+            const config = business.config as any;
+
+            // Revisar respuestas personalizadas antes de llamar a la IA
+            const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
+            if (config.customResponses && Array.isArray(config.customResponses)) {
+                for (const custom of config.customResponses) {
+                    if (custom.trigger && custom.response && lastUserMessage.toLowerCase().includes(custom.trigger.toLowerCase())) {
+                        console.log(`[AIService] Match found for custom response: ${custom.trigger}`);
+                        return custom.response;
+                    }
+                }
+            }
+
             // 2. Recuperar Contexto RAG (Base de Conocimiento)
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
             
-            const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
             const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
             const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
             const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
@@ -244,8 +256,20 @@ export const aiService = {
                 console.error("[AIService] Error en RAG retrieval:", ragError);
             }
 
-            const config = business.config as any;
             let systemPrompt = options.systemPrompt?.trim() || config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+
+            if (config?.welcomeMessage) {
+                systemPrompt += `\n\nAl iniciar una conversación o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversación ya está en curso.`;
+            }
+
+            if (config?.customResponses && Array.isArray(config.customResponses) && config.customResponses.length > 0) {
+                systemPrompt += `\n\nREGLAS ESTRICTAS DE CONVERSACIÓN (RESPUESTAS PREDEFINIDAS):\n`;
+                for (const custom of config.customResponses) {
+                    if (custom.trigger && custom.response) {
+                        systemPrompt += `- Si el usuario dice algo relacionado o semánticamente similar a "${custom.trigger}", tu respuesta debe ser exactamente o basarse fuertemente en: "${custom.response}".\n`;
+                    }
+                }
+            }
 
             // Inyectar contexto RAG al prompt
             if (ragContext) {
@@ -268,7 +292,7 @@ export const aiService = {
 
             // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
             if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
-                return "No tengo ese dato confirmado en la base de conocimiento en este momento. Si quieres, te ayudo a verificarlo o a escalarlo con el negocio.";
+                return config.handoffMessage || "Dame un momento para confirmar esa información, por favor.";
             }
 
             // Fase 3.1: si detectamos conflicto de precios para un mismo item,
@@ -415,4 +439,3 @@ export function invalidateAiCachesForBusiness(businessId: string) {
     clearCacheByBusiness(responseCache, responseKeysByBusiness, businessId);
     businessCache.delete(businessId);
 }
-
