@@ -19,11 +19,21 @@ export default function BuilderPlayground() {
 
     const [showQrModal, setShowQrModal] = useState(false);
     const [qrState, setQrState] = useState<"generating" | "ready" | "connected">("generating");
-    const [realQrCode, setRealQrCode] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const isConnected = qrState === "connected";
 
     const handleDeploy = async () => {
         if (!activeAgent) return;
+        
+        if (isConnected) {
+            // Lógica de desconexión aquí si existiera en la API,
+            // por ahora solo actualizamos el estado para la UI.
+            setQrState("generating");
+            setRealQrCode(null);
+            toast.success("Desconectado de WhatsApp");
+            return;
+        }
+
         setShowQrModal(true);
         setQrState("generating");
         setRealQrCode(null);
@@ -258,9 +268,13 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     </button>
                     <button
                         onClick={handleDeploy}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-lg shadow-emerald-500/20 transition-all"
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium shadow-lg transition-all text-white ${
+                            isConnected 
+                            ? 'bg-red-600 hover:bg-red-500 shadow-red-500/20' 
+                            : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
+                        }`}
                     >
-                        <Play className="w-4 h-4" /> Conectar WhatsApp
+                        <Play className="w-4 h-4" /> {isConnected ? 'Desconectar WhatsApp' : 'Conectar WhatsApp'}
                     </button>
                 </div>
             </div>

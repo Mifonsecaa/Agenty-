@@ -179,7 +179,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
 
     const navItems = [
         { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-        { href: '/dashboard/builder', label: 'Playground', icon: Bot },
+        { href: '/dashboard/builder', label: 'Agente', icon: Bot },
         { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: Database },
         { href: '/dashboard/connections', label: 'Conexiones', icon: Share2 },
         { href: '/dashboard/tools', label: 'Tools Store', icon: Blocks },
