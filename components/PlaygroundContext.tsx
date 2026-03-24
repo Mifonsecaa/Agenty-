@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useBrainia } from '@/context/BrainiaContext';
+import { useSession } from 'next-auth/react';
 import i18n from './ui/i18n';
 
 type Message = { role: string; text: string };
@@ -24,6 +25,7 @@ const PlaygroundContext = createContext<PlaygroundContextType | null>(null);
 
 export function PlaygroundProvider({ children }: { children: React.ReactNode }) {
   const { activeAgent } = useBrainia();
+  const { data: session, status: sessionStatus } = useSession();
   const testAgentKey = 'playground_test_agent';
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', text: i18n.defaultAssistantGreeting }]);
@@ -112,16 +114,63 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       const apiMessages = current.map(m => ({ role: m.role, content: m.text }));
       const req = [{ role: 'system', content: activeAgent?.systemPrompt || 'Eres un asistente.' }, ...apiMessages];
 
-      const res = await fetch('/api/chat', {
+      const agentIdToUse = activeAgent?.id || testAgentId;
+      // If no agent and no authenticated session, use demo mode
+      const isDemo = !agentIdToUse || sessionStatus !== 'authenticated';
+
+      const payload: any = {
+        messages: req,
+        provider: activeAgent?.config?.aiProvider || 'openai',
+        stream: false,
+      };
+      if (isDemo) {
+        payload.isDemo = true;
+        payload.demoContext = activeAgent?.businessDescription || '';
+      } else {
+        payload.agentId = agentIdToUse;
+      }
+
+      let res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ messages: req, provider: activeAgent?.config?.aiProvider || 'openai', agentId: activeAgent?.id || testAgentId })
+        body: JSON.stringify(payload),
       });
 
+      // If missing agentId in private mode, retry automatically as demo once
       if (!res.ok) {
+        let body: any = null;
+        try { body = await res.json(); } catch {}
+        const errMsg = body?.error || `Error ${res.status}`;
+
+        if (res.status === 400 && /agentId/i.test(String(errMsg)) && !payload.isDemo) {
+          // retry as demo
+          const demoPayload = { ...payload, isDemo: true };
+          delete demoPayload.agentId;
+          const retryRes = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(demoPayload),
+          });
+
+          if (!retryRes.ok) {
+            let retryBody: any = null;
+            try { retryBody = await retryRes.json(); } catch {}
+            const retryErr = retryBody?.error || `Error ${retryRes.status}`;
+            setMessages(prev => [...prev, { role: 'assistant', text: i18n.errorContact }]);
+            toast.error(retryErr);
+            return;
+          }
+
+          const retryData = await retryRes.json().catch(() => ({}));
+          setMessages(prev => [...prev, { role: 'assistant', text: (retryData.content || retryData.message || i18n.emptyResponse) }]);
+          return;
+        }
+
+        // Other non-ok
         setMessages(prev => [...prev, { role: 'assistant', text: i18n.errorContact }]);
-        toast.error(i18n.errorContact);
+        toast.error(errMsg);
         return;
       }
 
