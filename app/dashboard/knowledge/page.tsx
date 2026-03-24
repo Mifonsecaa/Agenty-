@@ -716,7 +716,7 @@ export default function KnowledgeBase() {
                             <button
                                 onClick={handleSyncWebsite}
                                 disabled={isSyncingWebsite || !websiteUrl.trim()}
-                                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shrink-0"
                             >
                                 {isSyncingWebsite ? "Sincronizando..." : "Sincronizar"}
                             </button>

@@ -276,7 +276,7 @@ export default function LiveInbox() {
                                         <button
                                             onClick={handleTakeControl}
                                             disabled={isTakingControl}
-                                            className="text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors shadow-lg shadow-blue-500/20"
+                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                                         >
                                             {isTakingControl ? "Tomando control..." : "Tomar Control (Handoff)"}
                                         </button>

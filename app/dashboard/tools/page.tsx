@@ -953,9 +953,9 @@ export default function ToolsStore() {
                                 </div>
                             )}
 
-                            <button className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${tool.status === 'connected'
-                                ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
-                                : 'bg-white text-black hover:bg-white/90'
+                            <button className={`inline-flex items-center gap-2 px-6 py-2 rounded-full text-sm font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${tool.status === 'connected'
+                                ? 'bg-white/10 hover:bg-white/20 border border-white/10 text-white'
+                                : 'bg-white text-black hover:bg-white/90 border border-white/10'
                                 } ${savingToolId === tool.id ? 'opacity-70 cursor-wait' : ''}`}
                                 onClick={() => handlePrimaryAction(tool)}
                                 disabled={savingToolId !== null}

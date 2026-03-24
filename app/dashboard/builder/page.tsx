@@ -250,14 +250,14 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     <button
                         onClick={handleSave}
                         disabled={isSaving || !activeAgent}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all disabled:opacity-50"
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white font-medium transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                     >
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         {isSaving ? 'Guardando...' : 'Save Draft'}
                     </button>
                     <button
                         onClick={handleDeploy}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-lg shadow-emerald-500/20 transition-all"
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-emerald-600/80 hover:bg-emerald-500 border border-emerald-500/30 text-white font-medium transition-all hover:scale-105 shadow-lg shadow-emerald-500/20"
                     >
                         <Play className="w-4 h-4" /> Conectar WhatsApp
                     </button>
