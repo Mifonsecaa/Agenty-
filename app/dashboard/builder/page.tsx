@@ -373,7 +373,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
 
                         {/* Input Chat */}
                         <form onSubmit={handleSendMessage} className="p-3 bg-[#111111] border-t border-white/10">
-                            <div className="flex relative">
+                            <div className="flex relative items-center gap-2">
                                 <input
                                     type="text"
                                     value={input}
@@ -384,7 +384,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                                 <button
                                     type="submit"
                                     disabled={!input.trim()}
-                                    className="absolute right-1 top-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+                                    className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex-shrink-0"
                                 >
                                     <Send className="w-4 h-4 text-white -ml-0.5" />
                                 </button>

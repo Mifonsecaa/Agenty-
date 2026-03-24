@@ -272,9 +272,9 @@ export default function DashboardOverview() {
                 <div className="col-span-1 lg:col-span-2 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm flex flex-col">
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-lg font-bold">Token Usage</h2>
-                        <select className="bg-transparent border border-white/10 text-white/70 text-sm rounded-lg px-3 py-1 outline-none">
-                            <option>Last 7 days</option>
-                            <option>Last 30 days</option>
+                        <select className="bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-white/70 text-sm rounded-full px-4 py-1.5 outline-none cursor-pointer">
+                            <option className="bg-[#0a0a0a]">Last 7 days</option>
+                            <option className="bg-[#0a0a0a]">Last 30 days</option>
                         </select>
                     </div>
                     <div className="flex-1 min-h-[300px] mt-4 w-full relative">
@@ -351,24 +351,24 @@ export default function DashboardOverview() {
                                 <Link
                                     key={step.id}
                                     href={step.href}
-                                    className={`flex items-center justify-between p-3 rounded-xl border transition-all group ${
+                                    className={`flex items-center justify-between px-5 py-3.5 rounded-full border transition-all hover:scale-[1.02] group ${
                                         step.completed
                                             ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
-                                            : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                                            : 'bg-white/10 border-white/10 hover:bg-white/20 hover:border-white/20 shadow-sm'
                                     }`}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                            step.completed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'
+                                        <div className={`flex items-center justify-center transition-colors ${
+                                            step.completed ? 'text-emerald-400' : 'text-blue-400 group-hover:text-blue-300'
                                         }`}>
-                                            {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <step.icon className="w-4 h-4" />}
+                                            {step.completed ? <CheckCircle2 className="w-5 h-5" /> : <step.icon className="w-5 h-5" />}
                                         </div>
-                                        <span className={`text-sm font-medium ${step.completed ? 'text-white/60 line-through' : 'text-white/90'}`}>
+                                        <span className={`text-sm font-medium transition-colors ${step.completed ? 'text-white/40 line-through' : 'text-white/90 group-hover:text-white'}`}>
                                             {step.title}
                                         </span>
                                     </div>
                                     {!step.completed && (
-                                        <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 transition-colors" />
+                                        <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-white/70 transition-colors" />
                                     )}
                                 </Link>
                             ))}
@@ -407,19 +407,22 @@ export default function DashboardOverview() {
                             />
                             <label
                                 htmlFor="file-upload"
-                                className={`flex items-center justify-center w-full py-3 px-4 rounded-xl border border-dashed transition-all cursor-pointer
+                                className={`flex items-center justify-center gap-2 w-full py-3.5 px-6 rounded-full border transition-all hover:scale-[1.02] cursor-pointer group font-medium
                                     ${subiendo
                                     ? 'border-blue-500/50 bg-blue-500/10 text-blue-400 cursor-not-allowed'
-                                    : 'border-white/20 bg-white/5 hover:bg-white/10 hover:border-white/40 text-white/80'
+                                    : 'bg-white/10 border-white/10 hover:bg-white/20 hover:border-white/20 text-white shadow-sm'
                                 }`}
                             >
                                 {subiendo ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Subiendo a la nube...
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        <span>Subiendo a la nube...</span>
                                     </>
                                 ) : (
-                                    <span className="text-sm font-medium">Seleccionar archivo...</span>
+                                    <>
+                                        <UploadCloud className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                                        <span>Seleccionar archivo...</span>
+                                    </>
                                 )}
                             </label>
                         </div>
