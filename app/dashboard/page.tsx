@@ -165,7 +165,7 @@ export default function DashboardOverview() {
             title: 'Conectar WhatsApp',
             completed: false, // To implement real check later
             icon: Zap,
-            href: '/dashboard/builder'
+            href: '/dashboard/connections'
         }
     ];
 
