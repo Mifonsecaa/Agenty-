@@ -19,6 +19,7 @@ export default function BuilderPlayground() {
 
     const [showQrModal, setShowQrModal] = useState(false);
     const [qrState, setQrState] = useState<"generating" | "ready" | "connected">("generating");
+    const [realQrCode, setRealQrCode] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const isConnected = qrState === "connected";
 
