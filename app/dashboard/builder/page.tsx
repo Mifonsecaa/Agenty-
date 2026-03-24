@@ -206,13 +206,13 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                         <Play className="w-4 h-4" /> Conectar WhatsApp
                     </button>
 
-                    {/* Toggle persistent playground panel */}
+                    {/* Toggle global playground panel (dispatch custom event) */}
                     <button
-                        onClick={() => setIsPanelOpen(prev => !prev)}
+                        onClick={() => window.dispatchEvent(new CustomEvent('togglePlayground', { detail: { open: true } }))}
                         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all"
-                        title={isPanelOpen ? 'Ocultar panel de pruebas' : 'Abrir panel de pruebas'}
+                        title={'Abrir panel de pruebas'}
                     >
-                        <Play className="w-4 h-4" /> {isPanelOpen ? 'Ocultar Playground' : 'Abrir Playground'}
+                        <Play className="w-4 h-4" /> Abrir Playground
                     </button>
                 </div>
             </div>
@@ -251,7 +251,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                         </div>
 
                         <div className="flex-1 flex flex-col">
-                            <label className="block text-sm font-medium text-white/70 mb-2 flex justify-between items-center">
+                            <label className="text-sm font-medium text-white/70 mb-2 flex justify-between items-center">
                                 <span>System Prompt (Instructions)</span>
                                 <button
                                     onClick={handleAutoGeneratePrompt}
@@ -265,7 +265,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                             <textarea
                                 value={systemPrompt}
                                 onChange={(e) => setSystemPrompt(e.target.value)}
-                                className="w-full flex-1 min-h-[250px] bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500 transition-colors resize-none font-mono text-sm leading-relaxed"
+                                className="w-full flex-1 min-h-62.5 bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-500 transition-colors resize-none font-mono text-sm leading-relaxed"
                             ></textarea>
                         </div>
                     </div>
@@ -273,82 +273,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
 
             </div>
 
-            {/* Floating / Persistent Playground Panel - visible on all sizes when open */}
-            {isPanelOpen && (
-                <div className="fixed z-50 right-4 bottom-4 lg:top-20 lg:bottom-auto w-full sm:w-[520px] lg:w-[420px] h-[60vh] sm:h-[70vh] lg:h-[80vh] bg-transparent">
-                    <div className="h-full bg-black border border-white/10 rounded-2xl flex flex-col min-h-0 shadow-2xl overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-3 bg-[#111111] border-b border-white/10">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                                    <Bot className="w-4 h-4 text-white" />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold">{agentName}</p>
-                                    <p className="text-[10px] text-emerald-400">● Online (Test Mode)</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => setIsPanelOpen(false)} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">Cerrar</button>
-                            </div>
-                        </div>
-
-                        {/* Chat History */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                            {messages.map((m, i) => (
-                                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`flex items-end gap-2 max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${m.role === 'user' ? 'bg-blue-600' : 'bg-gradient-to-tr from-blue-500 to-purple-500'}`}>
-                                            {m.role === 'user' ? <User className="w-3 h-3 text-white" /> : <Bot className="w-3 h-3 text-white" />}
-                                        </div>
-                                        <div className={`rounded-2xl px-4 py-2 text-sm shadow-sm ${m.role === 'user'
-                                            ? 'bg-blue-600 text-white rounded-br-none'
-                                            : 'bg-[#1a1a1a] text-white/90 rounded-bl-none border border-white/5'
-                                            }`}>
-                                            {m.text}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-
-                            {isTyping && (
-                                <div className="flex justify-start">
-                                    <div className="flex items-end gap-2 max-w-[85%] flex-row">
-                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                                            <Bot className="w-3 h-3 text-white" />
-                                        </div>
-                                        <div className="bg-[#1a1a1a] border border-white/5 text-white/90 rounded-2xl rounded-bl-none px-4 py-3 flex gap-1">
-                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                            <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={messagesEndRef} />
-                        </div>
-
-                        {/* Input Chat */}
-                        <form onSubmit={handleSendMessage} className="p-3 bg-[#111111] border-t border-white/10">
-                            <div className="flex relative">
-                                <input
-                                    type="text"
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    placeholder="Escribe un mensaje de prueba..."
-                                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!input.trim()}
-                                    className="absolute right-1 top-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
-                                >
-                                    <Send className="w-4 h-4 text-white -ml-0.5" />
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {/* Playground ahora es un componente global montado en layout (PlaygroundPanel). */}
 
         </div>
     );

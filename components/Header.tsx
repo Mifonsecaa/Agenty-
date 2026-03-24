@@ -43,9 +43,9 @@ const Header = () => {
 				<nav className="relative w-full max-w-7xl mx-auto px-6 py-4">
 					<div className="flex items-center justify-between">
 						{/* Logo */}
-						<div className="flex-shrink-0 relative z-50">
+						<div className="shrink-0 relative z-50">
 							<Link href="/" className="flex items-center gap-2">
-								<div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
+								<div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
 									<Bot className="w-5 h-5 text-white" />
 								</div>
 											<span className="font-bold text-lg tracking-tight text-white">brainia<span className="text-white/50">.ai</span></span>
