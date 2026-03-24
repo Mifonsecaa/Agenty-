@@ -19,6 +19,7 @@ export default function BuilderPlayground() {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const [isSaving, setIsSaving] = useState(false);
+    const [isPanelOpen, setIsPanelOpen] = useState(true);
 
     const handleDeploy = () => {
         router.push('/dashboard/connections');
@@ -204,10 +205,18 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     >
                         <Play className="w-4 h-4" /> Conectar WhatsApp
                     </button>
+
+                    {/* Toggle persistent playground panel */}
+                    <button
+                        onClick={() => setIsPanelOpen(prev => !prev)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-medium transition-all"
+                        title={isPanelOpen ? 'Ocultar panel de pruebas' : 'Abrir panel de pruebas'}
+                    >
+                        <Play className="w-4 h-4" /> {isPanelOpen ? 'Ocultar Playground' : 'Abrir Playground'}
+                    </button>
                 </div>
             </div>
-
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-1 gap-6 min-h-0 overflow-hidden">
 
                 {/* Left Column: Configuration */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col overflow-y-auto">
@@ -262,19 +271,24 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     </div>
                 </div>
 
-                {/* Right Column: Simulator */}
-                <div className="flex flex-col gap-6 min-h-0 overflow-hidden">
+            </div>
 
-                    {/* Phone Mockup Window */}
-                    <div className="flex-1 bg-black border border-white/10 rounded-2xl flex flex-col min-h-0 relative shadow-2xl">
-                        {/* Header chat */}
-                        <div className="bg-[#111111] px-4 py-3 border-b border-white/10 flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                                <Bot className="w-4 h-4 text-white" />
+            {/* Floating / Persistent Playground Panel - visible on all sizes when open */}
+            {isPanelOpen && (
+                <div className="fixed z-50 right-4 bottom-4 lg:top-20 lg:bottom-auto w-full sm:w-[520px] lg:w-[420px] h-[60vh] sm:h-[70vh] lg:h-[80vh] bg-transparent">
+                    <div className="h-full bg-black border border-white/10 rounded-2xl flex flex-col min-h-0 shadow-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-3 bg-[#111111] border-b border-white/10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                                    <Bot className="w-4 h-4 text-white" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold">{agentName}</p>
+                                    <p className="text-[10px] text-emerald-400">● Online (Test Mode)</p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-sm font-semibold">{agentName}</p>
-                                <p className="text-[10px] text-emerald-400">● Online (Test Mode)</p>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setIsPanelOpen(false)} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">Cerrar</button>
                             </div>
                         </div>
 
@@ -296,7 +310,6 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                                 </div>
                             ))}
 
-                            {/* Typing Indicator */}
                             {isTyping && (
                                 <div className="flex justify-start">
                                     <div className="flex items-end gap-2 max-w-[85%] flex-row">
@@ -321,7 +334,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                                     type="text"
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
-                                    placeholder="Type a test message..."
+                                    placeholder="Escribe un mensaje de prueba..."
                                     className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
                                 />
                                 <button
@@ -335,8 +348,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                         </form>
                     </div>
                 </div>
-
-            </div>
+            )}
 
         </div>
     );
