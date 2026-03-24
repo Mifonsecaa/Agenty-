@@ -151,7 +151,7 @@ export default function DashboardOverview() {
             title: 'Personalizar Respuestas',
             completed: activeAgent?.config?.systemPrompt && activeAgent.config.systemPrompt.length > 50,
             icon: Settings,
-            href: '/dashboard/builder'
+            href: '/dashboard/responses'
         },
         {
             id: 'test',
