@@ -184,9 +184,13 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
             }
 
             const data = await res.json();
-            if (data.success && data.improved) {
-                setText(data.improved);
+            const improvedText = data.data?.improved || data.improved;
+            
+            if (data.success && improvedText) {
+                setText(improvedText);
                 toast.success("¡Descripción mejorada por la IA! ✨");
+            } else {
+                toast.error("No se pudo mejorar el texto en este momento.");
             }
         } catch (error) {
             console.error(error);
