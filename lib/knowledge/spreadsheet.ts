@@ -13,6 +13,11 @@ export type SpreadsheetCellUpdate = {
   value: string;
 };
 
+export type SpreadsheetAppendRowInput = {
+  sheet: string;
+  values: string[];
+};
+
 function loadXlsx() {
   // Keep dynamic require to avoid loading xlsx in routes that do not need it.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -67,6 +72,35 @@ export function mapSheetPreview(sheet: any, maxRows = 100): Omit<SpreadsheetPrev
     headers: header,
     rows: bodyRows,
   };
+}
+
+export function listWorkbookSheets(buffer: Buffer) {
+  const workbook = readWorkbookFromBuffer(buffer);
+  return workbook.SheetNames.map((name: string) => {
+    const sheet = workbook.Sheets[name];
+    const ref = sheet?.["!ref"] || "A1:A1";
+    const XLSX = loadXlsx();
+    const range = XLSX.utils.decode_range(ref);
+    const rowCount = Math.max(0, range.e.r - range.s.r + 1);
+    const colCount = Math.max(0, range.e.c - range.s.c + 1);
+    return { name, rowCount, colCount };
+  });
+}
+
+export function readWorkbookCellValue(buffer: Buffer, sheetName: string, cellAddress: string) {
+  const workbook = readWorkbookFromBuffer(buffer);
+  const normalizedSheet = String(sheetName || "").trim();
+  const normalizedCell = normalizeSpreadsheetCellAddress(cellAddress);
+  const sheet = workbook.Sheets[normalizedSheet];
+  if (!normalizedSheet || !sheet) {
+    throw new Error(`SHEET_NOT_FOUND:${normalizedSheet}`);
+  }
+
+  const cell = sheet[normalizedCell];
+  if (!cell) return "";
+  if (typeof cell.w === "string") return cell.w;
+  if (cell.v === null || cell.v === undefined) return "";
+  return String(cell.v);
 }
 
 export function workbookToPreview(buffer: Buffer, opts?: { maxSheets?: number; maxRows?: number }) {
@@ -134,6 +168,37 @@ export function applyCellUpdatesToWorkbookBuffer(buffer: Buffer, updates: Spread
     decoded.s.c = Math.min(decoded.s.c, point.c);
     decoded.e.r = Math.max(decoded.e.r, point.r);
     decoded.e.c = Math.max(decoded.e.c, point.c);
+    sheet["!ref"] = XLSX.utils.encode_range(decoded);
+  }
+
+  const outputType = fileTypeFromName(path.basename(fileName));
+  const out = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: outputType,
+    bookVBA: outputType === "xlsm",
+  });
+
+  return Buffer.from(out);
+}
+
+export function appendRowsToWorkbookBuffer(buffer: Buffer, rows: SpreadsheetAppendRowInput[], fileName: string) {
+  const XLSX = loadXlsx();
+  const workbook = readWorkbookFromBuffer(buffer, { keepVba: true });
+
+  for (const row of rows) {
+    const sheetName = String(row.sheet || "").trim();
+    if (!sheetName || !workbook.Sheets[sheetName]) {
+      throw new Error(`SHEET_NOT_FOUND:${sheetName}`);
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const values = Array.isArray(row.values) ? row.values.map((v) => String(v ?? "")) : [];
+    XLSX.utils.sheet_add_aoa(sheet, [values], { origin: -1 });
+
+    const currentRange = sheet["!ref"] || "A1:A1";
+    const decoded = XLSX.utils.decode_range(currentRange);
+    decoded.e.r = Math.max(decoded.e.r, 0);
+    decoded.e.c = Math.max(decoded.e.c, Math.max(0, values.length - 1));
     sheet["!ref"] = XLSX.utils.encode_range(decoded);
   }
 

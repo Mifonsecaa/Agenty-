@@ -2,10 +2,37 @@ import { StateGraph, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { BaseMessage } from "@langchain/core/messages";
 import { AgentState, AgentStateType } from "./state";
 import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
 import { createBookingTool } from "../tools/booking-tool";
 import { SystemMessage } from "@langchain/core/messages";
+import { retrieveRagContext } from "@/lib/rag/retriever";
+
+function normalizeMessageContent(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content
+            .map((part: any) => {
+                if (typeof part === "string") return part;
+                if (part && typeof part === "object" && typeof part.text === "string") return part.text;
+                return "";
+            })
+            .join(" ")
+            .trim();
+    }
+    return "";
+}
+
+function getLastUserMessage(messages: BaseMessage[]) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const msg: any = messages[i];
+        if (msg?.getType?.() === "human") {
+            return normalizeMessageContent(msg.content);
+        }
+    }
+    return "";
+}
 
 export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
     // 1. Definir herramientas habilitadas para este agente
@@ -49,6 +76,19 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     // 3. Nodo del Agente (El que piensa)
     const callModel = async (state: AgentStateType) => {
         const { messages, businessName, config } = state;
+        const lastUserMessage = getLastUserMessage(messages as BaseMessage[]);
+        let ragContext = "";
+        let availableFiles: Array<{ url: string; description: string }> = [];
+
+        if (lastUserMessage) {
+            try {
+                const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
+                ragContext = retrieval.ragContext;
+                availableFiles = retrieval.availableFiles;
+            } catch (error) {
+                console.error("[AgentGraph] RAG retrieval error:", error);
+            }
+        }
 
         // System Prompt dinámico
         let systemPrompt = config?.systemPrompt ||
@@ -68,7 +108,22 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             `5) No confirmes una cancelación sin pasar por booking_manager action="CANCEL".` +
             `\n\nTambien tienes una herramienta de edicion Excel llamada knowledge_spreadsheet_editor.` +
             `\n- Si el usuario pide actualizar catalogo, precios o celdas de un .xlsm/.xlsx, usa action="LIST" y luego action="UPDATE_CELL".` +
+            `\n- Si el usuario pide leer valores exactos o confirmar precios, usa action="READ_CELL".` +
+            `\n- Si el usuario pide agregar nuevos registros, usa action="APPEND_ROW".` +
             `\n- Pide confirmacion breve del archivo, hoja y celda antes de modificar si hay ambiguedad.`;
+
+        if (ragContext) {
+            systemPrompt += `\n\nINFORMACION RELEVANTE DE LA BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
+        }
+
+        if (availableFiles.length > 0) {
+            systemPrompt += `\n\nARCHIVOS DISPONIBLES PARA ENVIAR SI EL USUARIO LOS PIDE EXPLICITAMENTE:` +
+                `\n${availableFiles.map((f) => `- ${f.description} (URL: ${f.url})`).join("\n")}` +
+                `\nSi el usuario solicita ver un documento/imagen/menu, agrega [MEDIA_URL: <url>] al final de tu respuesta.`;
+        }
+
+        systemPrompt += "\n\nREGLA CRITICA: nunca inventes precios, horarios, stock o condiciones comerciales. " +
+            "Si no hay dato confirmado en la base de conocimiento, dilo explicitamente y ofrece verificarlo.";
 
         const response = await model.invoke([
             new SystemMessage(systemPrompt),
