@@ -3,7 +3,14 @@ import { NextResponse } from "next/server";
 export async function POST(req: Request) {
     try {
         // Aquí recibiremos el nombre del agente (ej. "kitsune_sushi") desde el frontend
-        const { instanceName } = await req.json();
+        // 1. Leemos todo el cuerpo de la petición
+        const body = await req.json();
+
+        // 2. Buscamos el agentId (que es lo que manda tu frontend). Si no viene, usamos un nombre por defecto.
+        const rawName = body.agentId || "kitsune_sushi_bar";
+
+        // 3. Evolution API odia los espacios y caracteres raros, así que limpiamos el nombre por seguridad:
+        const safeInstanceName = rawName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
 
         const API_URL = process.env.EVOLUTION_API_URL;
         const API_KEY = process.env.EVOLUTION_API_KEY;
@@ -16,9 +23,9 @@ export async function POST(req: Request) {
                 apikey: API_KEY as string,
             },
             body: JSON.stringify({
-                instanceName: instanceName,
-                token: instanceName, // Usamos el mismo nombre como token interno
-                qrcode: true, // ¡Clave! Le pedimos que nos genere el QR
+                instanceName: safeInstanceName, // Usamos el nombre limpio
+                token: safeInstanceName,
+                qrcode: true,
             }),
         });
 
