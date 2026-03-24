@@ -73,10 +73,10 @@ export default function PlaygroundUI() {
               placeholder={i18n.placeholder}
               className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-4 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
             />
-            <div className="absolute left-2 top-1/2 -translate-y-1/2 hidden lg:flex items-center gap-2">
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-2">
               <input
-                className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-36"
-                placeholder="Test agent id"
+                className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-28"
+                placeholder="Agent id"
                 value={testAgentId ?? ''}
                 onChange={(e) => setTestAgentId(e.target.value || null)}
               />
