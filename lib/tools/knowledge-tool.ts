@@ -5,9 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag/queue";
 import {
     applyCellUpdatesToWorkbookBuffer,
+    appendRowsToWorkbookBuffer,
     extractSpreadsheetText,
     isSpreadsheetFileName,
+    listWorkbookSheets,
     normalizeSpreadsheetCellAddress,
+    readWorkbookCellValue,
 } from "@/lib/knowledge/spreadsheet";
 import { replaceKnowledgeFileByPublicUrl } from "@/lib/storage/knowledge-files";
 import path from "path";
@@ -98,13 +101,14 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
         name: "knowledge_spreadsheet_editor",
         description: "Edita celdas en archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
         schema: z.object({
-            action: z.enum(["LIST", "UPDATE_CELL"]).describe("LIST para ver archivos Excel disponibles, UPDATE_CELL para modificar una celda."),
+            action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar y APPEND_ROW para agregar registros."),
             fileRef: z.string().optional().describe("Nombre parcial del archivo o fileUrl. Si se omite, usa el archivo mas reciente."),
             sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
             cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
             value: z.string().optional().describe("Nuevo valor textual de la celda."),
+            rowValues: z.array(z.string()).optional().describe("Valores de una nueva fila para APPEND_ROW."),
         }),
-        func: async ({ action, fileRef, sheet, cell, value }) => {
+        func: async ({ action, fileRef, sheet, cell, value, rowValues }) => {
             try {
                 const files = await listSpreadsheetFiles(businessId);
 
@@ -128,18 +132,68 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return `No se encontro archivo para '${fileRef}'. Usa action='LIST' para ver opciones.`;
                 }
 
+                const loaded = await loadSpreadsheetBuffer(target.fileUrl);
+
+                if (action === "LIST_SHEETS") {
+                    const sheets = listWorkbookSheets(loaded.buffer);
+                    if (!sheets.length) {
+                        return `El archivo ${target.fileName} no contiene hojas legibles.`;
+                    }
+
+                    return [
+                        `Hojas en ${target.fileName}:`,
+                        ...sheets.map((s: { name: string; rowCount: number; colCount: number }) => `- ${s.name} (filas aprox: ${s.rowCount}, columnas aprox: ${s.colCount})`),
+                    ].join("\n");
+                }
+
+                if (action === "READ_CELL") {
+                    const sheetName = String(sheet || "").trim();
+                    const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
+                    if (!sheetName) {
+                        return "Falta 'sheet'. Indica el nombre exacto de la hoja.";
+                    }
+
+                    const cellValue = readWorkbookCellValue(loaded.buffer, sheetName, cellAddress);
+                    return [
+                        `Archivo: ${target.fileName}`,
+                        `Hoja: ${sheetName}`,
+                        `Celda: ${cellAddress}`,
+                        `Valor: ${cellValue || "(vacio)"}`,
+                    ].join("\n");
+                }
+
                 const sheetName = String(sheet || "").trim();
-                const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
                 if (!sheetName) {
                     return "Falta 'sheet'. Indica el nombre exacto de la hoja.";
                 }
 
-                const loaded = await loadSpreadsheetBuffer(target.fileUrl);
-                const updatedBuffer = applyCellUpdatesToWorkbookBuffer(
-                    loaded.buffer,
-                    [{ sheet: sheetName, cell: cellAddress, value: String(value ?? "") }],
-                    target.fileName
-                );
+                let updatedBuffer: Buffer;
+                let updateSummary = "";
+                let updatedCellsMeta: Array<{ sheet: string; cell: string }> = [];
+
+                if (action === "UPDATE_CELL") {
+                    const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
+                    updatedBuffer = applyCellUpdatesToWorkbookBuffer(
+                        loaded.buffer,
+                        [{ sheet: sheetName, cell: cellAddress, value: String(value ?? "") }],
+                        target.fileName
+                    );
+                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${cellAddress}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetName, cell: cellAddress }];
+                } else {
+                    const safeRowValues = Array.isArray(rowValues) ? rowValues.slice(0, 80) : [];
+                    if (!safeRowValues.length) {
+                        return "Falta 'rowValues'. Envia una lista de columnas para la nueva fila.";
+                    }
+
+                    updatedBuffer = appendRowsToWorkbookBuffer(
+                        loaded.buffer,
+                        [{ sheet: sheetName, values: safeRowValues }],
+                        target.fileName
+                    );
+                    updateSummary = [`Hoja: ${sheetName}`, `Fila agregada: ${safeRowValues.join(" | ")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetName, cell: "APPEND_ROW" }];
+                }
 
                 if (loaded.source === "local" && loaded.localPath) {
                     await writeFile(loaded.localPath, updatedBuffer);
@@ -172,7 +226,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
                         fileUrl: target.fileUrl,
                         source: "spreadsheet_update_by_agent",
-                        updatedCells: [{ sheet: sheetName, cell: cellAddress }],
+                        updatedCells: updatedCellsMeta,
                     },
                 });
 
@@ -180,9 +234,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
 
                 return [
                     `Archivo actualizado: ${target.fileName}`,
-                    `Hoja: ${sheetName}`,
-                    `Celda: ${cellAddress}`,
-                    `Valor aplicado: ${String(value ?? "")}`,
+                    updateSummary,
                     `Job de reindexacion: ${enqueue.job.id}`,
                 ].join("\n");
             } catch (error) {
