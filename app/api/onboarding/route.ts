@@ -87,6 +87,67 @@ export async function POST(req: Request) {
 
         const contentType = req.headers.get("content-type") || "";
 
+        const processFileBuffer = async (buffer: Buffer, name: string, type: string, publicUrl: string | null) => {
+            let fileText = "";
+            if (type === "application/pdf" || name.endsWith(".pdf")) {
+                try {
+                    const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM
+                    const data = await pdf(buffer);
+                    fileText = data.text;
+                    console.log(`[Onboarding] PDF procesado: ${name} (${fileText.length} chars)`);
+                } catch (pdfErr) {
+                    console.error(`[Onboarding] Error parseando PDF ${name}:`, pdfErr);
+                }
+            } else if (type.startsWith("image/")) {
+                // Procesar imagen con Gemini Vision
+                console.log(`[Onboarding] Procesando imagen ${name} con IA...`);
+                const description = await describeImage(buffer, type);
+                if (description) {
+                    const menuEntriesPrimary = hasMenuLikeSignals(description) ? extractMenuEntries(description) : [];
+                    let menuEntriesFinal = menuEntriesPrimary;
+
+                    if (menuEntriesPrimary.length >= 3) {
+                        const verificationText = await verifyMenuImageTranscription(buffer, type);
+                        const menuEntriesSecondary = hasMenuLikeSignals(verificationText) ? extractMenuEntries(verificationText) : [];
+                        const intersection = intersectMenuEntries(menuEntriesPrimary, menuEntriesSecondary);
+                        if (intersection.length >= 3) {
+                            menuEntriesFinal = intersection;
+                        }
+                    }
+
+                    if (menuEntriesFinal.length >= 3) {
+                        const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
+                        fileText = `[IMAGEN_MENU: ${name}]\n${canonicalMenu}`;
+                    } else {
+                        fileText = `[IMAGEN: ${name}]\nDescripción visual: ${description}`;
+                    }
+                    console.log(`[Onboarding] Imagen descrita: ${description.substring(0, 50)}...`);
+                }
+            } else if (type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".json") || name.endsWith(".csv")) {
+                fileText = buffer.toString("utf-8");
+            }
+
+            if (fileText && fileText.trim().length > 0) {
+                // Sanitizamos el texto
+                fileText = fileText.replace(/\0/g, '');
+                
+                // Guardamos metadata extendida
+                filesContent.push({ 
+                    name: name, 
+                    content: fileText,
+                    metadata: {
+                        fileUrl: publicUrl,
+                        fileType: type,
+                        fileName: name
+                    }
+                });
+                
+                ownerDescription += `\n\n--- CONTENIDO DEL ARCHIVO ${name} (URL: ${publicUrl || 'N/A'}) ---\n${fileText}\n--- FIN ARCHIVO ---\n`;
+            } else {
+                console.warn(`[Onboarding] Archivo ${name} vacío o no procesado correctamente.`);
+            }
+        };
+
         if (contentType.includes("multipart/form-data")) {
             const formData = await req.formData();
             ownerDescription = formData.get("ownerDescription") as string || "";
@@ -131,77 +192,29 @@ export async function POST(req: Request) {
                            }
                        }
                        
-                       let fileText = "";
-
-                       // Detectar PDF por tipo o extensión
-                       if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-                           try {
-                               const pdf = require("pdf-parse"); // Usar require para evitar problemas de ESM
-                               const data = await pdf(buffer);
-                               fileText = data.text;
-                               console.log(`[Onboarding] PDF procesado: ${file.name} (${fileText.length} chars)`);
-                           } catch (pdfErr) {
-                               console.error(`[Onboarding] Error parseando PDF ${file.name}:`, pdfErr);
-                           }
-                       } else if (file.type.startsWith("image/")) {
-                           // Procesar imagen con Gemini Vision
-                           console.log(`[Onboarding] Procesando imagen ${file.name} con IA...`);
-                           const description = await describeImage(buffer, file.type);
-                           if (description) {
-                               const menuEntriesPrimary = hasMenuLikeSignals(description) ? extractMenuEntries(description) : [];
-                               let menuEntriesFinal = menuEntriesPrimary;
-
-                               if (menuEntriesPrimary.length >= 3) {
-                                   const verificationText = await verifyMenuImageTranscription(buffer, file.type);
-                                   const menuEntriesSecondary = hasMenuLikeSignals(verificationText) ? extractMenuEntries(verificationText) : [];
-                                   const intersection = intersectMenuEntries(menuEntriesPrimary, menuEntriesSecondary);
-                                   if (intersection.length >= 3) {
-                                       menuEntriesFinal = intersection;
-                                   }
-                               }
-
-                               if (menuEntriesFinal.length >= 3) {
-                                   const canonicalMenu = buildCanonicalMenuText(menuEntriesFinal);
-                                   fileText = `[IMAGEN_MENU: ${file.name}]\n${canonicalMenu}`;
-                               } else {
-                                   fileText = `[IMAGEN: ${file.name}]\nDescripción visual: ${description}`;
-                               }
-                               console.log(`[Onboarding] Imagen descrita: ${description.substring(0, 50)}...`);
-                           }
-                       } else if (file.type.startsWith("text/") || file.name.endsWith(".txt") || file.name.endsWith(".md") || file.name.endsWith(".json") || file.name.endsWith(".csv")) {
-                           fileText = buffer.toString("utf-8");
-                       }
-
-                       if (fileText && fileText.trim().length > 0) {
-                           // Sanitizamos el texto
-                           fileText = fileText.replace(/\0/g, '');
-                           
-                           // Guardamos metadata extendida
-                           filesContent.push({ 
-                               name: file.name, 
-                               content: fileText,
-                               // @ts-ignore
-                               metadata: {
-                                   fileUrl: publicUrl,
-                                   fileType: file.type,
-                                   fileName: file.name
-                               }
-                           });
-                           
-                           ownerDescription += `\n\n--- CONTENIDO DEL ARCHIVO ${file.name} (URL: ${publicUrl}) ---\n${fileText}\n--- FIN ARCHIVO ---\n`;
-                       } else {
-                           console.warn(`[Onboarding] Archivo ${file.name} vacío o no procesado correctamente.`);
-                       }
+                       await processFileBuffer(buffer, file.name, file.type, publicUrl);
                    } catch (err) {
                        console.error("Error reading file:", err);
                    }
                }
             }
         } else {
-            // 2. Recibimos y validamos texto (JSON legacy)
+            // 2. Recibimos y validamos texto (JSON legacy o con archivos pre-subidos)
             const body = await req.json();
             if (body.ownerDescription) {
                 ownerDescription = body.ownerDescription;
+            }
+            if (body.uploadedFiles && Array.isArray(body.uploadedFiles)) {
+                for (const file of body.uploadedFiles) {
+                    try {
+                        const res = await fetch(file.url);
+                        const arrayBuffer = await res.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        await processFileBuffer(buffer, file.name, file.type, file.url);
+                    } catch (err) {
+                        console.error(`Error downloading and processing pre-uploaded file ${file.name}:`, err);
+                    }
+                }
             }
         }
 

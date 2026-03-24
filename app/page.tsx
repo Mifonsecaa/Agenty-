@@ -8,6 +8,13 @@ import { SearchParamsHandler } from "@/components/SearchParamsHandler";
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle, PlayCircle, MessageSquare, Clock, Users } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+// Inicializamos Supabase cliente
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const ParticleBackground = dynamic(() => import("../components/ui/ParticleBackground"), {
     ssr: false,
@@ -72,34 +79,67 @@ export default function HomePage() {
         }, 1800);
 
         try {
-            // --- ¡CAMBIO AQUÍ! ---
             // Guardamos el contexto del negocio para que la demo lo pueda usar.
             localStorage.setItem("business_context", description);
 
-            let body: any;
-            const headers: any = {};
-
+            const uploadedFiles = [];
+            
+            // Subir archivos directamente a Supabase para evitar el límite de 4.5MB de Vercel
             if (files && files.length > 0) {
-                 const formData = new FormData();
-                 formData.append("ownerDescription", description);
-                 files.forEach(file => formData.append("files", file));
-                 
-                 body = formData;
-                 // Don't set Content-Type header when using FormData, let browser set boundary
-            } else {
-                 body = JSON.stringify({ ownerDescription: description });
-                 headers["Content-Type"] = "application/json";
+                for (const file of files) {
+                    try {
+                        const prefijo = 'business/onboarding';
+                        const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+                        const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
+                        
+                        const { data, error } = await supabase.storage
+                            .from('knowledge-files')
+                            .upload(rutaArchivo, file, { cacheControl: '3600', upsert: false });
+                            
+                        if (error) {
+                            console.error("Error subiendo archivo a Supabase:", error);
+                            throw new Error(`Error al subir ${file.name}`);
+                        }
+                        
+                        if (data) {
+                            const { data: urlData } = supabase.storage
+                                .from('knowledge-files')
+                                .getPublicUrl(data.path);
+                                
+                            uploadedFiles.push({ 
+                                name: file.name, 
+                                type: file.type, 
+                                url: urlData.publicUrl 
+                            });
+                        }
+                    } catch (fileErr) {
+                        console.error("Fallo al procesar archivo en frontend:", fileErr);
+                    }
+                }
             }
+
+            const body = JSON.stringify({ 
+                ownerDescription: description,
+                uploadedFiles: uploadedFiles.length > 0 ? uploadedFiles : undefined
+            });
 
             const response = await fetch("/api/onboarding", {
                 method: "POST",
-                headers: headers,
+                headers: { "Content-Type": "application/json" },
                 body: body,
             });
-            const data = await response.json();
+            
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                throw new Error("Error en la respuesta del servidor (puede que el archivo sea demasiado grande o la sesión expiró).");
+            }
+            
             if (!response.ok) {
                 throw new Error(data.error || "Error al procesar la descripción");
             }
+            
             // Check if business is in data.data or directly in data
             const newAgent = data.data?.business || data.business;
             
