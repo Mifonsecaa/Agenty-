@@ -7,8 +7,7 @@ import Providers from "@/components/Providers";
 import { Toaster } from "sonner";
 import dynamic from 'next/dynamic';
 
-const PlaygroundPanel = dynamic(() => import('@/components/PlaygroundPanel'), { ssr: false });
-const PlaygroundProvider = dynamic(() => import('@/components/PlaygroundContext').then(m => m.PlaygroundProvider), { ssr: false });
+const PlaygroundClient = dynamic(() => import('@/components/PlaygroundClient'));
 
 // 2. Configure font subset
 const inter = Inter({ subsets: ["latin"] });
@@ -28,15 +27,13 @@ export default function RootLayout({
       {/* 3. Combinamos la fuente con las clases para evitar el rebote */}
       <body className={`${inter.className} overscroll-none bg-black`}>
       <Providers>
-        <PlaygroundProvider>
-          <Header />
-          <main className="min-h-screen">
-              {children}
-          </main>
-          <Footer />
-          <PlaygroundPanel />
-          <Toaster theme="dark" position="top-center" richColors />
-        </PlaygroundProvider>
+        <Header />
+        <main className="min-h-screen">
+            {children}
+        </main>
+        <Footer />
+        <PlaygroundClient />
+        <Toaster theme="dark" position="top-center" richColors />
       </Providers>
       </body>
       </html>
