@@ -262,6 +262,15 @@ export const aiService = {
                 systemPrompt += `\n\nAl iniciar una conversación o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversación ya está en curso.`;
             }
 
+            if (config?.customResponses && Array.isArray(config.customResponses) && config.customResponses.length > 0) {
+                systemPrompt += `\n\nREGLAS ESTRICTAS DE CONVERSACIÓN (RESPUESTAS PREDEFINIDAS):\n`;
+                for (const custom of config.customResponses) {
+                    if (custom.trigger && custom.response) {
+                        systemPrompt += `- Si el usuario dice algo relacionado o semánticamente similar a "${custom.trigger}", tu respuesta debe ser exactamente o basarse fuertemente en: "${custom.response}".\n`;
+                    }
+                }
+            }
+
             // Inyectar contexto RAG al prompt
             if (ragContext) {
                 systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;

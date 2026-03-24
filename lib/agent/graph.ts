@@ -121,6 +121,15 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             systemPrompt += `\n\nAl iniciar una conversacion o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversacion ya esta en curso.`;
         }
 
+        if (config?.customResponses && Array.isArray(config.customResponses) && config.customResponses.length > 0) {
+            systemPrompt += `\n\nREGLAS ESTRICTAS DE CONVERSACION (RESPUESTAS PREDEFINIDAS):\n`;
+            for (const custom of config.customResponses) {
+                if (custom.trigger && custom.response) {
+                    systemPrompt += `- Si el usuario dice algo relacionado o semánticamente similar a "${custom.trigger}", tu respuesta debe ser exactamente o basarse fuertemente en: "${custom.response}".\n`;
+                }
+            }
+        }
+
         systemPrompt += `\n\nTienes acceso a una herramienta de reservas llamada booking_manager.\n` +
             `- Usa action="CHECK" para consultar disponibilidad en una fecha (YYYY-MM-DD).\n` +
             `- Usa action="CREATE" para crear una reserva cuando el cliente confirme fecha y hora.\n` +
