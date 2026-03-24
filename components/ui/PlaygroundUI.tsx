@@ -3,12 +3,17 @@ import React from 'react';
 import { Bot, Send, User } from 'lucide-react';
 import i18n from './i18n';
 import { usePlayground } from '@/components/PlaygroundContext';
+import { useBrainia } from '@/context/BrainiaContext';
 
 type Message = { role: string; text: string };
 
 export default function PlaygroundUI() {
   const { isOpen, messages, isTyping, input, setInput, clearHistory, close, testAgentId, setTestAgentId, sendMessage } = usePlayground();
-  const agentName = null; // actual name rendered in parent via context (layout) if needed
+  const { activeAgent } = useBrainia();
+  const agentName = activeAgent?.name || null;
+
+  // Show the test-agent input only if there's no activeAgent and no saved testAgentId
+  const showTestAgentInput = !activeAgent && !testAgentId;
 
   if (!isOpen) return null;
 
@@ -26,14 +31,20 @@ export default function PlaygroundUI() {
             </div>
           </div>
               <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2">
-                  <input
-                    className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-36"
-                    placeholder="Test agent id (opcional)"
-                    value={testAgentId ?? ''}
-                    onChange={(e) => setTestAgentId(e.target.value || null)}
-                  />
-                </div>
+                  {showTestAgentInput ? (
+                    <div className="hidden sm:flex items-center gap-2">
+                      <input
+                        className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-36"
+                        placeholder="Test agent id (opcional)"
+                        value={testAgentId ?? ''}
+                        onChange={(e) => setTestAgentId(e.target.value || null)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="hidden sm:flex items-center gap-2 text-xs text-white/60 px-2 py-1 rounded bg-white/5">
+                      {activeAgent ? <span>Conectado: {activeAgent.name}</span> : (testAgentId ? <span>ID: {String(testAgentId).slice(0, 12)}...</span> : null)}
+                    </div>
+                  )}
                 <button onClick={clearHistory} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">{i18n.clearHistory}</button>
                 <button onClick={close} className="text-white/60 hover:text-white text-sm px-3 py-1 rounded">{i18n.closeButton}</button>
               </div>
@@ -81,14 +92,7 @@ export default function PlaygroundUI() {
               placeholder={i18n.placeholder}
               className="w-full bg-[#0a0a0a] border border-white/10 rounded-full pl-12 pr-12 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500/50 transition-colors"
             />
-            <div className="absolute left-2 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-2">
-              <input
-                className="bg-transparent border border-white/10 px-2 py-1 rounded text-xs text-white/80 w-28"
-                placeholder="Agent id"
-                value={testAgentId ?? ''}
-                onChange={(e) => setTestAgentId(e.target.value || null)}
-              />
-            </div>
+            {/* Test agent input moved to header to avoid overlap; no absolute input here */}
             <button
               type="submit"
               disabled={!input.trim()}
