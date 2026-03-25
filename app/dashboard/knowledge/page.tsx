@@ -10,6 +10,7 @@ import type {
     KnowledgeItem,
     KnowledgeListResponse,
     KnowledgeJobResponse,
+    KnowledgeJobStatus,
     KnowledgeQueueHealthResponse,
     KnowledgeJobReplayResponse,
     KnowledgeJobCleanupResponse,
@@ -43,6 +44,8 @@ export default function KnowledgeBase() {
     const [progress, setProgress] = useState(0);
     const [activeFiles, setActiveFiles] = useState<KnowledgeItem[]>([]);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
+    const [jobStatus, setJobStatus] = useState<KnowledgeJobStatus | null>(null);
+    const [jobStatusDetails, setJobStatusDetails] = useState<string | null>(null);
     const [uploadingFileName, setUploadingFileName] = useState("");
     const [websiteUrl, setWebsiteUrl] = useState("");
     const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
@@ -161,8 +164,14 @@ export default function KnowledgeBase() {
         }
     };
 
-    const waitForJobCompletion = async (jobId: string) => {
+    // Poll a job and optionally provide intermediate status updates via onUpdate
+    const waitForJobCompletion = async (
+        jobId: string,
+        onUpdate?: (status: KnowledgeJobStatus, job?: { lastError?: string | null; attempts?: number }) => void
+    ) => {
         const startedAt = Date.now();
+        let previousStatus: KnowledgeJobStatus | null = null;
+
         while (Date.now() - startedAt < JOB_POLL_TIMEOUT_MS) {
             const res = await fetch(`/api/knowledge/jobs/${jobId}`);
             const data: KnowledgeJobResponse = await res.json().catch(() => ({ success: false, error: copy.knowledge.jobStatusReadError }));
@@ -171,12 +180,20 @@ export default function KnowledgeBase() {
                 throw new Error(data.error || copy.knowledge.jobStatusFetchError);
             }
 
-            if (data.data.status === "COMPLETED") {
+            const status = data.data.status;
+
+            // notify caller when status changes
+            if (status !== previousStatus) {
+                previousStatus = status;
+                if (onUpdate) onUpdate(status, { lastError: data.data.lastError || null, attempts: data.data.attempts });
+            }
+
+            if (status === "COMPLETED") {
                 void fetchQueueHealth({ silent: true });
                 return data.data;
             }
 
-            if (data.data.status === "DLQ" || data.data.status === "FAILED") {
+            if (status === "DLQ" || status === "FAILED") {
                 throw new Error(data.data.lastError || copy.knowledge.jobFailed);
             }
 
@@ -297,11 +314,19 @@ export default function KnowledgeBase() {
             if (data.queued && data.jobId) {
                 setProgress(95);
                 toast.info(data.message || copy.knowledge.uploadQueued);
+                setJobStatus("PENDING");
                 try {
-                    await waitForJobCompletion(data.jobId);
-                } catch (jobError) {
+                    await waitForJobCompletion(data.jobId, (status, info) => {
+                        setJobStatus(status);
+                        if (status === "PROCESSING") setJobStatusDetails("Extrayendo texto y fragmentando...");
+                        if (status === "RETRY") setJobStatusDetails(`Reintentando... (intentos: ${info?.attempts ?? "?"})`);
+                    });
+                } catch (jobError: any) {
                     console.warn("Knowledge job still processing:", jobError);
                     toast.info("El documento quedó en cola y seguirá procesándose en segundo plano.");
+                } finally {
+                    setJobStatus(null);
+                    setJobStatusDetails(null);
                 }
             }
 
@@ -498,7 +523,18 @@ export default function KnowledgeBase() {
 
             if (data.queued && data.jobId) {
                 setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteQueued });
-                await waitForJobCompletion(data.jobId);
+                setJobStatus("PENDING");
+                try {
+                    await waitForJobCompletion(data.jobId, (status, info) => {
+                        setJobStatus(status);
+                        if (status === "PROCESSING") setJobStatusDetails("Extrayendo texto del sitio...");
+                    });
+                } catch (jobError: any) {
+                    console.warn("Website sync job error:", jobError);
+                } finally {
+                    setJobStatus(null);
+                    setJobStatusDetails(null);
+                }
             }
 
             setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteSuccess });
@@ -669,6 +705,29 @@ export default function KnowledgeBase() {
                                     {uploadingFileName && (
                                         <p className="text-xs text-white/50 mt-2 max-w-55 truncate">
                                             {copy.knowledge.processingFilePrefix} {uploadingFileName}
+                                        </p>
+                                    )}
+                                    {/* Job status indicator */}
+                                    {jobStatus && (
+                                        <p className="text-[11px] text-white/60 mt-2">
+                                            {(() => {
+                                                switch (jobStatus) {
+                                                    case "PENDING":
+                                                        return "En cola: esperando procesamiento";
+                                                    case "PROCESSING":
+                                                        return jobStatusDetails || "Procesando y vectorizando";
+                                                    case "RETRY":
+                                                        return jobStatusDetails || "Reintentando procesamiento";
+                                                    case "COMPLETED":
+                                                        return "Listo";
+                                                    case "FAILED":
+                                                        return "Procesamiento falló";
+                                                    case "DLQ":
+                                                        return "Error persistente: revisa el log";
+                                                    default:
+                                                        return "Procesando...";
+                                                }
+                                            })()}
                                         </p>
                                     )}
                                     <div className="w-full max-w-37.5 h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
