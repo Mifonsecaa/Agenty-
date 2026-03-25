@@ -44,7 +44,8 @@ async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFile
         where: { businessId },
         orderBy: { createdAt: "desc" },
         select: { metadata: true },
-        take: 250,
+        // Aumentamos ventana para no perder archivos antiguos cuando hay muchos chunks recientes.
+        take: 2000,
     });
 
     const seen = new Set<string>();
@@ -149,6 +150,27 @@ function resolveSpreadsheetFile(files: SpreadsheetFileRef[], fileRef?: string): 
     return { status: "ambiguous", options: topMatches };
 }
 
+async function tryResolveBySheetName(files: SpreadsheetFileRef[], sheetName?: string) {
+    const targetSheet = String(sheetName || "").trim();
+    if (!targetSheet || files.length <= 1) return null;
+
+    const matches: SpreadsheetFileRef[] = [];
+    for (const file of files.slice(0, 12)) {
+        try {
+            const loaded = await loadSpreadsheetBuffer(file.fileUrl);
+            const sheets = listWorkbookSheets(loaded.buffer);
+            if (sheets.some((s: { name: string }) => s.name.trim().toLowerCase() === targetSheet.toLowerCase())) {
+                matches.push(file);
+            }
+        } catch {
+            // Ignoramos archivos no legibles para esta heuristica.
+        }
+    }
+
+    if (matches.length === 1) return matches[0];
+    return null;
+}
+
 async function loadSpreadsheetBuffer(fileUrl: string) {
     if (fileUrl.startsWith("/uploads/")) {
         const localPath = path.join(process.cwd(), "public", fileUrl.replace(/^\//, ""));
@@ -200,12 +222,14 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return "No hay archivos Excel para editar. Sube primero un .xlsm o .xlsx a Knowledge.";
                 }
 
-                const resolution = resolveSpreadsheetFile(files, fileRef);
+                const inferredBySheet = await tryResolveBySheetName(files, sheet);
+                const resolution = resolveSpreadsheetFile(files, inferredBySheet?.fileUrl || fileRef);
                 if (resolution.status === "missing_file_ref") {
                     return [
                         "Hay mas de un archivo Excel en la base de conocimiento. Necesito que indiques cual editar.",
+                        sheet ? `Nota: busque la hoja '${sheet}' en varios archivos y no fue suficiente para resolver uno unico.` : "",
                         buildFileOptionsMessage(resolution.options),
-                    ].join("\n\n");
+                    ].filter(Boolean).join("\n\n");
                 }
 
                 if (resolution.status === "ambiguous") {
@@ -264,14 +288,22 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 let updatedCellsMeta: Array<{ sheet: string; cell: string }> = [];
 
                 if (action === "UPDATE_CELL") {
-                    const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
+                    const cellAddress = String(cell || "").trim();
+                    if (!cellAddress) {
+                        return "Falta 'cell'. Indica una celda en formato A1 (ejemplo: B3).";
+                    }
+                    if (typeof value !== "string") {
+                        return "Falta 'value'. Indica el nuevo valor textual para la celda.";
+                    }
+
+                    const normalizedCell = normalizeSpreadsheetCellAddress(cellAddress);
                     updatedBuffer = applyCellUpdatesToWorkbookBuffer(
                         loaded.buffer,
-                        [{ sheet: sheetName, cell: cellAddress, value: String(value ?? "") }],
+                        [{ sheet: sheetName, cell: normalizedCell, value: String(value ?? "") }],
                         target.fileName
                     );
-                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${cellAddress}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
-                    updatedCellsMeta = [{ sheet: sheetName, cell: cellAddress }];
+                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${normalizedCell}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetName, cell: normalizedCell }];
                 } else {
                     const safeRowValues = Array.isArray(rowValues) ? rowValues.slice(0, 80) : [];
                     if (!safeRowValues.length) {
@@ -331,7 +363,18 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 ].join("\n");
             } catch (error) {
                 console.error("[SpreadsheetTool] Error:", error);
-                return "No se pudo editar el archivo Excel. Verifica nombre de hoja, celda y permisos.";
+                const message = error instanceof Error ? error.message : String(error);
+                if (message.startsWith("SHEET_NOT_FOUND:")) {
+                    const sheetName = message.split(":")[1] || "";
+                    return `No existe la hoja '${sheetName}'. Usa action='LIST_SHEETS' para ver nombres exactos.`;
+                }
+                if (message.includes("INVALID_CELL_ADDRESS")) {
+                    return "La celda no es valida. Usa formato A1, por ejemplo B3.";
+                }
+                if (message.startsWith("REMOTE_FILE_FETCH_FAILED:")) {
+                    return "No pude descargar el archivo Excel desde storage. Revisa que la URL sea publica y vigente.";
+                }
+                return `No se pudo editar el archivo Excel: ${message}`;
             }
         },
     });
