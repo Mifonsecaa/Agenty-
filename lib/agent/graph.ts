@@ -143,8 +143,10 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             `5) No confirmes una cancelación sin pasar por booking_manager action="CANCEL".` +
             `\n\nTambien tienes una herramienta de edicion Excel llamada knowledge_spreadsheet_editor.` +
             `\n- Si el usuario pide actualizar catalogo, precios o celdas de un .xlsm/.xlsx, usa action="LIST" y luego action="UPDATE_CELL".` +
+            `\n- Si el usuario pide actualizar catalogo, precios o celdas de un .xlsm/.xlsx, usa action="LIST" y luego action="UPDATE_CELL".` +
             `\n- Si el usuario pide leer valores exactos o confirmar precios, usa action="READ_CELL".` +
             `\n- Si el usuario pide agregar nuevos registros, usa action="APPEND_ROW".` +
+            `\n- Si hay varios archivos Excel y no hay fileRef claro, NO edites. Pide al usuario que elija archivo por numero, nombre o URL.` +
             `\n- Pide confirmacion breve del archivo, hoja y celda antes de modificar si hay ambiguedad.`;
 
         if (ragContext) {

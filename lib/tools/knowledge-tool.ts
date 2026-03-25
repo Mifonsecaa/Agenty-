@@ -24,6 +24,12 @@ type SpreadsheetFileRef = {
     fileType: string;
 };
 
+type FileResolution =
+    | { status: "resolved"; target: SpreadsheetFileRef }
+    | { status: "missing_file_ref"; options: SpreadsheetFileRef[] }
+    | { status: "ambiguous"; options: SpreadsheetFileRef[] }
+    | { status: "not_found"; options: SpreadsheetFileRef[] };
+
 function isSpreadsheetMeta(fileName?: string, fileType?: string) {
     if (isSpreadsheetFileName(fileName || "")) return true;
     return [
@@ -63,18 +69,84 @@ async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFile
     return files;
 }
 
-function resolveSpreadsheetFile(files: SpreadsheetFileRef[], fileRef?: string) {
-    if (!files.length) return null;
-    const ref = String(fileRef || "").trim().toLowerCase();
-    if (!ref) return files[0];
+function fileBaseName(fileNameOrUrl: string) {
+    return fileNameOrUrl.split("/").pop() || fileNameOrUrl;
+}
 
-    return (
-        files.find((f) => f.fileUrl.toLowerCase() === ref) ||
-        files.find((f) => f.fileName.toLowerCase() === ref) ||
-        files.find((f) => f.fileUrl.toLowerCase().includes(ref)) ||
-        files.find((f) => f.fileName.toLowerCase().includes(ref)) ||
-        null
+function normalizeRef(value: string) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function buildFileOptionsMessage(files: SpreadsheetFileRef[]) {
+    const options = files.slice(0, 12);
+    return [
+        "Opciones disponibles:",
+        ...options.map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})`),
+        "Responde con fileRef usando: numero, nombre exacto o URL.",
+    ].join("\n");
+}
+
+function resolveSpreadsheetFile(files: SpreadsheetFileRef[], fileRef?: string): FileResolution {
+    if (!files.length) {
+        return { status: "not_found", options: [] };
+    }
+
+    const ref = normalizeRef(fileRef || "");
+    if (!ref) {
+        if (files.length === 1) return { status: "resolved", target: files[0] };
+        return { status: "missing_file_ref", options: files };
+    }
+
+    if (/^\d+$/.test(ref)) {
+        const index = Number(ref) - 1;
+        if (index >= 0 && index < files.length) {
+            return { status: "resolved", target: files[index] };
+        }
+    }
+
+    const exactMatches = files.filter((f) =>
+        normalizeRef(f.fileUrl) === ref ||
+        normalizeRef(f.fileName) === ref ||
+        normalizeRef(fileBaseName(f.fileUrl)) === ref ||
+        normalizeRef(fileBaseName(f.fileName)) === ref
     );
+
+    if (exactMatches.length === 1) {
+        return { status: "resolved", target: exactMatches[0] };
+    }
+
+    if (exactMatches.length > 1) {
+        return { status: "ambiguous", options: exactMatches };
+    }
+
+    const scored = files
+        .map((f) => {
+            const fileName = normalizeRef(f.fileName);
+            const fileUrl = normalizeRef(f.fileUrl);
+            const baseName = normalizeRef(fileBaseName(f.fileName));
+
+            let score = 0;
+            if (fileName.startsWith(ref) || baseName.startsWith(ref)) score += 3;
+            if (fileName.includes(ref) || baseName.includes(ref)) score += 2;
+            if (fileUrl.includes(ref)) score += 1;
+
+            return { file: f, score };
+        })
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+    if (!scored.length) {
+        return { status: "not_found", options: files };
+    }
+
+    const bestScore = scored[0].score;
+    const topMatches = scored.filter((row) => row.score === bestScore).map((row) => row.file);
+
+    if (topMatches.length === 1) {
+        return { status: "resolved", target: topMatches[0] };
+    }
+
+    return { status: "ambiguous", options: topMatches };
 }
 
 async function loadSpreadsheetBuffer(fileUrl: string) {
@@ -102,7 +174,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
         description: "Edita celdas en archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
         schema: z.object({
             action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar y APPEND_ROW para agregar registros."),
-            fileRef: z.string().optional().describe("Nombre parcial del archivo o fileUrl. Si se omite, usa el archivo mas reciente."),
+            fileRef: z.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
             sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
             cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
             value: z.string().optional().describe("Nuevo valor textual de la celda."),
@@ -120,6 +192,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return [
                         "Archivos Excel disponibles:",
                         ...files.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})`),
+                        "Usa ese numero como fileRef para seleccionar el archivo correcto.",
                     ].join("\n");
                 }
 
@@ -127,10 +200,29 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return "No hay archivos Excel para editar. Sube primero un .xlsm o .xlsx a Knowledge.";
                 }
 
-                const target = resolveSpreadsheetFile(files, fileRef);
-                if (!target) {
-                    return `No se encontro archivo para '${fileRef}'. Usa action='LIST' para ver opciones.`;
+                const resolution = resolveSpreadsheetFile(files, fileRef);
+                if (resolution.status === "missing_file_ref") {
+                    return [
+                        "Hay mas de un archivo Excel en la base de conocimiento. Necesito que indiques cual editar.",
+                        buildFileOptionsMessage(resolution.options),
+                    ].join("\n\n");
                 }
+
+                if (resolution.status === "ambiguous") {
+                    return [
+                        `La referencia '${String(fileRef || "")}' es ambigua y coincide con varios archivos.`,
+                        buildFileOptionsMessage(resolution.options),
+                    ].join("\n\n");
+                }
+
+                if (resolution.status === "not_found") {
+                    return [
+                        `No se encontro archivo para '${String(fileRef || "")}'.`,
+                        buildFileOptionsMessage(resolution.options),
+                    ].join("\n\n");
+                }
+
+                const target = resolution.target;
 
                 const loaded = await loadSpreadsheetBuffer(target.fileUrl);
 
