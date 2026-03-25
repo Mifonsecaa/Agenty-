@@ -109,6 +109,23 @@ function shouldForceExitByLoop(messages: BaseMessage[]) {
     return repeated >= Math.max(2, MAX_REPEATED_TOOL_CALLS);
 }
 
+function hasToolCalls(message: any) {
+    return Boolean(message?.additional_kwargs?.tool_calls || message?.tool_calls?.length > 0);
+}
+
+function hasActionableToolIntent(input: string) {
+    const value = String(input || "");
+    const reservationIntent = /(reserv|reserva|agendar|agenda|cita|turno|cancelar|disponibil|horario|mesa\b|personas\b)/i.test(value);
+    const spreadsheetIntent = /(excel|xlsx|xlsm|hoja|celda|fila|columna|catalogo|cat[aá]logo|precio|precios|actualiza|actualizar|modifica|modificar|agrega|agregar|append_row|update_cell|read_cell|list_sheets)/i.test(value);
+    return reservationIntent || spreadsheetIntent;
+}
+
+function hasStallingPhrase(message: any) {
+    const text = normalizeMessageContent(message?.content || "");
+    if (!text) return false;
+    return /(espera\s+un\s+momento|dame\s+un\s+momento|voy\s+a\s+revisar|perm[ií]teme\s+revisar|te\s+confirmo\s+en\s+un\s+momento)/i.test(text);
+}
+
 function trimMessagesForModel(messages: BaseMessage[]) {
     const maxMessages = Math.max(4, Math.min(12, AGENT_MAX_HISTORY_MESSAGES));
     if (messages.length <= maxMessages) return messages;
@@ -134,7 +151,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             modelName: "gpt-4o-mini",
             temperature: 0.7,
             streaming: false,
-        }).bindTools(tools);
+        }).bindTools(tools, { tool_choice: "auto" });
     } else if (provider === "github" && process.env.GITHUB_TOKEN) {
         // GitHub Models (via Azure AI Inference)
         model = new ChatOpenAI({
@@ -144,7 +161,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
                 baseURL: "https://models.inference.ai.azure.com",
                 apiKey: process.env.GITHUB_TOKEN
             }
-        }).bindTools(tools);
+        }).bindTools(tools, { tool_choice: "auto" });
     } else {
         // Fallback a Gemini si es necesario
         model = new ChatGoogleGenerativeAI({
@@ -158,6 +175,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     const callModel = async (state: AgentStateType) => {
         const { messages, businessName, config } = state;
         const lastUserMessage = getLastUserMessage(messages as BaseMessage[]);
+        const actionableToolIntent = hasActionableToolIntent(lastUserMessage);
         
         // 1. Revisar respuestas personalizadas (Reglas estrictas)
         if (config?.customResponses && Array.isArray(config.customResponses)) {
@@ -188,7 +206,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
         // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
-        if (asksSensitiveData && (!ragContext || ragTopScore < RAG_STRICT_MIN_CONFIDENCE) && availableFiles.length === 0) {
+        if (asksSensitiveData && !actionableToolIntent && (!ragContext || ragTopScore < RAG_STRICT_MIN_CONFIDENCE) && availableFiles.length === 0) {
             console.log(`[AgentGraph] Guardrail triggered for sensitive data. Using handoffMessage.`);
             const { AIMessage } = await import("@langchain/core/messages");
             const handoffMsg = config?.handoffMessage || "Lo siento, no tengo esa información específica en mis registros. Dame un momento y lo verifico.";
@@ -233,6 +251,10 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             `\n- Antes de UPDATE_CELL o APPEND_ROW, asegurate de tener fileRef y sheet. Si falta alguno, pregunta primero.` +
             `\n- Pide confirmacion breve del archivo, hoja y celda antes de modificar si hay ambiguedad.`;
 
+        systemPrompt += "\n\nREGLA ESTRICTA DE HERRAMIENTAS: NUNCA digas 'voy a revisar', 'espera un momento' o frases similares. " +
+            "Si necesitas consultar disponibilidad, leer un dato o guardar una reserva, ejecuta la herramienta adecuada inmediatamente y en silencio " +
+            "(booking_manager o knowledge_spreadsheet_editor). Solo responde al usuario cuando la herramienta devuelva el resultado.";
+
         if (ragContext) {
             systemPrompt += `\n\nINFORMACION RELEVANTE DE LA BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
         }
@@ -252,10 +274,20 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             "Si no hay dato confirmado en la base de conocimiento, dilo explicitamente y ofrece verificarlo.";
 
         const recentConversation = trimMessagesForModel(messages as BaseMessage[]);
-        const response = await model.invoke([
+        let response = await model.invoke([
             new SystemMessage(systemPrompt),
             ...recentConversation
         ]);
+
+        if (actionableToolIntent && !hasToolCalls(response) && hasStallingPhrase(response)) {
+            const forcedToolPrompt =
+                "Debes llamar una herramienta AHORA en este turno. No respondas texto de espera. " +
+                "Si es reserva usa booking_manager; si es lectura/edicion de Excel usa knowledge_spreadsheet_editor.";
+            response = await model.invoke([
+                new SystemMessage(`${systemPrompt}\n\n${forcedToolPrompt}`),
+                ...recentConversation,
+            ]);
+        }
 
         return { messages: [response] };
     };
@@ -265,12 +297,12 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const { messages } = state;
         const lastMessage = messages[messages.length - 1];
 
-        const hasToolCalls = Boolean(lastMessage?.additional_kwargs?.tool_calls || (lastMessage as any)?.tool_calls?.length > 0);
-        if (hasToolCalls && shouldForceExitByLoop(messages as BaseMessage[])) {
+        const messageHasToolCalls = hasToolCalls(lastMessage as any);
+        if (messageHasToolCalls && shouldForceExitByLoop(messages as BaseMessage[])) {
             return "loop_guard";
         }
 
-        if (hasToolCalls) {
+        if (messageHasToolCalls) {
             return "tools";
         }
         return END;

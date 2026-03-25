@@ -299,12 +299,14 @@ export const aiService = {
             systemPrompt += "\nREGLA ADICIONAL PARA PRECIOS: no reasignes precios entre productos. Si detectas duda o inconsistencia, responde solo con los items confirmados y marca el resto como 'precio no confirmado'.";
             systemPrompt += "\nPOLITICA DE GROUNDING ESTRICTO (CERO TOLERANCIA): usa unicamente la informacion del bloque RAG y herramientas. " +
                 "Si no hay evidencia textual exacta, responde exactamente: 'Lo siento, no tengo esa información específica en mis registros'. No uses conocimiento externo.";
+            systemPrompt += "\nREGLA ESTRICTA DE HERRAMIENTAS: nunca respondas con frases de espera tipo 'voy a revisar' o 'espera un momento'. " +
+                "Cuando una accion dependa de herramientas, prioriza ejecutar la herramienta y luego responder con el resultado.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
             // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
             if (asksSensitiveData && (!ragContext || ragTopScore < RAG_STRICT_MIN_CONFIDENCE) && availableFiles.length === 0) {
-                return config.handoffMessage || "Lo siento, no tengo esa información específica en mis registros. Dame un momento y lo verifico.";
+                return config.handoffMessage || "Lo siento, no tengo esa información específica en mis registros. Te comparto solo datos confirmados.";
             }
 
             const recentMessages = trimChatMessages(messages);
