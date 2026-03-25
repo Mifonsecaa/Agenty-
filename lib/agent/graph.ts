@@ -6,8 +6,11 @@ import { BaseMessage } from "@langchain/core/messages";
 import { AgentState, AgentStateType } from "./state";
 import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
 import { createBookingTool } from "../tools/booking-tool";
-import { SystemMessage } from "@langchain/core/messages";
+import { AIMessage, SystemMessage } from "@langchain/core/messages";
 import { retrieveRagContext } from "@/lib/rag/retriever";
+
+const MAX_TOOL_CALLS_PER_TURN = Number(process.env.AGENT_MAX_TOOL_CALLS_PER_TURN || 4);
+const MAX_REPEATED_TOOL_CALLS = Number(process.env.AGENT_MAX_REPEATED_TOOL_CALLS || 2);
 
 function normalizeMessageContent(content: unknown): string {
     if (typeof content === "string") return content;
@@ -32,6 +35,76 @@ function getLastUserMessage(messages: BaseMessage[]) {
         }
     }
     return "";
+}
+
+function getToolCallsFromMessage(message: any): Array<{ name?: string; args?: unknown }> {
+    const rawCalls = message?.additional_kwargs?.tool_calls || message?.tool_calls || [];
+    if (!Array.isArray(rawCalls)) return [];
+    return rawCalls.map((call: any) => {
+        const fn = call?.function || {};
+        let args: unknown = fn.arguments ?? call?.args ?? {};
+        if (typeof args === "string") {
+            try {
+                args = JSON.parse(args);
+            } catch {
+                // Keep raw string if it is not valid JSON.
+            }
+        }
+        return {
+            name: fn.name || call?.name,
+            args,
+        };
+    });
+}
+
+function stableStringify(value: unknown): string {
+    if (value === null || value === undefined) return String(value);
+    if (typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v)).join(",")}]`;
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+function signatureOfToolCalls(message: any) {
+    const calls = getToolCallsFromMessage(message);
+    if (!calls.length) return "";
+    return calls
+        .map((call) => `${call.name || "unknown"}:${stableStringify(call.args)}`)
+        .join("|");
+}
+
+function getMessagesSinceLastHuman(messages: BaseMessage[]) {
+    const slice: BaseMessage[] = [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const msg: any = messages[i];
+        if (msg?.getType?.() === "human") break;
+        slice.push(messages[i]);
+    }
+    return slice.reverse();
+}
+
+function shouldForceExitByLoop(messages: BaseMessage[]) {
+    const tail = getMessagesSinceLastHuman(messages);
+    const aiToolMessages = tail.filter((msg: any) => getToolCallsFromMessage(msg).length > 0);
+
+    if (aiToolMessages.length >= Math.max(2, MAX_TOOL_CALLS_PER_TURN)) {
+        return true;
+    }
+
+    const signatures = aiToolMessages
+        .map((msg: any) => signatureOfToolCalls(msg))
+        .filter(Boolean);
+
+    if (!signatures.length) return false;
+
+    const lastSignature = signatures[signatures.length - 1];
+    let repeated = 1;
+    for (let i = signatures.length - 2; i >= 0; i -= 1) {
+        if (signatures[i] !== lastSignature) break;
+        repeated += 1;
+    }
+
+    return repeated >= Math.max(2, MAX_REPEATED_TOOL_CALLS);
 }
 
 export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
@@ -175,19 +248,36 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const { messages } = state;
         const lastMessage = messages[messages.length - 1];
 
-        if (lastMessage.additional_kwargs?.tool_calls || (lastMessage as any).tool_calls?.length > 0) {
+        const hasToolCalls = Boolean(lastMessage?.additional_kwargs?.tool_calls || (lastMessage as any)?.tool_calls?.length > 0);
+        if (hasToolCalls && shouldForceExitByLoop(messages as BaseMessage[])) {
+            return "loop_guard";
+        }
+
+        if (hasToolCalls) {
             return "tools";
         }
         return END;
+    };
+
+    const loopGuardNode = async () => {
+        return {
+            messages: [
+                new AIMessage(
+                    "Para no darte vueltas, necesito un dato puntual para cerrar tu reserva: fecha exacta (YYYY-MM-DD o 'mañana') y hora (ej. 17:00). Si quieres, te muestro horarios disponibles primero.",
+                ),
+            ],
+        };
     };
 
     // 5. Construir el Grafo
     const workflow = new StateGraph(AgentState)
         .addNode("agent", callModel)
         .addNode("tools", toolNode)
+        .addNode("loop_guard", loopGuardNode)
         .addEdge(START, "agent")
         .addConditionalEdges("agent", shouldContinue)
-        .addEdge("tools", "agent"); // Vuelve al agente después de usar la herramienta
+        .addEdge("tools", "agent")
+        .addEdge("loop_guard", END); // Cortamos bucle y devolvemos pregunta concreta
 
     return workflow.compile();
 };
