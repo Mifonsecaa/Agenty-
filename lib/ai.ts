@@ -34,6 +34,8 @@ type CacheEntry<T> = {
 
 const RESPONSE_CACHE_TTL_MS = Number(process.env.AI_RESPONSE_CACHE_TTL_MS || 45000);
 const RESPONSE_CACHE_MAX_ENTRIES = Number(process.env.AI_RESPONSE_CACHE_MAX_ENTRIES || 300);
+const AI_MAX_HISTORY_MESSAGES = Number(process.env.AI_MAX_HISTORY_MESSAGES || 5);
+const RAG_STRICT_MIN_CONFIDENCE = Number(process.env.RAG_STRICT_MIN_CONFIDENCE || 0.62);
 
 const responseCache = new Map<string, CacheEntry<string>>();
 const responseKeysByBusiness = new Map<string, Set<string>>();
@@ -126,10 +128,16 @@ function buildCacheKey(parts: unknown[]) {
 }
 
 function compactMessagesForKey(messages: ChatMessage[]) {
-    return messages.slice(-6).map((m) => ({
+    return messages.slice(-Math.max(4, Math.min(12, AI_MAX_HISTORY_MESSAGES))).map((m) => ({
         role: m.role,
         content: m.content.slice(0, 300),
     }));
+}
+
+function trimChatMessages(messages: ChatMessage[]) {
+    const maxMessages = Math.max(4, Math.min(12, AI_MAX_HISTORY_MESSAGES));
+    if (messages.length <= maxMessages) return messages;
+    return messages.slice(-maxMessages);
 }
 
 async function loadBusinessKnowledgeFiles(businessId: string) {
@@ -217,6 +225,7 @@ export const aiService = {
             // 2. Recuperar Contexto RAG (Base de Conocimiento)
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
+            let ragTopScore = 0;
             
             const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
             const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
@@ -227,6 +236,7 @@ export const aiService = {
                     const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
                     ragContext = retrieval.ragContext;
                     availableFiles = retrieval.availableFiles;
+                    ragTopScore = retrieval.selected?.[0]?.combinedScore || 0;
                     console.log(`[AIService] RAG retrieval selected ${retrieval.selected.length} chunks`);
                 }
 
@@ -287,13 +297,17 @@ export const aiService = {
             // Regla anti-alucinación para datos sensibles (precios, horarios, políticas).
             systemPrompt += "\n\nREGLA CRITICA: nunca inventes precios, horarios, stock o condiciones comerciales. Si no aparecen en la base de conocimiento/contexto, responde explícitamente que no tienes ese dato confirmado y ofrece escalar o pedir verificación.";
             systemPrompt += "\nREGLA ADICIONAL PARA PRECIOS: no reasignes precios entre productos. Si detectas duda o inconsistencia, responde solo con los items confirmados y marca el resto como 'precio no confirmado'.";
+            systemPrompt += "\nPOLITICA DE GROUNDING ESTRICTO (CERO TOLERANCIA): usa unicamente la informacion del bloque RAG y herramientas. " +
+                "Si no hay evidencia textual exacta, responde exactamente: 'Lo siento, no tengo esa información específica en mis registros'. No uses conocimiento externo.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
             // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
-            if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
-                return config.handoffMessage || "Dame un momento para confirmar esa información, por favor.";
+            if (asksSensitiveData && (!ragContext || ragTopScore < RAG_STRICT_MIN_CONFIDENCE) && availableFiles.length === 0) {
+                return config.handoffMessage || "Lo siento, no tengo esa información específica en mis registros. Dame un momento y lo verifico.";
             }
+
+            const recentMessages = trimChatMessages(messages);
 
             // Fase 3.1: si detectamos conflicto de precios para un mismo item,
             // respondemos de forma segura y transparente en vez de arriesgar una alucinación.
@@ -331,7 +345,7 @@ export const aiService = {
                 console.log("[AIService] Calling OpenAI (gpt-4o-mini)...");
                 const response = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
-                    messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                    messages: [{ role: 'system', content: systemPrompt }, ...recentMessages],
                     temperature: 0.7,
                     max_tokens: 300,
                 });
@@ -347,7 +361,7 @@ export const aiService = {
                 });
                 
                 const response = await client.chat.completions.create({
-                    messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                    messages: [{ role: 'system', content: systemPrompt }, ...recentMessages],
                     model: "gpt-4o",
                     temperature: 0.7,
                     max_tokens: 300,
@@ -359,11 +373,11 @@ export const aiService = {
                 if (!process.env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
                 console.log("[AIService] Calling Gemini (gemini-1.5-flash)...");
                 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-                const history = messages.slice(0, -1).map(msg => ({
+                const history = recentMessages.slice(0, -1).map(msg => ({
                     role: msg.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: msg.content }],
                 }));
-                const lastMessage = messages[messages.length - 1].content;
+                const lastMessage = recentMessages[recentMessages.length - 1].content;
                 const chat = model.startChat({
                     history,
                     systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },

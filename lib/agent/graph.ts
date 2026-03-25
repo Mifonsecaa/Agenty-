@@ -11,6 +11,8 @@ import { retrieveRagContext } from "@/lib/rag/retriever";
 
 const MAX_TOOL_CALLS_PER_TURN = Number(process.env.AGENT_MAX_TOOL_CALLS_PER_TURN || 4);
 const MAX_REPEATED_TOOL_CALLS = Number(process.env.AGENT_MAX_REPEATED_TOOL_CALLS || 2);
+const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 5);
+const RAG_STRICT_MIN_CONFIDENCE = Number(process.env.RAG_STRICT_MIN_CONFIDENCE || 0.62);
 
 function normalizeMessageContent(content: unknown): string {
     if (typeof content === "string") return content;
@@ -107,6 +109,12 @@ function shouldForceExitByLoop(messages: BaseMessage[]) {
     return repeated >= Math.max(2, MAX_REPEATED_TOOL_CALLS);
 }
 
+function trimMessagesForModel(messages: BaseMessage[]) {
+    const maxMessages = Math.max(4, Math.min(12, AGENT_MAX_HISTORY_MESSAGES));
+    if (messages.length <= maxMessages) return messages;
+    return messages.slice(-maxMessages);
+}
+
 export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
     // 1. Definir herramientas habilitadas para este agente
     const tools = [
@@ -164,12 +172,14 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
 
         let ragContext = "";
         let availableFiles: Array<{ url: string; description: string }> = [];
+        let ragTopScore = 0;
 
         if (lastUserMessage) {
             try {
                 const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
                 ragContext = retrieval.ragContext;
                 availableFiles = retrieval.availableFiles;
+                ragTopScore = retrieval.selected?.[0]?.combinedScore || 0;
             } catch (error) {
                 console.error("[AgentGraph] RAG retrieval error:", error);
             }
@@ -178,10 +188,10 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
         // Guardrail duro: si no hay evidencia de KB para preguntas sensibles, evitar respuesta inventada.
-        if (asksSensitiveData && !ragContext && availableFiles.length === 0) {
+        if (asksSensitiveData && (!ragContext || ragTopScore < RAG_STRICT_MIN_CONFIDENCE) && availableFiles.length === 0) {
             console.log(`[AgentGraph] Guardrail triggered for sensitive data. Using handoffMessage.`);
             const { AIMessage } = await import("@langchain/core/messages");
-            const handoffMsg = config?.handoffMessage || "Dame un momento para confirmar esa información, por favor.";
+            const handoffMsg = config?.handoffMessage || "Lo siento, no tengo esa información específica en mis registros. Dame un momento y lo verifico.";
             return { messages: [new AIMessage(handoffMsg)] };
         }
 
@@ -215,6 +225,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             `4) No confirmes una reserva sin pasar por booking_manager action="CREATE".\n` +
             `5) No confirmes una cancelación sin pasar por booking_manager action="CANCEL".` +
             `\n\nTambien tienes una herramienta de edicion Excel llamada knowledge_spreadsheet_editor.` +
+            `\n- Si el usuario pide actualizar, agregar o modificar un dato de una hoja de calculo, DEBES usar knowledge_spreadsheet_editor y confirmar al usuario cuando el cambio quede hecho.` +
             `\n- Si el usuario pide actualizar catalogo, precios o celdas de un .xlsm/.xlsx, usa action="LIST" y luego action="UPDATE_CELL".` +
             `\n- Si el usuario pide leer valores exactos o confirmar precios, usa action="READ_CELL".` +
             `\n- Si el usuario pide agregar nuevos registros, usa action="APPEND_ROW".` +
@@ -226,6 +237,11 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             systemPrompt += `\n\nINFORMACION RELEVANTE DE LA BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
         }
 
+        systemPrompt += "\n\nPOLITICA DE GROUNDING ESTRICTO (CERO TOLERANCIA): " +
+            "usa unicamente la informacion del bloque RAG y resultados de herramientas. " +
+            "Si falta dato exacto o hay ambiguedad en precios, fechas, horarios, nombres o stock, responde exactamente: " +
+            "'Lo siento, no tengo esa información específica en mis registros'. No uses conocimiento externo.";
+
         if (availableFiles.length > 0) {
             systemPrompt += `\n\nARCHIVOS DISPONIBLES PARA ENVIAR SI EL USUARIO LOS PIDE EXPLICITAMENTE:` +
                 `\n${availableFiles.map((f) => `- ${f.description} (URL: ${f.url})`).join("\n")}` +
@@ -235,9 +251,10 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         systemPrompt += "\n\nREGLA CRITICA: nunca inventes precios, horarios, stock o condiciones comerciales. " +
             "Si no hay dato confirmado en la base de conocimiento, dilo explicitamente y ofrece verificarlo.";
 
+        const recentConversation = trimMessagesForModel(messages as BaseMessage[]);
         const response = await model.invoke([
             new SystemMessage(systemPrompt),
-            ...messages
+            ...recentConversation
         ]);
 
         return { messages: [response] };

@@ -351,15 +351,20 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                         fileUrl: target.fileUrl,
                         source: "spreadsheet_update_by_agent",
                         updatedCells: updatedCellsMeta,
+                        updatedAt: new Date().toISOString(),
                     },
                 });
 
                 await processKnowledgeQueueBatch(1).catch(() => undefined);
 
+                const jobLine = enqueue?.job?.id
+                    ? `Job de reindexacion: ${enqueue.job.id}`
+                    : "Job de reindexacion: en cola (sin id disponible en esta instancia)";
+
                 return [
                     `Archivo actualizado: ${target.fileName}`,
                     updateSummary,
-                    `Job de reindexacion: ${enqueue.job.id}`,
+                    jobLine,
                 ].join("\n");
             } catch (error) {
                 console.error("[SpreadsheetTool] Error:", error);

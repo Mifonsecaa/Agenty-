@@ -34,7 +34,7 @@ const knowledgePresenceCache = new Map<string, CacheEntry<boolean>>();
 const RAG_RETRIEVAL_CACHE_TTL_MS = Number(process.env.RAG_RETRIEVAL_CACHE_TTL_MS || 90000);
 const RAG_RETRIEVAL_CACHE_MAX_ENTRIES = Number(process.env.RAG_RETRIEVAL_CACHE_MAX_ENTRIES || 600);
 const RAG_RETRIEVAL_CANDIDATES = Number(process.env.RAG_RETRIEVAL_CANDIDATES || 10);
-const RAG_RETRIEVAL_TOP_K = Number(process.env.RAG_RETRIEVAL_TOP_K || 4);
+const RAG_RETRIEVAL_TOP_K = Number(process.env.RAG_RETRIEVAL_TOP_K || 3);
 const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.8);
 const RAG_MIN_LEXICAL_OVERLAP = Number(process.env.RAG_MIN_LEXICAL_OVERLAP || 0.22);
 const RAG_DIVERSITY_SIMILARITY_THRESHOLD = Number(process.env.RAG_DIVERSITY_SIMILARITY_THRESHOLD || 0.9);
@@ -477,8 +477,9 @@ export async function retrieveRagContext(params: { businessId: string; query: st
     const title = typeof item.metadata.title === "string"
       ? item.metadata.title
       : (typeof item.metadata.fileName === "string" ? item.metadata.fileName : "Archivo adjunto");
+    const source = typeof item.metadata.source === "string" ? item.metadata.source : "knowledge_base";
 
-    let text = item.content;
+    let text = `[FUENTE: ${title} | ORIGEN: ${source}]\n${item.content}`;
     if (fileUrl) {
       availableFiles.push({ url: fileUrl, description: `Documento: ${title}` });
       text += `\n[ESTE FRAGMENTO CONTIENE UN ARCHIVO: ${fileUrl}]`;

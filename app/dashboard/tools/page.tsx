@@ -20,7 +20,10 @@ type ExcelKnowledgeFile = {
     fileUrl: string;
     fileName: string;
     fileType: string;
+    lastUpdatedAt?: string | null;
 };
+
+const EXCEL_REFRESH_POLL_MS = 6000;
 
 type SpreadsheetPreview = {
     success: boolean;
@@ -791,17 +794,12 @@ export default function ToolsStore() {
         handleToggleTool(tool.id);
     };
 
-    const openExcelViewer = async () => {
-        if (!activeAgent?.id) return;
-
-        setExcelViewerOpen(true);
-        setLoadingExcelFiles(true);
-        setExcelPreview(null);
-        setSelectedExcelFileUrl(null);
-        setExcelMissingFileUrlCount(0);
+    const fetchExcelFiles = async ({ silent = false }: { silent?: boolean } = {}) => {
+        if (!activeAgent?.id) return [] as ExcelKnowledgeFile[];
+        if (!silent) setLoadingExcelFiles(true);
 
         try {
-            const res = await fetch(`/api/knowledge/spreadsheet?businessId=${activeAgent.id}`);
+            const res = await fetch(`/api/knowledge/spreadsheet?businessId=${activeAgent.id}`, { cache: "no-store" });
             const data = await res.json().catch(() => ({}));
             const files: ExcelKnowledgeFile[] = (data?.data?.files || []).filter((f: any) =>
                 f?.fileUrl && isSpreadsheetFile(f?.fileName || "", f?.fileType || "")
@@ -811,26 +809,44 @@ export default function ToolsStore() {
             setExcelFiles(files);
             setExcelMissingFileUrlCount(missingFileUrlCount);
 
-            if (files.length === 0 && missingFileUrlCount > 0) {
-                setStatusMessage({
-                    type: "error",
-                    text: "Hay archivos Excel en la base de conocimiento sin URL de archivo persistente. Re-subelos para visualizarlos.",
-                });
-            } else if (files.length > 0 && missingFileUrlCount > 0) {
-                setStatusMessage({
-                    type: "success",
-                    text: "Se encontraron archivos Excel visualizables. Algunos registros antiguos sin URL persistente fueron omitidos.",
-                });
+            if (!silent) {
+                if (files.length === 0 && missingFileUrlCount > 0) {
+                    setStatusMessage({
+                        type: "error",
+                        text: "Hay archivos Excel en la base de conocimiento sin URL de archivo persistente. Re-subelos para visualizarlos.",
+                    });
+                } else if (files.length > 0 && missingFileUrlCount > 0) {
+                    setStatusMessage({
+                        type: "success",
+                        text: "Se encontraron archivos Excel visualizables. Algunos registros antiguos sin URL persistente fueron omitidos.",
+                    });
+                }
             }
 
-            if (files[0]) {
-                void loadExcelPreview(files[0]);
-            }
+            return files;
         } catch (error) {
-            console.error("[ToolsStore] Error loading excel files:", error);
-            setStatusMessage({ type: "error", text: "No se pudieron cargar archivos Excel de la base de conocimiento." });
+            if (!silent) {
+                console.error("[ToolsStore] Error loading excel files:", error);
+                setStatusMessage({ type: "error", text: "No se pudieron cargar archivos Excel de la base de conocimiento." });
+            }
+            return [] as ExcelKnowledgeFile[];
         } finally {
-            setLoadingExcelFiles(false);
+            if (!silent) setLoadingExcelFiles(false);
+        }
+    };
+
+    const openExcelViewer = async () => {
+        if (!activeAgent?.id) return;
+
+        setExcelViewerOpen(true);
+        setLoadingExcelFiles(true);
+        setExcelPreview(null);
+        setSelectedExcelFileUrl(null);
+        setExcelMissingFileUrlCount(0);
+
+        const files = await fetchExcelFiles({ silent: false });
+        if (files[0]) {
+            void loadExcelPreview(files[0]);
         }
     };
 
@@ -845,7 +861,8 @@ export default function ToolsStore() {
                 businessId: activeAgent.id,
                 fileUrl: file.fileUrl,
             });
-            const res = await fetch(`/api/knowledge/preview?${params.toString()}`);
+            params.set("_ts", Date.now().toString());
+            const res = await fetch(`/api/knowledge/preview?${params.toString()}`, { cache: "no-store" });
             const data: SpreadsheetPreview = await res.json();
             if (!res.ok || !data.success || !data.data) {
                 setStatusMessage({ type: "error", text: data.error || "No se pudo abrir el archivo Excel." });
@@ -889,8 +906,30 @@ export default function ToolsStore() {
         }
 
         setStatusMessage({ type: "success", text: "Archivo actualizado y reindexado correctamente." });
+        await fetchExcelFiles({ silent: true });
         await loadExcelPreview(file);
     };
+
+    useEffect(() => {
+        if (!excelViewerOpen || !activeAgent?.id || !selectedExcelFileUrl) return;
+
+        const interval = setInterval(() => {
+            void (async () => {
+                const latestFiles = await fetchExcelFiles({ silent: true });
+                const latest = latestFiles.find((f) => f.fileUrl === selectedExcelFileUrl);
+                const current = excelFiles.find((f) => f.fileUrl === selectedExcelFileUrl);
+                const latestTs = latest?.lastUpdatedAt || "";
+                const currentTs = current?.lastUpdatedAt || "";
+
+                if (latest && latestTs && latestTs !== currentTs) {
+                    setStatusMessage({ type: "success", text: "Se detectaron cambios recientes. Visor actualizado automáticamente." });
+                    await loadExcelPreview(latest);
+                }
+            })();
+        }, EXCEL_REFRESH_POLL_MS);
+
+        return () => clearInterval(interval);
+    }, [excelViewerOpen, activeAgent?.id, selectedExcelFileUrl, excelFiles]);
 
     const openDeactivateConfirm = (toolId: number) => {
         if (savingToolId !== null) return;

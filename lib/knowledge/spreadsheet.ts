@@ -134,9 +134,33 @@ export function extractSpreadsheetText(buffer: Buffer) {
     }) as unknown[][];
 
     const limitedRows = rows.slice(0, 220);
-    const lines = limitedRows
-      .map((row: unknown[]) => row.map((cell: unknown) => (cell ?? "").toString().trim()).join(" | ").trim())
-      .filter(Boolean);
+    if (!limitedRows.length) continue;
+
+    const headerRow = (limitedRows[0] || []).map((cell: unknown, idx: number) => {
+      const value = (cell ?? "").toString().trim();
+      return value || `Col ${idx + 1}`;
+    });
+
+    const bodyLines = limitedRows.slice(1).map((row: unknown[]) => {
+      const pairs = headerRow
+        .map((header: string, idx: number) => {
+          const value = (row[idx] ?? "").toString().trim();
+          if (!value) return "";
+          return `${header}: ${value}`;
+        })
+        .filter(Boolean);
+
+      if (!pairs.length) {
+        return row.map((cell: unknown) => (cell ?? "").toString().trim()).join(" | ").trim();
+      }
+
+      return pairs.join(" ; ");
+    }).filter(Boolean);
+
+    const lines = [
+      `ENCABEZADOS: ${headerRow.join(" | ")}`,
+      ...bodyLines,
+    ].filter(Boolean);
 
     if (lines.length > 0) {
       blocks.push(`[HOJA: ${sheetName}]\n${lines.join("\n")}`);
