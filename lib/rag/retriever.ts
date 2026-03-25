@@ -35,7 +35,10 @@ const RAG_RETRIEVAL_CACHE_TTL_MS = Number(process.env.RAG_RETRIEVAL_CACHE_TTL_MS
 const RAG_RETRIEVAL_CACHE_MAX_ENTRIES = Number(process.env.RAG_RETRIEVAL_CACHE_MAX_ENTRIES || 600);
 const RAG_RETRIEVAL_CANDIDATES = Number(process.env.RAG_RETRIEVAL_CANDIDATES || 10);
 const RAG_RETRIEVAL_TOP_K = Number(process.env.RAG_RETRIEVAL_TOP_K || 4);
-const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.5);
+const RAG_MIN_VECTOR_SIMILARITY = Number(process.env.RAG_MIN_VECTOR_SIMILARITY || 0.8);
+const RAG_MIN_LEXICAL_OVERLAP = Number(process.env.RAG_MIN_LEXICAL_OVERLAP || 0.22);
+const RAG_DIVERSITY_SIMILARITY_THRESHOLD = Number(process.env.RAG_DIVERSITY_SIMILARITY_THRESHOLD || 0.9);
+const RAG_DIVERSITY_MAX_POOL = Number(process.env.RAG_DIVERSITY_MAX_POOL || 24);
 const RAG_CONTEXT_MAX_CHARS = Number(process.env.RAG_CONTEXT_MAX_CHARS || 2600);
 const RAG_CONTEXT_MAX_TOKENS = Number(process.env.RAG_CONTEXT_MAX_TOKENS || 900);
 const RAG_MULTI_QUERY_ENABLED = (process.env.RAG_MULTI_QUERY_ENABLED || "true").toLowerCase() !== "false";
@@ -75,6 +78,62 @@ function extractTerms(value: string) {
     .split(" ")
     .filter((term) => term.length >= 3)
     .slice(0, 20);
+}
+
+function termSet(value: string) {
+  return new Set(extractTerms(value));
+}
+
+function tokenSetSimilarity(a: string, b: string) {
+  const aSet = termSet(a);
+  const bSet = termSet(b);
+  if (!aSet.size || !bSet.size) return 0;
+
+  let intersection = 0;
+  for (const term of aSet) {
+    if (bSet.has(term)) intersection += 1;
+  }
+
+  const union = aSet.size + bSet.size - intersection;
+  if (!union) return 0;
+  return intersection / union;
+}
+
+function applyDiversityRerank(candidates: RetrieverCandidate[]) {
+  const threshold = Math.max(0.75, Math.min(0.99, RAG_DIVERSITY_SIMILARITY_THRESHOLD));
+  const poolLimit = Math.max(6, Math.min(80, RAG_DIVERSITY_MAX_POOL));
+  const reranked = candidates.slice(0, poolLimit);
+
+  const selected: RetrieverCandidate[] = [];
+
+  for (const candidate of reranked) {
+    let duplicateIdx = -1;
+    for (let i = 0; i < selected.length; i++) {
+      const similarity = tokenSetSimilarity(candidate.content, selected[i].content);
+      if (similarity >= threshold) {
+        duplicateIdx = i;
+        break;
+      }
+    }
+
+    if (duplicateIdx === -1) {
+      selected.push(candidate);
+      continue;
+    }
+
+    const previous = selected[duplicateIdx];
+    const replaceByLength = candidate.content.length > previous.content.length;
+    const replaceByScoreTie =
+      candidate.content.length === previous.content.length &&
+      candidate.combinedScore > previous.combinedScore;
+
+    // Si son casi duplicados, conservar el chunk mas largo para evitar perdida de detalle.
+    if (replaceByLength || replaceByScoreTie) {
+      selected[duplicateIdx] = candidate;
+    }
+  }
+
+  return selected.sort((a, b) => b.combinedScore - a.combinedScore);
 }
 
 function lexicalOverlapScore(queryTerms: string[], content: string) {
@@ -391,14 +450,16 @@ export async function retrieveRagContext(params: { businessId: string; query: st
 
   const allRanked = Array.from(fusedByKey.values()).sort((a, b) => b.combinedScore - a.combinedScore);
 
-  let ranked = allRanked
-    .filter((item) => item.vectorScore >= RAG_MIN_VECTOR_SIMILARITY || item.lexicalScore >= 0.18)
+  const diversityRanked = applyDiversityRerank(allRanked);
+
+  let ranked = diversityRanked
+    .filter((item) => item.vectorScore >= RAG_MIN_VECTOR_SIMILARITY || item.lexicalScore >= RAG_MIN_LEXICAL_OVERLAP)
     .slice(0, topK);
 
   // Si los umbrales dejaron el set vacío, devolvemos los mejores candidatos
   // para evitar respuestas sin grounding cuando sí hay conocimiento.
-  if (!ranked.length && allRanked.length > 0) {
-    ranked = allRanked.slice(0, topK);
+  if (!ranked.length && diversityRanked.length > 0) {
+    ranked = diversityRanked.slice(0, topK);
   }
 
   const availableFiles: Array<{ url: string; description: string }> = [];
