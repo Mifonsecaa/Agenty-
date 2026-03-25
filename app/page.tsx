@@ -8,6 +8,13 @@ import { SearchParamsHandler } from "@/components/SearchParamsHandler";
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle, PlayCircle, MessageSquare, Clock, Users } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+// Inicializamos Supabase cliente
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const ParticleBackground = dynamic(() => import("../components/ui/ParticleBackground"), {
     ssr: false,
@@ -72,34 +79,67 @@ export default function HomePage() {
         }, 1800);
 
         try {
-            // --- ¡CAMBIO AQUÍ! ---
             // Guardamos el contexto del negocio para que la demo lo pueda usar.
             localStorage.setItem("business_context", description);
 
-            let body: any;
-            const headers: any = {};
-
+            const uploadedFiles = [];
+            
+            // Subir archivos directamente a Supabase para evitar el límite de 4.5MB de Vercel
             if (files && files.length > 0) {
-                 const formData = new FormData();
-                 formData.append("ownerDescription", description);
-                 files.forEach(file => formData.append("files", file));
-                 
-                 body = formData;
-                 // Don't set Content-Type header when using FormData, let browser set boundary
-            } else {
-                 body = JSON.stringify({ ownerDescription: description });
-                 headers["Content-Type"] = "application/json";
+                for (const file of files) {
+                    try {
+                        const prefijo = 'business/onboarding';
+                        const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+                        const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
+                        
+                        const { data, error } = await supabase.storage
+                            .from('knowledge-files')
+                            .upload(rutaArchivo, file, { cacheControl: '3600', upsert: false });
+                            
+                        if (error) {
+                            console.error("Error subiendo archivo a Supabase:", error);
+                            throw new Error(`Error al subir ${file.name}`);
+                        }
+                        
+                        if (data) {
+                            const { data: urlData } = supabase.storage
+                                .from('knowledge-files')
+                                .getPublicUrl(data.path);
+                                
+                            uploadedFiles.push({ 
+                                name: file.name, 
+                                type: file.type, 
+                                url: urlData.publicUrl 
+                            });
+                        }
+                    } catch (fileErr) {
+                        console.error("Fallo al procesar archivo en frontend:", fileErr);
+                    }
+                }
             }
+
+            const body = JSON.stringify({ 
+                ownerDescription: description,
+                uploadedFiles: uploadedFiles.length > 0 ? uploadedFiles : undefined
+            });
 
             const response = await fetch("/api/onboarding", {
                 method: "POST",
-                headers: headers,
+                headers: { "Content-Type": "application/json" },
                 body: body,
             });
-            const data = await response.json();
+            
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                throw new Error("Error en la respuesta del servidor (puede que el archivo sea demasiado grande o la sesión expiró).");
+            }
+            
             if (!response.ok) {
                 throw new Error(data.error || "Error al procesar la descripción");
             }
+            
             // Check if business is in data.data or directly in data
             const newAgent = data.data?.business || data.business;
             
@@ -145,7 +185,7 @@ export default function HomePage() {
             <Suspense fallback={null}>
                 <SearchParamsHandler onDemoOpen={handleSetIsDemoOpen} />
             </Suspense>
-            <main className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-12 overflow-hidden">
+            <main className="relative min-h-screen flex flex-col items-center justify-center px-6 pb-12 overflow-hidden">
 
                 <div className="aurora-bg" />
                 <ParticleBackground />
@@ -154,7 +194,7 @@ export default function HomePage() {
                     initial={reduceMotionSafe ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 0.8, ease: "easeOut" }}
-                    className="text-center mb-16 max-w-3xl relative z-10"
+                    className="text-center mb-16 max-w-3xl relative z-10 pt-16"
                 >
                     <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-8 leading-tight">
                         Tu fuerza laboral <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Autónoma</span>
@@ -296,7 +336,7 @@ export default function HomePage() {
                                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 8, repeat: Infinity, ease: "linear" }}
                                 />
                                 <motion.div
-                                    className="absolute w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
+                                    className="absolute w-8 h-8 rounded-full bg-linear-to-tr from-blue-500/50 to-purple-500/50 blur-sm"
                                     animate={reduceMotionSafe ? { scale: 1, opacity: 0.6 } : { scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                                     transition={reduceMotionSafe ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: "easeInOut" }}
                                 />

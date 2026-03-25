@@ -165,6 +165,20 @@ export function BrainiaProvider({
 export function useBrainia() {
     const context = useContext(BrainiaContext);
     if (context === undefined) {
+        // If we're on the server during prerender, return a safe fallback so pages can be
+        // prerendered without the provider. This avoids build-time errors. Client usage
+        // should always be wrapped by BrainiaProvider.
+        if (typeof window === 'undefined') {
+            return {
+                agents: [],
+                activeAgent: null,
+                isLoading: false,
+                refreshAgents: async () => {},
+                switchAgent: () => {},
+                updateActiveAgentConfig: () => {},
+                saveAgent: async () => false,
+            } as BrainiaContextType;
+        }
         throw new Error('useBrainia must be used within a BrainiaProvider');
     }
     return context;
