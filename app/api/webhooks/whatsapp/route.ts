@@ -6,6 +6,22 @@ import { prisma } from "@/lib/prisma";
 import { metricsService } from "@/lib/metrics";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
 
+async function buildConversationMessages(conversationId: string) {
+    const { HumanMessage, AIMessage, SystemMessage } = await import("@langchain/core/messages");
+
+    const rows = await prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: "asc" },
+        take: 24,
+    });
+
+    return rows.map((row) => {
+        if (row.role === "user") return new HumanMessage(row.content || "");
+        if (row.role === "system") return new SystemMessage(row.content || "");
+        return new AIMessage(row.content || "");
+    });
+}
+
 /**
  * GET - Verificar el webhook (Meta lo llama en Setup)
  * Meta envía: ?hub.mode=subscribe&hub.challenge=xxx&hub.verify_token=tu_token
@@ -225,7 +241,7 @@ async function handleIncomingMessage(
         try {
             console.log(`[WhatsApp Message] Invoking agent for: "${messageText}"`);
             const { createAgentGraph } = await import("@/lib/agent/graph");
-            const { HumanMessage } = await import("@langchain/core/messages");
+            const historyMessages = await buildConversationMessages(conversation.id);
 
             const agentExecutor = createAgentGraph(
                 business.id,
@@ -234,11 +250,19 @@ async function handleIncomingMessage(
                 from // customerJid
             );
 
+            const threadId = `whatsapp:${business.id}:${conversation.id}`;
+
             const result = await agentExecutor.invoke({
-                messages: [new HumanMessage(messageText)],
+                messages: historyMessages,
                 businessId: business.id,
                 businessName: business.name,
                 config: business.config || {},
+            }, {
+                configurable: {
+                    thread_id: threadId,
+                    sessionId: threadId,
+                    checkpoint_ns: `business:${business.id}`,
+                },
             });
 
             const lastMsg = result.messages[result.messages.length - 1];

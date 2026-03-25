@@ -371,15 +371,15 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 const message = error instanceof Error ? error.message : String(error);
                 if (message.startsWith("SHEET_NOT_FOUND:")) {
                     const sheetName = message.split(":")[1] || "";
-                    return `No existe la hoja '${sheetName}'. Usa action='LIST_SHEETS' para ver nombres exactos.`;
+                    return `Error al guardar en el Excel: no existe la hoja '${sheetName}'. Dile al usuario que hubo un problema tecnico y que confirme el nombre de la hoja (puedes usar LIST_SHEETS).`;
                 }
                 if (message.includes("INVALID_CELL_ADDRESS")) {
-                    return "La celda no es valida. Usa formato A1, por ejemplo B3.";
+                    return "Error al guardar en el Excel: la celda no es valida. Dile al usuario que hubo un problema tecnico y que indique formato A1 (ejemplo B3).";
                 }
                 if (message.startsWith("REMOTE_FILE_FETCH_FAILED:")) {
-                    return "No pude descargar el archivo Excel desde storage. Revisa que la URL sea publica y vigente.";
+                    return "Error al guardar en el Excel: no pude descargar el archivo desde storage. Dile al usuario que hubo un problema tecnico temporal.";
                 }
-                return `No se pudo editar el archivo Excel: ${message}`;
+                return `Error al guardar en el Excel: ${message}. Dile al usuario que hubo un problema tecnico.`;
             }
         },
     });

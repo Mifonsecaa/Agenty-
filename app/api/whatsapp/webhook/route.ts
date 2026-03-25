@@ -5,6 +5,22 @@ import { prisma } from "@/lib/prisma";
 import { metricsService } from "@/lib/metrics";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
 
+async function buildConversationMessages(conversationId: string) {
+    const { HumanMessage, AIMessage, SystemMessage } = await import("@langchain/core/messages");
+
+    const rows = await prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: "asc" },
+        take: 24,
+    });
+
+    return rows.map((row) => {
+        if (row.role === "user") return new HumanMessage(row.content || "");
+        if (row.role === "system") return new SystemMessage(row.content || "");
+        return new AIMessage(row.content || "");
+    });
+}
+
 function detectWhatsAppMediaType(mediaUrl: string): "image" | "video" | "document" {
     const normalized = mediaUrl.toLowerCase();
     if (/\.(jpg|jpeg|png|webp|gif)$/i.test(normalized)) return "image";
@@ -165,15 +181,22 @@ export async function POST(req: Request) {
         try {
             console.log(`[WhatsApp Webhook] Ejecutando agente para: "${messageText}"`);
             const { createAgentGraph } = await import("@/lib/agent/graph");
-            const { HumanMessage } = await import("@langchain/core/messages");
+            const historyMessages = await buildConversationMessages(conversation.id);
 
             const agentExecutor = createAgentGraph(agent.id, agent.name, agent.config, targetJid);
+            const threadId = `whatsapp:${agent.id}:${conversation.id}`;
 
             const result = await agentExecutor.invoke({
-                messages: [new HumanMessage(messageText)],
+                messages: historyMessages,
                 businessId: agent.id,
                 businessName: agent.name,
                 config: agent.config
+            }, {
+                configurable: {
+                    thread_id: threadId,
+                    sessionId: threadId,
+                    checkpoint_ns: `business:${agent.id}`,
+                },
             });
 
             console.log(`[WhatsApp Webhook] Resultado del agente obtenido.`);

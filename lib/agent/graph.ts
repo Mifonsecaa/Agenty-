@@ -13,6 +13,7 @@ const MAX_TOOL_CALLS_PER_TURN = Number(process.env.AGENT_MAX_TOOL_CALLS_PER_TURN
 const MAX_REPEATED_TOOL_CALLS = Number(process.env.AGENT_MAX_REPEATED_TOOL_CALLS || 2);
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 5);
 const RAG_STRICT_MIN_CONFIDENCE = Number(process.env.RAG_STRICT_MIN_CONFIDENCE || 0.62);
+let cachedGraphCheckpointer: any | undefined;
 
 function normalizeMessageContent(content: unknown): string {
     if (typeof content === "string") return content;
@@ -130,6 +131,22 @@ function trimMessagesForModel(messages: BaseMessage[]) {
     const maxMessages = Math.max(4, Math.min(12, AGENT_MAX_HISTORY_MESSAGES));
     if (messages.length <= maxMessages) return messages;
     return messages.slice(-maxMessages);
+}
+
+function getOptionalGraphCheckpointer() {
+    if (cachedGraphCheckpointer !== undefined) return cachedGraphCheckpointer;
+
+    try {
+        // Lazy-load para mantener compatibilidad con diferentes versiones de LangGraph.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const langgraphPkg = require("@langchain/langgraph");
+        const SaverCtor = langgraphPkg?.MemorySaver || langgraphPkg?.InMemorySaver;
+        cachedGraphCheckpointer = typeof SaverCtor === "function" ? new SaverCtor() : null;
+    } catch {
+        cachedGraphCheckpointer = null;
+    }
+
+    return cachedGraphCheckpointer;
 }
 
 export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
@@ -254,6 +271,8 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         systemPrompt += "\n\nREGLA ESTRICTA DE HERRAMIENTAS: NUNCA digas 'voy a revisar', 'espera un momento' o frases similares. " +
             "Si necesitas consultar disponibilidad, leer un dato o guardar una reserva, ejecuta la herramienta adecuada inmediatamente y en silencio " +
             "(booking_manager o knowledge_spreadsheet_editor). Solo responde al usuario cuando la herramienta devuelva el resultado.";
+        systemPrompt += "\nREGLA DE CONFIRMACION CORTA: si el usuario responde con 'si', 'sí', 'ok', 'dale', 'listo', 'confirmo' o similar, " +
+            "asume la confirmacion del contexto inmediatamente anterior y ejecuta la herramienta pendiente para finalizar la accion.";
 
         if (ragContext) {
             systemPrompt += `\n\nINFORMACION RELEVANTE DE LA BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
@@ -327,6 +346,11 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         .addConditionalEdges("agent", shouldContinue)
         .addEdge("tools", "agent")
         .addEdge("loop_guard", END); // Cortamos bucle y devolvemos pregunta concreta
+
+    const checkpointer = getOptionalGraphCheckpointer();
+    if (checkpointer) {
+        return (workflow as any).compile({ checkpointer });
+    }
 
     return workflow.compile();
 };
