@@ -15,7 +15,7 @@ async function loadSpreadsheetBufferFromUrl(fileUrl: string) {
   }
 
   if (/^https?:\/\//i.test(normalizedFileUrl)) {
-    const response = await fetch(normalizedFileUrl);
+    const response = await fetch(normalizedFileUrl, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`REMOTE_FILE_FETCH_FAILED:${response.status}`);
     }
@@ -68,6 +68,10 @@ export async function GET(req: Request) {
         fileName,
         fileUrl: normalizedFileUrl,
         sheets,
+      },
+    }, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   } catch (error) {

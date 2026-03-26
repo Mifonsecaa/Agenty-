@@ -28,7 +28,7 @@ async function loadFileBuffer(fileUrl: string) {
   }
 
   if (/^https?:\/\//i.test(fileUrl)) {
-    const res = await fetch(fileUrl);
+    const res = await fetch(fileUrl, { cache: "no-store" });
     if (!res.ok) {
       throw new Error(`REMOTE_FILE_FETCH_FAILED:${res.status}`);
     }
@@ -122,6 +122,7 @@ export async function PATCH(req: Request) {
         fileUrl,
         source: "spreadsheet_update",
         updatedCells: updates.map((u) => ({ sheet: u.sheet, cell: u.cell })),
+        updatedAt: new Date().toISOString(),
       },
     });
 
@@ -129,13 +130,21 @@ export async function PATCH(req: Request) {
       console.error("[Knowledge Spreadsheet PATCH] Queue kickoff error:", queueError);
     });
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       queued: true,
       deduplicated: enqueue.deduplicated,
-      jobId: enqueue.job.id,
-      status: enqueue.job.status,
+      jobId: enqueue.job?.id || null,
+      status: enqueue.job?.status || "PENDING",
+      updatedAt: new Date().toISOString(),
+      updatedCells: updates.map((u) => ({ sheet: u.sheet, cell: u.cell })),
       message: "Archivo Excel actualizado y reindexado en la base de conocimiento.",
+    };
+
+    return NextResponse.json(responseBody, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
     });
   } catch (error) {
     console.error("[Knowledge Spreadsheet PATCH] Error:", error);
@@ -180,12 +189,13 @@ export async function GET(req: Request) {
     const rows = await prisma.knowledgeItem.findMany({
       where: { businessId },
       orderBy: { createdAt: "desc" },
-      select: { metadata: true },
+      select: { metadata: true, createdAt: true },
       take: 2000,
     });
 
     const seen = new Set<string>();
-    const files: Array<{ fileUrl: string; fileName: string; fileType: string }> = [];
+    const files: Array<{ fileUrl: string; fileName: string; fileType: string; lastUpdatedAt: string | null }> = [];
+    const lastUpdatedByUrl = new Map<string, string>();
     let missingFileUrlCount = 0;
 
     for (const row of rows) {
@@ -196,6 +206,13 @@ export async function GET(req: Request) {
       const fileName = typeof meta.fileName === "string" ? meta.fileName : "archivo.xlsx";
       const fileType = typeof meta.fileType === "string" ? meta.fileType : "";
       const fileUrl = typeof meta.fileUrl === "string" ? meta.fileUrl : "";
+      const metadataUpdatedAt = typeof meta.updatedAt === "string" ? meta.updatedAt : null;
+      const createdAtIso = row.createdAt?.toISOString?.() || null;
+      const effectiveUpdatedAt = metadataUpdatedAt || createdAtIso;
+
+      if (fileUrl && effectiveUpdatedAt && !lastUpdatedByUrl.has(fileUrl)) {
+        lastUpdatedByUrl.set(fileUrl, effectiveUpdatedAt);
+      }
 
       if (!isSpreadsheetByMeta(fileName, fileType)) continue;
       if (!fileUrl) {
@@ -205,7 +222,12 @@ export async function GET(req: Request) {
       if (seen.has(fileUrl)) continue;
 
       seen.add(fileUrl);
-      files.push({ fileUrl, fileName, fileType });
+      files.push({
+        fileUrl,
+        fileName,
+        fileType,
+        lastUpdatedAt: lastUpdatedByUrl.get(fileUrl) || null,
+      });
     }
 
     return NextResponse.json({
@@ -213,6 +235,10 @@ export async function GET(req: Request) {
       data: {
         files,
         missingFileUrlCount,
+      },
+    }, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   } catch (error) {

@@ -24,6 +24,12 @@ type SpreadsheetFileRef = {
     fileType: string;
 };
 
+type FileResolution =
+    | { status: "resolved"; target: SpreadsheetFileRef }
+    | { status: "missing_file_ref"; options: SpreadsheetFileRef[] }
+    | { status: "ambiguous"; options: SpreadsheetFileRef[] }
+    | { status: "not_found"; options: SpreadsheetFileRef[] };
+
 function isSpreadsheetMeta(fileName?: string, fileType?: string) {
     if (isSpreadsheetFileName(fileName || "")) return true;
     return [
@@ -38,7 +44,8 @@ async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFile
         where: { businessId },
         orderBy: { createdAt: "desc" },
         select: { metadata: true },
-        take: 250,
+        // Aumentamos ventana para no perder archivos antiguos cuando hay muchos chunks recientes.
+        take: 2000,
     });
 
     const seen = new Set<string>();
@@ -63,18 +70,105 @@ async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFile
     return files;
 }
 
-function resolveSpreadsheetFile(files: SpreadsheetFileRef[], fileRef?: string) {
-    if (!files.length) return null;
-    const ref = String(fileRef || "").trim().toLowerCase();
-    if (!ref) return files[0];
+function fileBaseName(fileNameOrUrl: string) {
+    return fileNameOrUrl.split("/").pop() || fileNameOrUrl;
+}
 
-    return (
-        files.find((f) => f.fileUrl.toLowerCase() === ref) ||
-        files.find((f) => f.fileName.toLowerCase() === ref) ||
-        files.find((f) => f.fileUrl.toLowerCase().includes(ref)) ||
-        files.find((f) => f.fileName.toLowerCase().includes(ref)) ||
-        null
+function normalizeRef(value: string) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function buildFileOptionsMessage(files: SpreadsheetFileRef[]) {
+    const options = files.slice(0, 12);
+    return [
+        "Opciones disponibles:",
+        ...options.map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})`),
+        "Responde con fileRef usando: numero, nombre exacto o URL.",
+    ].join("\n");
+}
+
+function resolveSpreadsheetFile(files: SpreadsheetFileRef[], fileRef?: string): FileResolution {
+    if (!files.length) {
+        return { status: "not_found", options: [] };
+    }
+
+    const ref = normalizeRef(fileRef || "");
+    if (!ref) {
+        if (files.length === 1) return { status: "resolved", target: files[0] };
+        return { status: "missing_file_ref", options: files };
+    }
+
+    if (/^\d+$/.test(ref)) {
+        const index = Number(ref) - 1;
+        if (index >= 0 && index < files.length) {
+            return { status: "resolved", target: files[index] };
+        }
+    }
+
+    const exactMatches = files.filter((f) =>
+        normalizeRef(f.fileUrl) === ref ||
+        normalizeRef(f.fileName) === ref ||
+        normalizeRef(fileBaseName(f.fileUrl)) === ref ||
+        normalizeRef(fileBaseName(f.fileName)) === ref
     );
+
+    if (exactMatches.length === 1) {
+        return { status: "resolved", target: exactMatches[0] };
+    }
+
+    if (exactMatches.length > 1) {
+        return { status: "ambiguous", options: exactMatches };
+    }
+
+    const scored = files
+        .map((f) => {
+            const fileName = normalizeRef(f.fileName);
+            const fileUrl = normalizeRef(f.fileUrl);
+            const baseName = normalizeRef(fileBaseName(f.fileName));
+
+            let score = 0;
+            if (fileName.startsWith(ref) || baseName.startsWith(ref)) score += 3;
+            if (fileName.includes(ref) || baseName.includes(ref)) score += 2;
+            if (fileUrl.includes(ref)) score += 1;
+
+            return { file: f, score };
+        })
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+    if (!scored.length) {
+        return { status: "not_found", options: files };
+    }
+
+    const bestScore = scored[0].score;
+    const topMatches = scored.filter((row) => row.score === bestScore).map((row) => row.file);
+
+    if (topMatches.length === 1) {
+        return { status: "resolved", target: topMatches[0] };
+    }
+
+    return { status: "ambiguous", options: topMatches };
+}
+
+async function tryResolveBySheetName(files: SpreadsheetFileRef[], sheetName?: string) {
+    const targetSheet = String(sheetName || "").trim();
+    if (!targetSheet || files.length <= 1) return null;
+
+    const matches: SpreadsheetFileRef[] = [];
+    for (const file of files.slice(0, 12)) {
+        try {
+            const loaded = await loadSpreadsheetBuffer(file.fileUrl);
+            const sheets = listWorkbookSheets(loaded.buffer);
+            if (sheets.some((s: { name: string }) => s.name.trim().toLowerCase() === targetSheet.toLowerCase())) {
+                matches.push(file);
+            }
+        } catch {
+            // Ignoramos archivos no legibles para esta heuristica.
+        }
+    }
+
+    if (matches.length === 1) return matches[0];
+    return null;
 }
 
 async function loadSpreadsheetBuffer(fileUrl: string) {
@@ -102,7 +196,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
         description: "Edita celdas en archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
         schema: z.object({
             action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar y APPEND_ROW para agregar registros."),
-            fileRef: z.string().optional().describe("Nombre parcial del archivo o fileUrl. Si se omite, usa el archivo mas reciente."),
+            fileRef: z.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
             sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
             cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
             value: z.string().optional().describe("Nuevo valor textual de la celda."),
@@ -120,6 +214,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return [
                         "Archivos Excel disponibles:",
                         ...files.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})`),
+                        "Usa ese numero como fileRef para seleccionar el archivo correcto.",
                     ].join("\n");
                 }
 
@@ -127,10 +222,31 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return "No hay archivos Excel para editar. Sube primero un .xlsm o .xlsx a Knowledge.";
                 }
 
-                const target = resolveSpreadsheetFile(files, fileRef);
-                if (!target) {
-                    return `No se encontro archivo para '${fileRef}'. Usa action='LIST' para ver opciones.`;
+                const inferredBySheet = await tryResolveBySheetName(files, sheet);
+                const resolution = resolveSpreadsheetFile(files, inferredBySheet?.fileUrl || fileRef);
+                if (resolution.status === "missing_file_ref") {
+                    return [
+                        "Hay mas de un archivo Excel en la base de conocimiento. Necesito que indiques cual editar.",
+                        sheet ? `Nota: busque la hoja '${sheet}' en varios archivos y no fue suficiente para resolver uno unico.` : "",
+                        buildFileOptionsMessage(resolution.options),
+                    ].filter(Boolean).join("\n\n");
                 }
+
+                if (resolution.status === "ambiguous") {
+                    return [
+                        `La referencia '${String(fileRef || "")}' es ambigua y coincide con varios archivos.`,
+                        buildFileOptionsMessage(resolution.options),
+                    ].join("\n\n");
+                }
+
+                if (resolution.status === "not_found") {
+                    return [
+                        `No se encontro archivo para '${String(fileRef || "")}'.`,
+                        buildFileOptionsMessage(resolution.options),
+                    ].join("\n\n");
+                }
+
+                const target = resolution.target;
 
                 const loaded = await loadSpreadsheetBuffer(target.fileUrl);
 
@@ -172,14 +288,22 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 let updatedCellsMeta: Array<{ sheet: string; cell: string }> = [];
 
                 if (action === "UPDATE_CELL") {
-                    const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
+                    const cellAddress = String(cell || "").trim();
+                    if (!cellAddress) {
+                        return "Falta 'cell'. Indica una celda en formato A1 (ejemplo: B3).";
+                    }
+                    if (typeof value !== "string") {
+                        return "Falta 'value'. Indica el nuevo valor textual para la celda.";
+                    }
+
+                    const normalizedCell = normalizeSpreadsheetCellAddress(cellAddress);
                     updatedBuffer = applyCellUpdatesToWorkbookBuffer(
                         loaded.buffer,
-                        [{ sheet: sheetName, cell: cellAddress, value: String(value ?? "") }],
+                        [{ sheet: sheetName, cell: normalizedCell, value: String(value ?? "") }],
                         target.fileName
                     );
-                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${cellAddress}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
-                    updatedCellsMeta = [{ sheet: sheetName, cell: cellAddress }];
+                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${normalizedCell}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetName, cell: normalizedCell }];
                 } else {
                     const safeRowValues = Array.isArray(rowValues) ? rowValues.slice(0, 80) : [];
                     if (!safeRowValues.length) {
@@ -227,19 +351,35 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                         fileUrl: target.fileUrl,
                         source: "spreadsheet_update_by_agent",
                         updatedCells: updatedCellsMeta,
+                        updatedAt: new Date().toISOString(),
                     },
                 });
 
                 await processKnowledgeQueueBatch(1).catch(() => undefined);
 
+                const jobLine = enqueue?.job?.id
+                    ? `Job de reindexacion: ${enqueue.job.id}`
+                    : "Job de reindexacion: en cola (sin id disponible en esta instancia)";
+
                 return [
                     `Archivo actualizado: ${target.fileName}`,
                     updateSummary,
-                    `Job de reindexacion: ${enqueue.job.id}`,
+                    jobLine,
                 ].join("\n");
             } catch (error) {
                 console.error("[SpreadsheetTool] Error:", error);
-                return "No se pudo editar el archivo Excel. Verifica nombre de hoja, celda y permisos.";
+                const message = error instanceof Error ? error.message : String(error);
+                if (message.startsWith("SHEET_NOT_FOUND:")) {
+                    const sheetName = message.split(":")[1] || "";
+                    return `Error al guardar en el Excel: no existe la hoja '${sheetName}'. Dile al usuario que hubo un problema tecnico y que confirme el nombre de la hoja (puedes usar LIST_SHEETS).`;
+                }
+                if (message.includes("INVALID_CELL_ADDRESS")) {
+                    return "Error al guardar en el Excel: la celda no es valida. Dile al usuario que hubo un problema tecnico y que indique formato A1 (ejemplo B3).";
+                }
+                if (message.startsWith("REMOTE_FILE_FETCH_FAILED:")) {
+                    return "Error al guardar en el Excel: no pude descargar el archivo desde storage. Dile al usuario que hubo un problema tecnico temporal.";
+                }
+                return `Error al guardar en el Excel: ${message}. Dile al usuario que hubo un problema tecnico.`;
             }
         },
     });
