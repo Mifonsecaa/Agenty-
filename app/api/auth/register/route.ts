@@ -23,30 +23,17 @@ export async function POST(request: Request) {
         const hashedPassword = await bcrypt.hash(password, 10);
         const role = await resolveRoleForNewUser(normalizedEmail);
         const trial = role === "USER" ? createTrialWindow() : null;
-        const prismaAny = prisma as any;
 
-        let newUser: any;
-        try {
-            newUser = await prismaAny.user.create({
-                data: {
-                    email: normalizedEmail,
-                    name: normalizedName || normalizedEmail.split("@")[0],
-                    password: hashedPassword,
-                    role,
-                    trialStartedAt: trial?.startedAt,
-                    trialEndsAt: trial?.endsAt,
-                },
-            });
-        } catch {
-            // Fallback for preview DB/client still lacking role/trial columns.
-            newUser = await prismaAny.user.create({
-                data: {
-                    email: normalizedEmail,
-                    name: normalizedName || normalizedEmail.split("@")[0],
-                    password: hashedPassword,
-                },
-            });
-        }
+        const newUser = await prisma.user.create({
+            data: {
+                email: normalizedEmail,
+                name: normalizedName || normalizedEmail.split("@")[0],
+                password: hashedPassword,
+                role,
+                trialStartedAt: trial?.startedAt,
+                trialEndsAt: trial?.endsAt,
+            },
+        });
 
         try {
             const { verifyUrl } = await createEmailVerificationToken(normalizedEmail);

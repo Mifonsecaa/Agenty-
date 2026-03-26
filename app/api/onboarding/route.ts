@@ -247,31 +247,16 @@ export async function POST(req: Request) {
         if (!user) {
             const role = await resolveRoleForNewUser(session.user.email);
             const trial = role === "USER" ? createTrialWindow() : null;
-            const prismaAny = prisma as any;
 
-            try {
-                user = await prismaAny.user.create({
-                    data: {
-                        email: session.user.email,
-                        name: session.user.name || "Dueño del Negocio",
-                        role,
-                        trialStartedAt: trial?.startedAt,
-                        trialEndsAt: trial?.endsAt,
-                    }
-                });
-            } catch {
-                // Fallback for preview DB/client still lacking role/trial columns.
-                user = await prismaAny.user.create({
-                    data: {
-                        email: session.user.email,
-                        name: session.user.name || "Dueño del Negocio",
-                    }
-                });
-            }
-        }
-
-        if (!user) {
-            return NextResponse.json({ error: "No se pudo inicializar el usuario." }, { status: 500 });
+            user = await prisma.user.create({
+                data: {
+                    email: session.user.email,
+                    name: session.user.name || "Dueño del Negocio",
+                    role,
+                    trialStartedAt: trial?.startedAt,
+                    trialEndsAt: trial?.endsAt,
+                }
+            });
         }
 
         const access = await enforceAgentCreationPolicy(user.id, session.user.email);
