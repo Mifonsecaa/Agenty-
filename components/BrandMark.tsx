@@ -14,14 +14,25 @@ export default function BrandMark({ className = 'w-5 h-5' }: BrandMarkProps) {
       aria-hidden="true"
     >
       <g stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M32 6L56 20V44L32 58L8 44V20L32 6Z" />
-        <path d="M32 6V58" />
-        <path d="M8 20L32 34L56 20" />
-        <path d="M8 44L32 30L56 44" />
-        <path d="M23 24C23 20.7 25.7 18 29 18H35C38.3 18 41 20.7 41 24" />
-        <path d="M21 34C21 31.2 23.2 29 26 29H38C40.8 29 43 31.2 43 34" />
-        <path d="M24 41L20.5 45" />
-        <path d="M40 41L43.5 45" />
+        <path d="M32 7L56 20.5L32 34L8 20.5L32 7Z" />
+        <path d="M32 34L56 47.5L32 61L8 47.5L32 34Z" />
+        <path d="M8 20.5V47.5" />
+        <path d="M56 20.5V47.5" />
+        <path d="M32 34C32 28 27.3 23 21.5 23" />
+        <path d="M32 34C32 28 36.7 23 42.5 23" />
+        <path d="M32 34C27.2 34 23.9 37.4 22 42.5" />
+        <path d="M32 34C36.8 34 40.1 37.4 42 42.5" />
+        <path d="M32 31V25.5" />
+        <path d="M32 27L29.3 24.3" />
+        <path d="M32 27L34.7 24.3" />
+        <path d="M21.5 23L18.5 20" />
+        <path d="M21.5 23L20 26.5" />
+        <path d="M42.5 23L45.5 20" />
+        <path d="M42.5 23L44 26.5" />
+        <path d="M22 42.5L18.3 45.8" />
+        <path d="M22 42.5L24.7 46.6" />
+        <path d="M42 42.5L45.7 45.8" />
+        <path d="M42 42.5L39.3 46.6" />
       </g>
     </svg>
   );
