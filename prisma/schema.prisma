@@ -43,6 +43,7 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
+  role          Role       @default(USERDEFAULT)
   accounts      Account[]
   businesses    Business[]
   sessions      Session[]
@@ -190,3 +191,12 @@ enum KnowledgeIngestionJobStatus {
   FAILED
   DLQ
 }
+
+// Roles for application users
+enum Role {
+  ADMIN
+  USERDEFAULT
+  USERPRO
+  USERTRY
+}
+
