@@ -6,9 +6,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 // Importa tus opciones de auth si las tienes en otro archivo, ej: import { authOptions } from "../auth/[...nextauth]/route"
 
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    : null;
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
     try {
@@ -23,10 +23,6 @@ export async function POST(req: Request) {
         const { userRequest } = body; // Ej: "Quiero un bot de finanzas gruñón"
         if (!userRequest || typeof userRequest !== "string" || userRequest.trim().length < 5) {
             return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
-        }
-
-        if (!openai) {
-            return NextResponse.json({ error: "Falta configuración de OPENAI_API_KEY" }, { status: 503 });
         }
 
         // 3. Pedirle a OpenAI que diseñe el agente y devuelva un JSON

@@ -10,16 +10,11 @@ import { toast } from "sonner";
 import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Activity, Triangle, PlayCircle, MessageSquare, Clock, Users } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-function getSupabaseClient() {
-    if (!supabaseUrl || !supabaseAnonKey) {
-        return null;
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey);
-}
+// Inicializamos Supabase cliente
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const ParticleBackground = dynamic(() => import("../components/ui/ParticleBackground"), {
     ssr: false,
@@ -88,11 +83,6 @@ export default function HomePage() {
             localStorage.setItem("business_context", description);
 
             const uploadedFiles = [];
-            const supabase = getSupabaseClient();
-
-            if (!supabase) {
-                throw new Error("Falta configuración de Supabase para subir archivos.");
-            }
             
             // Subir archivos directamente a Supabase para evitar el límite de 4.5MB de Vercel
             if (files && files.length > 0) {

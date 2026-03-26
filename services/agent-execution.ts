@@ -4,7 +4,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendWhatsAppMessage } from '@/services/whatsapp-sender';
 import { aiService } from '@/lib/ai';
 
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+// 🔑 Asegúrate de que la API Key exista para que la app no explote silenciosamente
+if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Falta la variable de entorno GEMINI_API_KEY");
+}
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 export interface IncomingMessage {
     platform: 'whatsapp' | 'instagram' | 'telegram';
@@ -35,11 +40,6 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<string> {
 export async function handleIncomingMessage(message: IncomingMessage) {
     try {
         console.log(`[Cerebro] 📩 Mensaje entrante de ${message.platform} (${message.contactId})`);
-
-        if (!genAI) {
-            console.warn('[Cerebro] GEMINI_API_KEY no configurada; se omite procesamiento automático.');
-            return;
-        }
 
         // 1. Buscar el negocio y su agente en la base de datos
         const business = await prisma.business.findUnique({

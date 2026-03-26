@@ -7,16 +7,11 @@ import { useBrainia } from "@/context/BrainiaContext";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-function getSupabaseClient() {
-    if (!supabaseUrl || !supabaseAnonKey) {
-        return null;
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey);
-}
+// Inicializamos el cliente de Supabase FUERA del componente para no recrearlo en cada render
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function DashboardOverview() {
     const { activeAgent } = useBrainia();
@@ -81,11 +76,6 @@ export default function DashboardOverview() {
             const nombreSeguro = archivo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
             const rutaArchivo = `${prefijo}/${Date.now()}-${nombreSeguro}`;
             console.log("3. Ruta generada para Supabase:", rutaArchivo);
-
-            const supabase = getSupabaseClient();
-            if (!supabase) {
-                throw new Error("Falta configuración de Supabase para subir archivos.");
-            }
 
             // Subimos a Supabase
             console.log("4. Iniciando subida directa a Supabase...");

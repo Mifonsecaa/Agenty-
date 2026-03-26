@@ -8,13 +8,8 @@ import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '
 
 console.log("[AIService] Module Loading...");
 
-const genAI = process.env.GEMINI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    : null;
-
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    : null;
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
@@ -348,7 +343,7 @@ export const aiService = {
             }
 
             const callOpenAI = async () => {
-                if (!openai) throw new Error("Missing OPENAI_API_KEY");
+                if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
                 console.log("[AIService] Calling OpenAI (gpt-4o-mini)...");
                 const response = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
@@ -377,7 +372,7 @@ export const aiService = {
             };
 
             const callGemini = async () => {
-                if (!genAI) throw new Error("Missing GEMINI_API_KEY");
+                if (!process.env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
                 console.log("[AIService] Calling Gemini (gemini-1.5-flash)...");
                 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
                 const history = recentMessages.slice(0, -1).map(msg => ({
