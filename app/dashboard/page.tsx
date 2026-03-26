@@ -8,11 +8,9 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
 // Inicializamos el cliente de Supabase FUERA del componente para no recrearlo en cada render
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "public-anon-key";
 const supabase = createClient(
-    supabaseUrl,
-    supabaseAnonKey
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 export default function DashboardOverview() {

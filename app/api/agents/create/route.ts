@@ -7,6 +7,10 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { enforceAgentCreationPolicy } from "@/lib/auth/access-control";
 // Importa tus opciones de auth si las tienes en otro archivo, ej: import { authOptions } from "../auth/[...nextauth]/route"
 
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
+
 export async function POST(req: Request) {
     try {
         // 1. Verificar que el usuario esté logueado
@@ -21,13 +25,6 @@ export async function POST(req: Request) {
         if (!userRequest || typeof userRequest !== "string" || userRequest.trim().length < 5) {
             return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
         }
-
-        const openaiKey = process.env.OPENAI_API_KEY;
-        if (!openaiKey) {
-            return NextResponse.json({ error: "OPENAI_API_KEY no configurada en este entorno." }, { status: 503 });
-        }
-
-        const openai = new OpenAI({ apiKey: openaiKey });
 
         // 3. Pedirle a OpenAI que diseñe el agente y devuelva un JSON
         const completion = await openai.chat.completions.create({
