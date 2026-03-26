@@ -17,11 +17,16 @@ import type {
 import { toast } from "sonner";
 import { createClient } from "@supabase/supabase-js";
 
-// INICIALIZAMOS SUPABASE PARA EL FRONTEND
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+function getSupabaseClient() {
+    if (!supabaseUrl || !supabaseAnonKey) {
+        return null;
+    }
+
+    return createClient(supabaseUrl, supabaseAnonKey);
+}
 
 const KNOWLEDGE_LOADING_PHRASES = [
     "Escaneando documento...",
@@ -240,6 +245,11 @@ export default function KnowledgeBase() {
         setUploadingFileName(file.name);
 
         try {
+            const supabase = getSupabaseClient();
+            if (!supabase) {
+                throw new Error("Falta configuración de Supabase para subir archivos.");
+            }
+
             // 1. Crear ruta única en Supabase
             const prefijo = `business/${businessId}`;
             const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");

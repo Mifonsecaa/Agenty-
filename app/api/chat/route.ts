@@ -9,8 +9,8 @@ import { prisma } from '@/lib/prisma';
 import { acquireConcurrencySlot, buildRequesterKey, checkRateLimit } from '@/lib/security/traffic-control';
 import { incrementOpsCounter, recordOpsDuration } from '@/lib/observability/ops-metrics';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 type Provider = 'openai' | 'github' | 'gemini';
 
@@ -78,6 +78,7 @@ async function generateDemoReply(messages: ChatMessage[], provider: Provider, sy
   const nonSystemMessages = messages.filter((m) => m.role !== 'system');
 
   if (provider === 'openai') {
+    if (!openai) throw new Error('Falta OPENAI_API_KEY');
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'system', content: systemPrompt }, ...nonSystemMessages],
@@ -105,6 +106,7 @@ async function generateDemoReply(messages: ChatMessage[], provider: Provider, sy
     return response.choices[0].message.content || 'No pude generar una respuesta.';
   }
 
+  if (!genAI) throw new Error('Falta GEMINI_API_KEY');
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const history = nonSystemMessages.slice(0, -1).map((msg) => ({
     role: msg.role === 'assistant' ? 'model' : 'user',
