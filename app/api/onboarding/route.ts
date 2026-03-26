@@ -15,15 +15,10 @@ import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
 import { createTrialWindow, enforceAgentCreationPolicy, resolveRoleForNewUser } from "@/lib/auth/access-control";
 
-const geminiApiKey = process.env.GEMINI_API_KEY || "";
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 async function describeImage(buffer: Buffer, mimeType: string): Promise<string> {
-    if (!geminiApiKey) {
-        return "";
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
             `Extrae texto fiel de esta imagen en ESPANOL para entrenar un agente.
@@ -55,12 +50,7 @@ Formato:
 }
 
 async function verifyMenuImageTranscription(buffer: Buffer, mimeType: string): Promise<string> {
-    if (!geminiApiKey) {
-        return "";
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
             `Transcribe SOLO menu con precision maxima.

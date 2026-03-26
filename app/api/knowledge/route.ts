@@ -15,7 +15,7 @@ import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, interse
 import { extractSpreadsheetText } from "@/lib/knowledge/spreadsheet";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
-const geminiApiKey = process.env.GEMINI_API_KEY || "";
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 function sanitizeFileName(name: string) {
     return name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -27,7 +27,6 @@ async function describeImageForKnowledge(buffer: Buffer, mimeType: string) {
     }
 
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
             `Extrae texto de esta imagen para una base de conocimiento empresarial en ESPANOL.
@@ -65,7 +64,6 @@ async function verifyMenuImageTranscription(buffer: Buffer, mimeType: string) {
     }
 
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
             `Transcribe SOLO menu con precision maxima.
