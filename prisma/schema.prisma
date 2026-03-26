@@ -202,3 +202,15 @@ enum Role {
   USERTRY
 }
 
+model TrialAction {
+  id          String   @id @default(cuid())
+  adminId     String
+  targetUserId String
+  action      String
+  details     String?  @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([adminId])
+  @@index([targetUserId])
+}
+
