@@ -17,9 +17,9 @@ export const metadata: Metadata = {
   title: "brainia | IA para tu Negocio",
   description: "Crea tu agente de automatización describiendo tu negocio con IA.",
   icons: {
-    icon: '/brand-icon.svg',
-    shortcut: '/brand-icon.svg',
-    apple: '/brand-icon.svg',
+    icon: '/branding/icon.jpeg',
+    shortcut: '/branding/icon.jpeg',
+    apple: '/branding/icon.jpeg',
   },
 };
 
