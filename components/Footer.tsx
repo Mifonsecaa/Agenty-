@@ -23,7 +23,6 @@ export default function Footer() {
                             <div className="w-10 h-10 rounded-xl bg-slate-900/80 border border-cyan-300/55 shadow-[0_0_24px_rgba(56,189,248,0.35)] flex items-center justify-center overflow-hidden">
                                 <Image src="/Logo.png" alt="Brainia" width={30} height={30} className="object-contain drop-shadow-[0_0_10px_rgba(56,189,248,0.45)]" />
                             </div>
-                            <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">
                             Plataforma de IA nativa para automatizar ventas y soporte en WhatsApp. Entrena tu agente en segundos.

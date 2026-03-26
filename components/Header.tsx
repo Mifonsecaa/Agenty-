@@ -48,7 +48,6 @@ const Header = () => {
 								<div className="w-10 h-10 rounded-xl bg-slate-900/80 shadow-[0_0_28px_rgba(56,189,248,0.35)] flex items-center justify-center border border-cyan-300/55 overflow-hidden">
 									<Image src="/Logo.png" alt="Brainia" width={30} height={30} priority className="object-contain drop-shadow-[0_0_10px_rgba(56,189,248,0.45)]" />
 								</div>
-								<span className="font-bold text-lg tracking-tight text-white">brainia<span className="text-cyan-300">.tech</span></span>
 							</Link>
 						</div>
 
