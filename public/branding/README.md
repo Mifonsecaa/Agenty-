@@ -1,9 +1,12 @@
 # Branding Assets
 
-Coloca aqui el icono original de marca.
+Assets oficiales de marca para Brainia.
 
-Nombre recomendado del archivo:
-- brand-icon-original.png
+- `iconn-gradient.svg`: logo principal (header/footer) y usos generales en dark UI.
+- `iconn-favicon.svg`: variante dedicada para favicon (16x16 y 32x32).
+- `iconn.svg`: variante base/alternativa del logo.
+- `icon.jpeg`: referencia raster original subida por el equipo.
 
-Ruta publica final esperada:
-- /branding/brand-icon-original.png
+Regla de uso:
+- Mantener consistencia visual: degradado azul->morado en superficies principales.
+- Evitar exportes JPG para iconos de interfaz cuando se requiera transparencia.

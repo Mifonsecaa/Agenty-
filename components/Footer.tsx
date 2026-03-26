@@ -19,9 +19,9 @@ export default function Footer() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
                     {/* Brand Column */}
                     <div className="space-y-4">
-                        <Link href="/" className="flex items-center gap-3 text-white hover:opacity-80 transition-opacity">
+                        <Link href="/" className="group flex items-center gap-3 text-white hover:opacity-90 transition-opacity">
                             <BrandMark className="w-9 h-9" />
-                            <span className="font-bold text-lg tracking-tight">Brainia<span className="text-purple-400">.ai</span></span>
+                            <span className="text-lg font-bold tracking-[0.01em]">Brainia<span className="font-semibold text-[#A855F7]">.ai</span></span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">
                             Plataforma de IA nativa para automatizar ventas y soporte en WhatsApp. Entrena tu agente en segundos.

@@ -44,9 +44,9 @@ const Header = () => {
 					<div className="flex items-center justify-between">
 						{/* Logo */}
 						<div className="shrink-0 relative z-50">
-							<Link href="/" className="flex items-center gap-3">
+							<Link href="/" className="group flex items-center gap-3">
 								<BrandMark className="w-9 h-9" />
-											<span className="font-bold text-lg tracking-tight text-white">Brainia<span className="text-purple-400">.ai</span></span>
+											<span className="text-lg font-bold tracking-[0.01em] text-white">Brainia<span className="font-semibold text-[#A855F7]">.ai</span></span>
 							</Link>
 						</div>
 
