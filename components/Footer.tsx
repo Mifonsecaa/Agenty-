@@ -19,10 +19,8 @@ export default function Footer() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
                     {/* Brand Column */}
                     <div className="space-y-4">
-                        <Link href="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
-							<div className="w-8 h-8 rounded-lg bg-[#0e1622] border border-[#2d3f57] flex items-center justify-center text-[#9bb4d3]">
-								<BrandMark className="w-5 h-5" />
-                            </div>
+                        <Link href="/" className="flex items-center gap-3 text-white hover:opacity-80 transition-opacity">
+							<BrandMark className="w-9 h-9 text-[#9bb4d3]" />
                             <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">
