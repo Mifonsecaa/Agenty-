@@ -10,6 +10,8 @@ import type {
     KnowledgeItem,
     KnowledgeListResponse,
     KnowledgeJobResponse,
+    KnowledgeJobStatus,
+    KnowledgeJob,
     KnowledgeQueueHealthResponse,
     KnowledgeJobReplayResponse,
     KnowledgeJobCleanupResponse,
@@ -43,6 +45,12 @@ export default function KnowledgeBase() {
     const [progress, setProgress] = useState(0);
     const [activeFiles, setActiveFiles] = useState<KnowledgeItem[]>([]);
     const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
+    const [jobStatus, setJobStatus] = useState<KnowledgeJobStatus | null>(null);
+    const [jobStatusDetails, setJobStatusDetails] = useState<string | null>(null);
+    const [lastJobId, setLastJobId] = useState<string | null>(null);
+    const [showJobDetails, setShowJobDetails] = useState(false);
+    const [jobDetails, setJobDetails] = useState<KnowledgeJob | null>(null);
+    const [jobDetailsLoading, setJobDetailsLoading] = useState(false);
     const [uploadingFileName, setUploadingFileName] = useState("");
     const [websiteUrl, setWebsiteUrl] = useState("");
     const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
@@ -161,8 +169,14 @@ export default function KnowledgeBase() {
         }
     };
 
-    const waitForJobCompletion = async (jobId: string) => {
+    // Poll a job and optionally provide intermediate status updates via onUpdate
+    const waitForJobCompletion = async (
+        jobId: string,
+        onUpdate?: (status: KnowledgeJobStatus, job?: { lastError?: string | null; attempts?: number }) => void
+    ) => {
         const startedAt = Date.now();
+        let previousStatus: KnowledgeJobStatus | null = null;
+
         while (Date.now() - startedAt < JOB_POLL_TIMEOUT_MS) {
             const res = await fetch(`/api/knowledge/jobs/${jobId}`);
             const data: KnowledgeJobResponse = await res.json().catch(() => ({ success: false, error: copy.knowledge.jobStatusReadError }));
@@ -171,12 +185,20 @@ export default function KnowledgeBase() {
                 throw new Error(data.error || copy.knowledge.jobStatusFetchError);
             }
 
-            if (data.data.status === "COMPLETED") {
+            const status = data.data.status;
+
+            // notify caller when status changes
+            if (status !== previousStatus) {
+                previousStatus = status;
+                if (onUpdate) onUpdate(status, { lastError: data.data.lastError || null, attempts: data.data.attempts });
+            }
+
+            if (status === "COMPLETED") {
                 void fetchQueueHealth({ silent: true });
                 return data.data;
             }
 
-            if (data.data.status === "DLQ" || data.data.status === "FAILED") {
+            if (status === "DLQ" || status === "FAILED") {
                 throw new Error(data.data.lastError || copy.knowledge.jobFailed);
             }
 
@@ -184,6 +206,129 @@ export default function KnowledgeBase() {
         }
 
         throw new Error(copy.knowledge.jobTimeout);
+    };
+
+    // Clear job status UI after a delay (ms)
+    const clearJobStatus = (ms = 3000) => {
+        try {
+            setTimeout(() => {
+                setJobStatus(null);
+                setJobStatusDetails(null);
+            }, ms);
+        } catch {
+            // ignore
+        }
+    };
+
+    const loadJobDetails = async (jobId: string) => {
+        setJobDetailsLoading(true);
+        try {
+            const res = await fetch(`/api/knowledge/jobs/${jobId}`);
+            const data: KnowledgeJobResponse = await res.json().catch(() => ({ success: false, error: 'Error leyendo job' }));
+            if (!res.ok || !data.success || !data.data) {
+                toast.error(data.error || 'No se pudo obtener detalles del job');
+                setJobDetails(null);
+                return;
+            }
+            setJobDetails(data.data);
+        } catch (e) {
+            console.error('Error fetching job details', e);
+            toast.error('Error al obtener detalles del job');
+            setJobDetails(null);
+        } finally {
+            setJobDetailsLoading(false);
+        }
+    };
+
+    const openJobDetails = async () => {
+        if (!lastJobId) return;
+        setShowJobDetails(true);
+        await loadJobDetails(lastJobId);
+    };
+
+    const closeJobDetails = () => {
+        setShowJobDetails(false);
+        setJobDetails(null);
+    };
+
+    const formatDate = (iso?: string | null) => {
+        if (!iso) return "-";
+        try {
+            return new Date(iso).toLocaleString();
+        } catch {
+            return iso;
+        }
+    };
+
+    // Try Supabase Realtime subscription for a job. Returns {channel, promise}
+    const subscribeToJobRealtime = (jobId: string, onUpdate?: (status: KnowledgeJobStatus, job?: { lastError?: string | null; attempts?: number }) => void) => {
+        // Create a channel scoped to this job
+        const channel = supabase.channel(`job-${jobId}`);
+
+        let resolveFn: (value?: any) => void;
+        let rejectFn: (reason?: any) => void;
+
+        const promise = new Promise((resolve, reject) => {
+            resolveFn = resolve;
+            rejectFn = reject;
+
+            channel.on('postgres_changes', { event: '*', schema: 'public', table: 'knowledge_jobs', filter: `id=eq.${jobId}` }, (payload: any) => {
+                const row = payload.new || payload.record || payload;
+                const status = (row?.status ?? row?.state) as KnowledgeJobStatus | undefined;
+                const lastError = row?.lastError ?? row?.last_error ?? null;
+                const attempts = row?.attempts ?? null;
+
+                if (status) {
+                    try {
+                        onUpdate?.(status as KnowledgeJobStatus, { lastError, attempts });
+                    } catch (e) {
+                        // ignore handler errors
+                    }
+                }
+
+                if (status === 'COMPLETED') {
+                    resolve(row);
+                }
+
+                if (status === 'FAILED' || status === 'DLQ') {
+                    reject(new Error(lastError || 'Job failed'));
+                }
+            }).subscribe(async (status) => {
+                // subscription lifecycle events
+                // nothing special required here for now
+            });
+        });
+
+        return { channel, promise } as { channel: any; promise: Promise<any> };
+    };
+
+    // Try realtime subscription first, fall back to polling. Ensures subscription is cleaned up.
+    const awaitJobWithRealtime = async (
+        jobId: string,
+        onUpdate?: (status: KnowledgeJobStatus, job?: { lastError?: string | null; attempts?: number }) => void
+    ) => {
+        let channel: any = null;
+        try {
+            const sub = subscribeToJobRealtime(jobId, onUpdate);
+            channel = sub.channel;
+            // Race between realtime promise and polling to get whichever finishes first.
+            const result = await Promise.race([sub.promise, waitForJobCompletion(jobId, onUpdate)]);
+            return result;
+        } catch (err) {
+            // If realtime subscription failed or rejected, fallback to polling explicitly.
+            try {
+                const res = await waitForJobCompletion(jobId, onUpdate);
+                return res;
+            } finally {
+                // nothing
+            }
+        } finally {
+            try {
+                if (channel && typeof channel.unsubscribe === 'function') channel.unsubscribe();
+            } catch (e) {
+                // ignore unsubscribe errors
+            }
+        }
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -297,11 +442,26 @@ export default function KnowledgeBase() {
             if (data.queued && data.jobId) {
                 setProgress(95);
                 toast.info(data.message || copy.knowledge.uploadQueued);
+                setJobStatus("PENDING");
+                setLastJobId(data.jobId);
+                let jobFailed = false;
                 try {
-                    await waitForJobCompletion(data.jobId);
-                } catch (jobError) {
+                    await awaitJobWithRealtime(data.jobId, (status, info) => {
+                        setJobStatus(status);
+                        if (status === "PROCESSING") setJobStatusDetails("Extrayendo texto y fragmentando...");
+                        if (status === "RETRY") setJobStatusDetails(`Reintentando... (intentos: ${info?.attempts ?? "?"})`);
+                    });
+                } catch (jobError: any) {
+                    jobFailed = true;
                     console.warn("Knowledge job still processing:", jobError);
-                    toast.info("El documento quedó en cola y seguirá procesándose en segundo plano.");
+                    const msg = jobError?.message || "El documento quedó en cola y seguirá procesándose en segundo plano.";
+                    setJobStatus("FAILED");
+                    setJobStatusDetails(msg);
+                    toast.error(msg);
+                    // keep error visible a bit longer
+                    clearJobStatus(8000);
+                } finally {
+                    if (!jobFailed) clearJobStatus(1200);
                 }
             }
 
@@ -498,7 +658,25 @@ export default function KnowledgeBase() {
 
             if (data.queued && data.jobId) {
                 setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteQueued });
-                await waitForJobCompletion(data.jobId);
+                setJobStatus("PENDING");
+                setLastJobId(data.jobId);
+                let jobFailed = false;
+                    try {
+                    await awaitJobWithRealtime(data.jobId, (status, info) => {
+                        setJobStatus(status);
+                        if (status === "PROCESSING") setJobStatusDetails("Extrayendo texto del sitio...");
+                    });
+                } catch (jobError: any) {
+                    jobFailed = true;
+                    console.warn("Website sync job error:", jobError);
+                    const msg = jobError?.message || copy.knowledge.websiteSyncError;
+                    setJobStatus("FAILED");
+                    setJobStatusDetails(msg);
+                    toast.error(msg);
+                    clearJobStatus(8000);
+                } finally {
+                    if (!jobFailed) clearJobStatus(1200);
+                }
             }
 
             setWebsiteSyncMessage({ type: "success", text: copy.knowledge.websiteSuccess });
@@ -671,6 +849,39 @@ export default function KnowledgeBase() {
                                             {copy.knowledge.processingFilePrefix} {uploadingFileName}
                                         </p>
                                     )}
+                                    {/* Job status indicator */}
+                                    {jobStatus && (
+                                        <p className="text-[11px] text-white/60 mt-2">
+                                            {(() => {
+                                                switch (jobStatus) {
+                                                    case "PENDING":
+                                                        return "En cola: esperando procesamiento";
+                                                    case "PROCESSING":
+                                                        return jobStatusDetails || "Procesando y vectorizando";
+                                                    case "RETRY":
+                                                        return jobStatusDetails || "Reintentando procesamiento";
+                                                    case "COMPLETED":
+                                                        return "Listo";
+                                                    case "FAILED":
+                                                        return "Procesamiento falló";
+                                                    case "DLQ":
+                                                        return "Error persistente: revisa el log";
+                                                    default:
+                                                        return "Procesando...";
+                                                }
+                                            })()}
+                                        </p>
+                                    )}
+                                    {lastJobId ? (
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <button
+                                                onClick={openJobDetails}
+                                                className="text-[11px] text-emerald-300 underline hover:text-emerald-200"
+                                            >
+                                                Ver detalles del job
+                                            </button>
+                                        </div>
+                                    ) : null}
                                     <div className="w-full max-w-37.5 h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
                                         <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progress}%` }} />
                                     </div>
@@ -910,6 +1121,53 @@ export default function KnowledgeBase() {
 
                 </div>
             </div>
+            {/* Job Details Modal */}
+            {showJobDetails && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="max-w-2xl w-full bg-[#0b0b0b] border border-white/10 rounded-2xl p-6">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 className="text-lg font-bold">Detalles del job</h3>
+                                <p className="text-[12px] text-white/60 mt-1">ID: <span className="text-white/80">{lastJobId}</span></p>
+                            </div>
+                            <div className="ml-auto flex items-center gap-2">
+                                <button onClick={closeJobDetails} className="text-sm text-white/60 hover:text-white">Cerrar</button>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-white/5 pt-4">
+                            {jobDetailsLoading ? (
+                                <p className="text-sm text-white/60">Cargando...</p>
+                            ) : jobDetails ? (
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p className="text-white/60">Estado</p>
+                                        <p className="font-medium text-white/90">{jobDetails.status}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white/60">Intentos</p>
+                                        <p className="font-medium text-white/90">{jobDetails.attempts ?? '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white/60">Creado</p>
+                                        <p className="font-medium text-white/90">{formatDate(jobDetails.createdAt)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white/60">Iniciado</p>
+                                        <p className="font-medium text-white/90">{formatDate(jobDetails.startedAt ?? null)}</p>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <p className="text-white/60">Último error</p>
+                                        <pre className="text-xs text-red-300 bg-white/2 rounded p-2 mt-1 overflow-auto max-h-36">{jobDetails.lastError || '-'}</pre>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-white/60">No hay detalles disponibles.</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
