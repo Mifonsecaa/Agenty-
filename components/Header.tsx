@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot } from 'lucide-react';
+import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
 
 const Header = () => {
@@ -38,17 +38,17 @@ const Header = () => {
 	return (
 		<>
 			<header className={`fixed top-0 w-full z-50 transition-transform duration-300 ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
-				<div className={`absolute inset-0 transition-all duration-300 ${isScrolled ? 'bg-[#050505]/80 backdrop-blur-md border-b-0' : 'bg-transparent border-b-0'}`} />
+				<div className={`absolute inset-0 transition-all duration-300 ${isScrolled ? 'bg-[#04070f]/85 backdrop-blur-md border-b border-cyan-400/20' : 'bg-transparent border-b-0'}`} />
 
 				<nav className="relative w-full max-w-7xl mx-auto px-6 py-4">
 					<div className="flex items-center justify-between">
 						{/* Logo */}
 						<div className="shrink-0 relative z-50">
 							<Link href="/" className="flex items-center gap-2">
-								<div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
-									<Bot className="w-5 h-5 text-white" />
+								<div className="w-9 h-9 rounded-xl bg-white shadow-[0_0_24px_rgba(56,189,248,0.35)] flex items-center justify-center border border-cyan-300/60 overflow-hidden">
+									<Image src="/Logo.png" alt="Brainia" width={26} height={26} priority className="object-contain" />
 								</div>
-											<span className="font-bold text-lg tracking-tight text-white">brainia<span className="text-white/50">.ai</span></span>
+								<span className="font-bold text-lg tracking-tight text-white">brainia<span className="text-cyan-300">.tech</span></span>
 							</Link>
 						</div>
 
@@ -93,7 +93,7 @@ const Header = () => {
 										<Link href="/login" className="text-sm font-medium text-gray-300 hover:text-white px-3 py-2">
 											Iniciar
 										</Link>
-										<Link href="/register" className="text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all text-center">
+										<Link href="/register" className="text-sm font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded-lg transition-all text-center shadow-[0_0_22px_rgba(56,189,248,0.35)]">
 											Prueba Gratis
 										</Link>
 									</>

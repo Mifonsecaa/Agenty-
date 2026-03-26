@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot, Twitter, Github, Linkedin } from 'lucide-react';
+import Image from 'next/image';
+import { Twitter, Github, Linkedin } from 'lucide-react';
 
 export default function Footer() {
     const pathname = usePathname();
@@ -13,14 +14,14 @@ export default function Footer() {
     }
 
     return (
-        <footer className="border-t border-white/10 bg-[#050505] text-white/60">
+        <footer className="border-t border-cyan-400/15 bg-[#05070f] text-white/65">
             <div className="max-w-7xl mx-auto px-6 py-12 md:py-16">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
                     {/* Brand Column */}
                     <div className="space-y-4">
                         <Link href="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
-                            <div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-600 to-purple-600 flex items-center justify-center">
-                                <Bot className="w-5 h-5 text-white" />
+                            <div className="w-9 h-9 rounded-xl bg-white border border-cyan-300/60 shadow-[0_0_24px_rgba(56,189,248,0.35)] flex items-center justify-center overflow-hidden">
+                                <Image src="/Logo.png" alt="Brainia" width={26} height={26} className="object-contain" />
                             </div>
                             <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
@@ -38,24 +39,24 @@ export default function Footer() {
                     <div>
                         <h4 className="font-semibold text-white mb-4">Producto</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><Link href="/pricing" className="hover:text-blue-400 transition-colors">Precios</Link></li>
-                            <li><Link href="/agents/default" className="hover:text-blue-400 transition-colors">Cómo funciona</Link></li>
-                            <li><Link href="/dashboard/builder" className="hover:text-blue-400 transition-colors">Playground</Link></li>
+                            <li><Link href="/pricing" className="hover:text-cyan-300 transition-colors">Precios</Link></li>
+                            <li><Link href="/agents/default" className="hover:text-cyan-300 transition-colors">Cómo funciona</Link></li>
+                            <li><Link href="/dashboard/builder" className="hover:text-cyan-300 transition-colors">Playground</Link></li>
                         </ul>
                     </div>
 
                     <div>
                         <h4 className="font-semibold text-white mb-4">Recursos</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><Link href="/help" className="hover:text-blue-400 transition-colors">Centro de Ayuda</Link></li>
+                            <li><Link href="/help" className="hover:text-cyan-300 transition-colors">Centro de Ayuda</Link></li>
                         </ul>
                     </div>
 
                     <div>
                         <h4 className="font-semibold text-white mb-4">Legal</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Privacidad</Link></li>
-                            <li><Link href="/terms" className="hover:text-blue-400 transition-colors">Términos</Link></li>
+                            <li><Link href="/privacy" className="hover:text-cyan-300 transition-colors">Privacidad</Link></li>
+                            <li><Link href="/terms" className="hover:text-cyan-300 transition-colors">Términos</Link></li>
                         </ul>
                     </div>
                 </div>

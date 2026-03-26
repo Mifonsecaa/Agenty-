@@ -16,6 +16,11 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "brainia | IA para tu Negocio",
   description: "Crea tu agente de automatización describiendo tu negocio con IA.",
+  icons: {
+    icon: "/Logo.png",
+    shortcut: "/Logo.png",
+    apple: "/Logo.png",
+  },
 };
 
 export default function RootLayout({
