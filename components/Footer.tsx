@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot, Twitter, Github, Linkedin } from 'lucide-react';
+import { Twitter, Github, Linkedin } from 'lucide-react';
+import BrandMark from '@/components/BrandMark';
 
 export default function Footer() {
     const pathname = usePathname();
@@ -19,8 +20,8 @@ export default function Footer() {
                     {/* Brand Column */}
                     <div className="space-y-4">
                         <Link href="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
-                            <div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-600 to-purple-600 flex items-center justify-center">
-                                <Bot className="w-5 h-5 text-white" />
+							<div className="w-8 h-8 rounded-lg bg-[#0e1622] border border-[#2d3f57] flex items-center justify-center text-[#9bb4d3]">
+								<BrandMark className="w-5 h-5" />
                             </div>
                             <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
