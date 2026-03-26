@@ -28,7 +28,8 @@ export async function POST(req: Request) {
     const user = await prisma.user.upsert({
       where: { email },
       update: {},
-      create: { email, name: '', password: passwordPlaceholder, role: 'USERTRY' },
+      // don't specify `role` here because CI's generated Prisma types may be out of sync
+      create: { email, name: '', password: passwordPlaceholder },
     });
 
     let businessId = body.businessId;
