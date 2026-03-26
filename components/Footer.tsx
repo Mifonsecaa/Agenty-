@@ -20,8 +20,8 @@ export default function Footer() {
                     {/* Brand Column */}
                     <div className="space-y-4">
                         <Link href="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
-                            <div className="w-9 h-9 rounded-xl bg-white border border-cyan-300/60 shadow-[0_0_24px_rgba(56,189,248,0.35)] flex items-center justify-center overflow-hidden">
-                                <Image src="/Logo.png" alt="Brainia" width={26} height={26} className="object-contain" />
+                            <div className="w-10 h-10 rounded-xl bg-slate-900/80 border border-cyan-300/55 shadow-[0_0_24px_rgba(56,189,248,0.35)] flex items-center justify-center overflow-hidden">
+                                <Image src="/Logo.png" alt="Brainia" width={30} height={30} className="object-contain drop-shadow-[0_0_10px_rgba(56,189,248,0.45)]" />
                             </div>
                             <span className="font-bold text-lg tracking-tight">brainia</span>
                         </Link>
