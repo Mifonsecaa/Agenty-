@@ -20,7 +20,7 @@ export default function Footer() {
                     {/* Brand Column */}
                     <div className="space-y-4">
                         <Link href="/" className="flex items-center gap-3 text-white hover:opacity-80 transition-opacity">
-                            <BrandMark className="w-9 h-9 text-blue-400" />
+                            <BrandMark className="w-9 h-9" />
                             <span className="font-bold text-lg tracking-tight">Brainia<span className="text-purple-400">.ai</span></span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">

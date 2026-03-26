@@ -5,8 +5,15 @@
  width="299.000000pt" height="345.000000pt" viewBox="0 0 299.000000 345.000000"
  preserveAspectRatio="xMidYMid meet">
 
+<defs>
+<linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#60A5FA"/>
+<stop offset="100%" stop-color="#A855F7"/>
+</linearGradient>
+</defs>
+
 <g transform="translate(0.000000,345.000000) scale(0.100000,-0.100000)"
-fill="#FFFFFF" stroke="none">
+fill="url(#brandGradient)" stroke="none">
 <path d="M1448 3379 c-42 -22 -65 -59 -71 -113 -4 -35 -8 -39 -148 -119 -79
 -46 -272 -159 -429 -251 -157 -93 -326 -192 -376 -222 l-91 -53 -39 20 c-98
 51 -204 -20 -204 -135 0 -55 27 -106 67 -127 l23 -12 0 -549 c0 -360 4 -556
