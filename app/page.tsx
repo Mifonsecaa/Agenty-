@@ -11,9 +11,11 @@ import { ShieldCheck, Zap, Sparkles as SparklesIcon, Command, Cloud, Hexagon, Ac
 import { createClient } from "@supabase/supabase-js";
 
 // Inicializamos Supabase cliente
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "public-anon-key";
 const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    supabaseUrl,
+    supabaseAnonKey
 );
 
 const ParticleBackground = dynamic(() => import("../components/ui/ParticleBackground"), {

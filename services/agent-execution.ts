@@ -4,12 +4,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendWhatsAppMessage } from '@/services/whatsapp-sender';
 import { aiService } from '@/lib/ai';
 
-// 🔑 Asegúrate de que la API Key exista para que la app no explote silenciosamente
-if (!process.env.GEMINI_API_KEY) {
-    throw new Error("Falta la variable de entorno GEMINI_API_KEY");
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
 export interface IncomingMessage {
     platform: 'whatsapp' | 'instagram' | 'telegram';
@@ -53,6 +49,11 @@ export async function handleIncomingMessage(message: IncomingMessage) {
 
         const config = business.config as any;
         const systemPrompt = config.systemPrompt || `Eres un asistente amable para ${config.name}.`;
+
+        if (!genAI) {
+            console.warn('[Cerebro] ⚠️ GEMINI_API_KEY no configurada; omitiendo respuesta automática en este entorno.');
+            return;
+        }
 
         // 2. Llamar al LLM (Mejorado con la API moderna de Gemini)
         // 💡 Usamos gemini-1.5-flash: Es el estándar actual, mucho más rápido y barato que pro para bots
