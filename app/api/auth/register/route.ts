@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { createEmailVerificationToken, sendEmailVerificationMessage } from "@/lib/auth/email-verification";
+import { createTrialWindow, resolveRoleForNewUser } from "@/lib/auth/access-control";
 
 export async function POST(request: Request) {
     try {
@@ -20,11 +21,17 @@ export async function POST(request: Request) {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        const role = await resolveRoleForNewUser(normalizedEmail);
+        const trial = role === "USER" ? createTrialWindow() : null;
+
         const newUser = await prisma.user.create({
             data: {
                 email: normalizedEmail,
                 name: normalizedName || normalizedEmail.split("@")[0],
                 password: hashedPassword,
+                role,
+                trialStartedAt: trial?.startedAt,
+                trialEndsAt: trial?.endsAt,
             },
         });
 
@@ -36,6 +43,23 @@ export async function POST(request: Request) {
                 verifyUrl,
             });
         } catch (emailError) {
+            const isPreview = process.env.VERCEL_ENV === "preview" || process.env.NODE_ENV !== "production";
+            if (isPreview) {
+                await prisma.user.update({
+                    where: { id: newUser.id },
+                    data: { emailVerified: new Date() },
+                });
+
+                return NextResponse.json(
+                    {
+                        message: "Cuenta creada en modo preview. Verificación por correo omitida.",
+                        requiresEmailVerification: false,
+                        user: { id: newUser.id, email: newUser.email },
+                    },
+                    { status: 201 }
+                );
+            }
+
             await prisma.verificationToken.deleteMany({ where: { identifier: normalizedEmail } });
             await prisma.user.delete({ where: { id: newUser.id } });
 
