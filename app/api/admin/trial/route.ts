@@ -15,9 +15,9 @@ export async function POST(req: Request) {
     const session = (await getServerSession(authOptions as any)) as any;
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // verify admin
-    const admin = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!admin || admin.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // verify admin - select only fields we need so TypeScript knows about them
+    const admin = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, role: true } });
+    if (!admin || (admin as any).role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json().catch(() => ({})) as CreatePayload;
     const email = String(body.email || '').trim().toLowerCase();
@@ -56,17 +56,19 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const session = await getServerSession(authOptions as any);
+    const session = (await getServerSession(authOptions as any)) as any;
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const admin = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!admin || admin.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // select admin id and role for permission checks and audit records
+    const admin = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, role: true } });
+    if (!admin || (admin as any).role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json().catch(() => ({}));
     const userId = String(body.userId || '').trim();
     const action = String(body.action || '').trim();
     if (!userId || !action) return NextResponse.json({ error: 'userId and action are required' }, { status: 400 });
 
-    const target = await prisma.user.findUnique({ where: { id: userId } });
+    // select only the fields we need from the target user
+    const target = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, trialStartedAt: true } });
     if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
     if (action === 'extend') {
@@ -104,18 +106,20 @@ export async function PATCH(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions as any);
+    const session = (await getServerSession(authOptions as any)) as any;
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const admin = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!admin || admin.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // select admin id and role for permission checks and audit records
+    const admin = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, role: true } });
+    if (!admin || (admin as any).role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const url = new URL(req.url);
     const email = url.searchParams.get('email');
     const userId = url.searchParams.get('userId');
 
     let user;
-    if (email) user = await prisma.user.findUnique({ where: { email } });
-    else if (userId) user = await prisma.user.findUnique({ where: { id: userId } });
+    // select the exact user properties we return to the admin
+    if (email) user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, trialBusinessId: true, trialStartedAt: true } });
+    else if (userId) user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true, trialBusinessId: true, trialStartedAt: true } });
     else return NextResponse.json({ error: 'email or userId required' }, { status: 400 });
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -131,10 +135,10 @@ export async function GET(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const session = await getServerSession(authOptions as any);
+    const session = (await getServerSession(authOptions as any)) as any;
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const admin = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!admin || admin.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!admin || (admin as any).role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json().catch(() => ({}));
     const userId = String(body.userId || '').trim();
@@ -148,4 +152,3 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
   }
 }
-
