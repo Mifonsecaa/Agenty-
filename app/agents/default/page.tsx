@@ -1,34 +1,34 @@
 import React from 'react';
 import Link from 'next/link';
-import { Bot, MessageSquare, ShoppingCart, Users } from 'lucide-react';
+import BrandMark from '@/components/BrandMark';
 
 const predefinedAgents = [
   {
     id: 'reservas',
     name: 'Agente de Reservas',
     description: 'Automatiza la gestión de citas y reservas para restaurantes, salones o gimnasios.',
-    icon: <Bot className="w-8 h-8 text-purple-400" />,
+    icon: <BrandMark className="w-8 h-8" />,
     link: '/agents/reservations',
   },
   {
     id: 'atencion_cliente',
     name: 'Agente de Atención al Cliente',
     description: 'Responde preguntas frecuentes (FAQs) y brinda soporte 24/7 a tus clientes.',
-    icon: <MessageSquare className="w-8 h-8 text-blue-400" />,
+    icon: <BrandMark className="w-8 h-8" />,
     link: '/agents/customer-support',
   },
   {
     id: 'captura_leads',
     name: 'Agente de Captura de Leads',
     description: 'Cualifica clientes potenciales, recoge datos de contacto y los integra con tu CRM.',
-    icon: <Users className="w-8 h-8 text-green-400" />,
+    icon: <BrandMark className="w-8 h-8" />,
     link: '/agents/lead-capture',
   },
   {
     id: 'ventas',
     name: 'Agente de Ventas',
     description: 'Asiste en el proceso de compra, ofrece recomendaciones y cierra ventas automáticamente.',
-    icon: <ShoppingCart className="w-8 h-8 text-red-400" />,
+    icon: <BrandMark className="w-8 h-8" />,
     link: '/agents/sales',
   },
 ];

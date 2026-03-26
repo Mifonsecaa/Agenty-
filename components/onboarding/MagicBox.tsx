@@ -1,7 +1,8 @@
 "use client";
-import { Plus, Mic, ArrowUp, Sparkles, X, FileText, Image as ImageIcon, File, Loader2 } from "lucide-react";
+import { Plus, Mic, ArrowUp, X, FileText, Image as ImageIcon, File, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import BrandMark from "@/components/BrandMark";
 
 const PLACEHOLDER_PHRASES = [
     "Cuéntame sobre tu negocio para crear tu agente...",
@@ -357,7 +358,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 className={`absolute -right-3 -top-4 bg-linear-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
                 title="Mejorar con IA"
             >
-                <Sparkles size={18} className={`text-white transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
+                <BrandMark className={`w-[18px] h-[18px] transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
                 {isImproving && (
                     <span className="absolute left-full ml-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap">
                         Mejorando...

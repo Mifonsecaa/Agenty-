@@ -1,9 +1,10 @@
 "use client";
 import React from 'react';
-import { Bot, Send, User, Trash2, X } from 'lucide-react';
+import { Send, User, Trash2, X } from 'lucide-react';
 import i18n from './i18n';
 import { usePlayground } from '@/components/PlaygroundContext';
 import { useBrainia } from '@/context/BrainiaContext';
+import BrandMark from '@/components/BrandMark';
 
 type Message = { role: string; text: string };
 
@@ -23,7 +24,7 @@ export default function PlaygroundUI() {
         <div className="flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-white/10">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-full bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
-              <Bot className="w-4 h-4 text-white" />
+              <BrandMark className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate max-w-[160px]">{agentName ? (String(agentName).length > 24 ? `${String(agentName).slice(0,20)}...` : agentName) : 'Playground'}</p>
@@ -55,7 +56,7 @@ export default function PlaygroundUI() {
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`flex items-end gap-2 max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${m.role === 'user' ? 'bg-blue-600' : 'bg-linear-to-tr from-blue-500 to-purple-500'}`}>
-                  {m.role === 'user' ? <User className="w-3 h-3 text-white" /> : <Bot className="w-3 h-3 text-white" />}
+                  {m.role === 'user' ? <User className="w-3 h-3 text-white" /> : <BrandMark className="w-3 h-3" />}
                 </div>
                 <div className={`rounded-2xl px-4 py-2 text-sm shadow-sm ${m.role === 'user'
                     ? 'bg-blue-600 text-white rounded-br-none'
@@ -71,7 +72,7 @@ export default function PlaygroundUI() {
             <div className="flex justify-start">
               <div className="flex items-end gap-2 max-w-[85%] flex-row">
                 <div className="w-6 h-6 rounded-full bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
-                  <Bot className="w-3 h-3 text-white" />
+                  <BrandMark className="w-3 h-3" />
                 </div>
                 <div className="bg-[#1a1a1a] border border-white/5 text-white/90 rounded-2xl rounded-bl-none px-4 py-3 flex gap-1">
                   <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.3s]" />
