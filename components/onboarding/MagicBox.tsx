@@ -358,7 +358,7 @@ export default function MagicBox({ onSubmit, isLoading }: MagicBoxProps) {
                 className={`absolute -right-3 -top-4 bg-linear-to-br from-indigo-500/80 to-purple-500/80 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-xl shadow-purple-500/20 hover:scale-110 active:scale-95 transition-all z-30 group/spark ${isImproving ? 'animate-pulse' : 'animate-float'}`}
                 title="Mejorar con IA"
             >
-                <BrandMark className={`w-[18px] h-[18px] transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} />
+                <BrandMark className={`w-[18px] h-[18px] transition-all ${isImproving ? 'animate-spin' : 'group-hover/spark:rotate-12'}`} variant="white" />
                 {isImproving && (
                     <span className="absolute left-full ml-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap">
                         Mejorando...
