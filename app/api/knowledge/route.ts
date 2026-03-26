@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 import { ingestionService } from "@/lib/rag/ingestion";
 import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "@/lib/rag/queue";
 import { knowledgeQuerySchema, knowledgeCreateSchema, type KnowledgeQueryInput, type KnowledgeCreateInput } from "@/lib/validation/schemas";
@@ -327,16 +328,11 @@ export async function POST(req: Request) {
             text = `[ARCHIVO ADJUNTO: ${name || "archivo"}] Tipo: ${safeType}.`;
         }
 
-        // Verificar que el negocio pertenece al usuario
-        const business = await prisma.business.findFirst({
-            where: {
-                id: businessId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!business) {
-            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        // Verificar acceso al negocio (admin, owner, o trial limitado)
+        try {
+            await authorizeBusinessAccessSession(session, businessId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         const safeText = sanitizeUtf8Text(text || "");
@@ -412,16 +408,11 @@ export async function GET(req: Request) {
 
         const { businessId } = validation.data!;
 
-        // Verificar que el negocio pertenece al usuario
-        const business = await prisma.business.findFirst({
-            where: {
-                id: businessId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!business) {
-            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        // Verificar acceso al negocio (admin, owner, o trial limitado)
+        try {
+            await authorizeBusinessAccessSession(session, businessId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         const items = await prisma.knowledgeItem.findMany({
@@ -476,16 +467,11 @@ export async function DELETE(req: Request) {
             return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
         }
 
-        // Verificar propiedad del negocio
-        const business = await prisma.business.findFirst({
-            where: {
-                id: businessId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!business) {
-            return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        // Verificar acceso al negocio (admin, owner, o trial limitado)
+        try {
+            await authorizeBusinessAccessSession(session, businessId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         if (Array.isArray(itemIds) && itemIds.length > 0) {

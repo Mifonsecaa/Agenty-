@@ -44,6 +44,8 @@ model User {
   image         String?
   password      String?
   role          Role       @default(USERDEFAULT)
+  trialStartedAt DateTime?
+  trialBusinessId String?
   accounts      Account[]
   businesses    Business[]
   sessions      Session[]

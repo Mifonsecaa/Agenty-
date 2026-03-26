@@ -6,6 +6,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { aiService } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 import { acquireConcurrencySlot, buildRequesterKey, checkRateLimit } from '@/lib/security/traffic-control';
 import { incrementOpsCounter, recordOpsDuration } from '@/lib/observability/ops-metrics';
 
@@ -224,16 +225,10 @@ export async function POST(request: Request) {
     }
     releaseConcurrency = privateConcurrency;
 
-    const business = await prisma.business.findFirst({
-      where: {
-        id: agentId,
-        user: { email: session.user.email },
-      },
-      select: { id: true, name: true, config: true },
-    });
-
-    if (!business) {
-      return NextResponse.json({ error: 'Negocio no encontrado o sin acceso' }, { status: 404 });
+    try {
+      await authorizeBusinessAccessSession(session, agentId);
+    } catch (authErr: any) {
+      return NextResponse.json({ error: authErr.message || 'Negocio no encontrado o sin acceso' }, { status: authErr.status || 403 });
     }
 
     const conversationMessages = normalizedMessages.filter((m) => m.role !== 'system');

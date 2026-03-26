@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { getKnowledgeQueueSummary } from "@/lib/rag/queue";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 
 export async function GET(req: Request) {
   try {
@@ -26,13 +27,10 @@ export async function GET(req: Request) {
         );
       }
 
-      const business = await prisma.business.findFirst({
-        where: { id: businessId, user: { email: session.user.email } },
-        select: { id: true },
-      });
-
-      if (!business) {
-        return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+      try {
+        await authorizeBusinessAccessSession(session, businessId as string);
+      } catch (authErr: any) {
+        return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
       }
     }
 

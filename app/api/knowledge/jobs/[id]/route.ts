@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { getKnowledgeJob } from "@/lib/rag/queue";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 
 export async function GET(
   _req: Request,
@@ -24,16 +25,10 @@ export async function GET(
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    const business = await prisma.business.findFirst({
-      where: {
-        id: job.businessId,
-        user: { email: session.user.email },
-      },
-      select: { id: true },
-    });
-
-    if (!business) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    try {
+      await authorizeBusinessAccessSession(session, job.businessId);
+    } catch (authErr: any) {
+      return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
     }
 
     return NextResponse.json({

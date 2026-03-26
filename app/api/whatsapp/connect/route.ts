@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { evolutionService } from "@/services/whatsapp/evolution";
 import { prisma } from "@/lib/prisma";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 
 export async function POST(req: Request) {
     try {
@@ -42,15 +43,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "agentId es requerido" }, { status: 400 });
         }
 
-        const agent = await prisma.business.findFirst({
-            where: {
-                id: agentId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!agent) {
-            return NextResponse.json({ error: "Agente no encontrado" }, { status: 404 });
+        try {
+            await authorizeBusinessAccessSession(session, agentId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         // El nombre de la instancia en Evolution API será el agentId
@@ -212,15 +208,10 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: "agentId es requerido" }, { status: 400 });
         }
 
-        const agent = await prisma.business.findFirst({
-            where: {
-                id: agentId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!agent) {
-            return NextResponse.json({ error: "Agente no encontrado" }, { status: 404 });
+        try {
+            await authorizeBusinessAccessSession(session, agentId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         const status = await evolutionService.getInstanceStatus(agentId);

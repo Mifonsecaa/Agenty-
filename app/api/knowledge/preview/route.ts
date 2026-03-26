@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 import path from "path";
 import { readFile } from "fs/promises";
 import { isSpreadsheetFileName, workbookToPreview } from "@/lib/knowledge/spreadsheet";
@@ -41,16 +42,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "businessId y fileUrl son requeridos" }, { status: 400 });
     }
 
-    const business = await prisma.business.findFirst({
-      where: {
-        id: businessId,
-        user: { email: session.user.email },
-      },
-      select: { id: true },
-    });
-
-    if (!business) {
-      return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+    try {
+      await authorizeBusinessAccessSession(session, businessId);
+    } catch (authErr: any) {
+      return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
     }
 
     const normalizedFileUrl = fileUrl.trim();
