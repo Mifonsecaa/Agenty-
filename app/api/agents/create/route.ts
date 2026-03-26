@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { enforceAgentCreationPolicy } from "@/lib/auth/access-control";
 // Importa tus opciones de auth si las tienes en otro archivo, ej: import { authOptions } from "../auth/[...nextauth]/route"
 
 const openai = new OpenAI({
@@ -58,18 +57,6 @@ export async function POST(req: Request) {
 
         if (!dbUser) {
             return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
-        }
-
-        const access = await enforceAgentCreationPolicy(dbUser.id, session.user.email);
-        if (!access.allowed) {
-            return NextResponse.json(
-                {
-                    error: access.reason || "No tienes permiso para crear agentes.",
-                    trialEndsAt: access.trialEndsAt,
-                    remainingDays: access.remainingDays,
-                },
-                { status: access.status }
-            );
         }
 
         // 6. Guardar el nuevo agente usando el modelo Business (el proyecto no tiene modelo Agent)

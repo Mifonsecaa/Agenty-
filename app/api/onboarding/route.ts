@@ -13,7 +13,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { knowledgeAgent } from "@/services/ai/knowledgeAgent";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
-import { createTrialWindow, enforceAgentCreationPolicy, resolveRoleForNewUser } from "@/lib/auth/access-control";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -235,30 +234,12 @@ export async function POST(req: Request) {
         });
 
         if (!user) {
-            const role = await resolveRoleForNewUser(session.user.email);
-            const trial = role === "USER" ? createTrialWindow() : null;
-
             user = await prisma.user.create({
                 data: {
                     email: session.user.email,
                     name: session.user.name || "Dueño del Negocio",
-                    role,
-                    trialStartedAt: trial?.startedAt,
-                    trialEndsAt: trial?.endsAt,
                 }
             });
-        }
-
-        const access = await enforceAgentCreationPolicy(user.id, session.user.email);
-        if (!access.allowed) {
-            return NextResponse.json(
-                {
-                    error: access.reason || "No tienes permiso para crear nuevos agentes.",
-                    trialEndsAt: access.trialEndsAt,
-                    remainingDays: access.remainingDays,
-                },
-                { status: access.status }
-            );
         }
 
         // 5. Guardamos el nuevo negocio en PostgreSQL

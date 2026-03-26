@@ -43,9 +43,6 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
-  role          UserRole   @default(USER)
-  trialStartedAt DateTime?
-  trialEndsAt    DateTime?
   accounts      Account[]
   businesses    Business[]
   sessions      Session[]
@@ -192,9 +189,4 @@ enum KnowledgeIngestionJobStatus {
   COMPLETED
   FAILED
   DLQ
-}
-
-enum UserRole {
-  ADMIN
-  USER
 }
