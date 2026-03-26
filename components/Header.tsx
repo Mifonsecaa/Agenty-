@@ -3,8 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
+import BrandMark from '@/components/BrandMark';
 
 const Header = () => {
 	const pathname = usePathname();
@@ -44,11 +44,9 @@ const Header = () => {
 					<div className="flex items-center justify-between">
 						{/* Logo */}
 						<div className="shrink-0 relative z-50">
-							<Link href="/" className="flex items-center gap-2">
-								<div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-500 to-purple-500 flex items-center justify-center">
-									<Bot className="w-5 h-5 text-white" />
-								</div>
-											<span className="font-bold text-lg tracking-tight text-white">brainia<span className="text-white/50">.ai</span></span>
+							<Link href="/" className="group flex items-center gap-3">
+								<BrandMark className="w-9 h-9" />
+											<span className="text-lg font-bold tracking-[0.01em] text-white">Brainia<span className="font-semibold text-[#A855F7]">.ai</span></span>
 							</Link>
 						</div>
 

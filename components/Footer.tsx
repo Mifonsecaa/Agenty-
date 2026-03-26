@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot, Twitter, Github, Linkedin } from 'lucide-react';
+import { Twitter, Github, Linkedin } from 'lucide-react';
+import BrandMark from '@/components/BrandMark';
 
 export default function Footer() {
     const pathname = usePathname();
@@ -18,11 +19,9 @@ export default function Footer() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
                     {/* Brand Column */}
                     <div className="space-y-4">
-                        <Link href="/" className="flex items-center gap-2 text-white hover:opacity-80 transition-opacity">
-                            <div className="w-8 h-8 rounded-lg bg-linear-to-tr from-blue-600 to-purple-600 flex items-center justify-center">
-                                <Bot className="w-5 h-5 text-white" />
-                            </div>
-                            <span className="font-bold text-lg tracking-tight">brainia</span>
+                        <Link href="/" className="group flex items-center gap-3 text-white hover:opacity-90 transition-opacity">
+                            <BrandMark className="w-9 h-9" />
+                            <span className="text-lg font-bold tracking-[0.01em]">Brainia<span className="font-semibold text-[#A855F7]">.ai</span></span>
                         </Link>
                         <p className="text-sm leading-relaxed max-w-xs">
                             Plataforma de IA nativa para automatizar ventas y soporte en WhatsApp. Entrena tu agente en segundos.
