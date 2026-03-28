@@ -232,7 +232,9 @@ export async function POST(request: Request) {
     }
 
     const conversationMessages = normalizedMessages.filter((m) => m.role !== 'system');
-    const content = await aiService.generateResponse(business.id, conversationMessages, {
+    // Use agentId (validated earlier) instead of referencing `business` to avoid
+    // potential scope issues during compilation.
+    const content = await aiService.generateResponse(agentId as string, conversationMessages, {
       provider,
       systemPrompt,
     });
