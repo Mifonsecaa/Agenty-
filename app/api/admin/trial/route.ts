@@ -44,10 +44,9 @@ export async function POST(req: Request) {
     }
 
     const now = new Date();
-    // Update trial fields with typed API (avoid setting `role` here to prevent TS errors when Prisma types are out of sync)
-    await prisma.user.update({ where: { id: user.id }, data: { trialBusinessId: businessId, trialStartedAt: now } });
-    // Set role using a raw SQL statement to avoid TypeScript complaining about missing generated types for `role`.
-    // This is temporary; remove and set via Prisma once CI runs `prisma generate`.
+    // Update trial fields using raw SQL to avoid TypeScript errors while Prisma client types are out of sync
+    await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${businessId}, trialStartedAt = ${now} WHERE id = ${user.id}`;
+    // Set role using a raw SQL statement as well. This is temporary; restore typed updates once CI runs `prisma generate`.
     await prisma.$executeRaw`UPDATE "User" SET role = 'USERTRY' WHERE id = ${user.id}`;
 
     await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: user.id, action: 'activate', details: `businessId=${businessId}` } });
@@ -81,14 +80,14 @@ export async function PATCH(req: Request) {
       const current = target.trialStartedAt ? new Date(target.trialStartedAt) : new Date();
       // extend by moving start into the past so expires moves forward
       const newStart = new Date(current.getTime() - (24 - hours) * 3600 * 1000);
-      await prisma.user.update({ where: { id: userId }, data: { trialStartedAt: newStart } });
+      await prisma.$executeRaw`UPDATE "User" SET trialStartedAt = ${newStart} WHERE id = ${userId}`;
       await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'extend', details: `hours=${hours}` } });
       return NextResponse.json({ success: true, trialStartedAt: newStart.toISOString() });
     }
 
     if (action === 'revoke') {
       // avoid setting `role` in typed update to prevent TS errors during rollout
-      await prisma.user.update({ where: { id: userId }, data: { trialBusinessId: null, trialStartedAt: null } });
+      await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = NULL, trialStartedAt = NULL WHERE id = ${userId}`;
       await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
       await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'revoke', details: '' } });
       return NextResponse.json({ success: true });
@@ -99,7 +98,7 @@ export async function PATCH(req: Request) {
       if (!businessId) return NextResponse.json({ error: 'businessId required' }, { status: 400 });
       const b = await prisma.business.findUnique({ where: { id: businessId } });
       if (!b) return NextResponse.json({ error: 'businessId not found' }, { status: 404 });
-      await prisma.user.update({ where: { id: userId }, data: { trialBusinessId: businessId } });
+      await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${businessId} WHERE id = ${userId}`;
       await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'setBusiness', details: `businessId=${businessId}` } });
       return NextResponse.json({ success: true });
     }
@@ -151,7 +150,7 @@ export async function DELETE(req: Request) {
     const userId = String(body.userId || '').trim();
     if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-    await prisma.user.update({ where: { id: userId }, data: { trialBusinessId: null, trialStartedAt: null } });
+    await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = NULL, trialStartedAt = NULL WHERE id = ${userId}`;
     await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
     await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'delete', details: '' } });
     return NextResponse.json({ success: true });
