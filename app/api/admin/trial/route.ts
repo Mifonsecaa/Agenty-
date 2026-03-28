@@ -44,7 +44,11 @@ export async function POST(req: Request) {
     }
 
     const now = new Date();
-    await prisma.user.update({ where: { id: user.id }, data: { role: 'USERTRY', trialBusinessId: businessId, trialStartedAt: now } });
+    // Update trial fields with typed API (avoid setting `role` here to prevent TS errors when Prisma types are out of sync)
+    await prisma.user.update({ where: { id: user.id }, data: { trialBusinessId: businessId, trialStartedAt: now } });
+    // Set role using a raw SQL statement to avoid TypeScript complaining about missing generated types for `role`.
+    // This is temporary; remove and set via Prisma once CI runs `prisma generate`.
+    await prisma.$executeRaw`UPDATE "User" SET role = 'USERTRY' WHERE id = ${user.id}`;
 
     await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: user.id, action: 'activate', details: `businessId=${businessId}` } });
 
@@ -83,7 +87,9 @@ export async function PATCH(req: Request) {
     }
 
     if (action === 'revoke') {
-      await prisma.user.update({ where: { id: userId }, data: { role: 'USERDEFAULT', trialBusinessId: null, trialStartedAt: null } });
+      // avoid setting `role` in typed update to prevent TS errors during rollout
+      await prisma.user.update({ where: { id: userId }, data: { trialBusinessId: null, trialStartedAt: null } });
+      await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
       await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'revoke', details: '' } });
       return NextResponse.json({ success: true });
     }
@@ -145,7 +151,8 @@ export async function DELETE(req: Request) {
     const userId = String(body.userId || '').trim();
     if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-    await prisma.user.update({ where: { id: userId }, data: { role: 'USERDEFAULT', trialBusinessId: null, trialStartedAt: null } });
+    await prisma.user.update({ where: { id: userId }, data: { trialBusinessId: null, trialStartedAt: null } });
+    await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
     await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'delete', details: '' } });
     return NextResponse.json({ success: true });
   } catch (err: any) {
