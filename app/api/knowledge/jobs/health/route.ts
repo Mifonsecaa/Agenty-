@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     const workerAuthorized = hasValidWorkerToken(req);
 
     if (!workerAuthorized) {
-      const session = await getServerSession(authOptions);
+      const session = await getServerSession(authOptions) as any;
       if (!session?.user?.email) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }

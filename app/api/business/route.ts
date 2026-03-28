@@ -7,7 +7,7 @@ import { evolutionService } from "@/services/whatsapp/evolution";
 export async function GET(req: Request) {
     try {
         // 1. Verificamos sesión
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             console.warn("[API Business] No session found or no email in session");
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
 
 export async function DELETE(req: Request) {
     try {
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
@@ -85,7 +85,7 @@ export async function DELETE(req: Request) {
 
 export async function PUT(req: Request) {
     try {
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }

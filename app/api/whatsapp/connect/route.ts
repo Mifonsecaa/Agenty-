@@ -33,7 +33,7 @@ export async function POST(req: Request) {
             );
         }
 
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado" }, { status: 401 });
         }
@@ -196,7 +196,7 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
     try {
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado" }, { status: 401 });
         }

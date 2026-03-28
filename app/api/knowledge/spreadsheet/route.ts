@@ -53,7 +53,7 @@ function sanitizeUpdates(updates: SpreadsheetCellUpdate[]) {
 
 export async function PATCH(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(authOptions) as any;
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -158,7 +158,7 @@ function isSpreadsheetByMeta(fileName?: string, fileType?: string) {
 
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(authOptions) as any;
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -204,7 +204,7 @@ export async function POST(request: Request) {
     }
 
     // Playground privado: siempre requiere sesión y agentId explícito para alinear test mode al agente activo.
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(authOptions) as any;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }

@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     try {
         console.log("[Onboarding] Recibiendo solicitud de onboarding...");
         // 1. Verificamos sesión
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }

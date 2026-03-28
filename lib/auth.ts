@@ -11,7 +11,7 @@ export async function requireRole(req: Request, res: Response, allowedRoles: str
 }
 
 export async function authorizeBusinessAccess(req: any, res: any, businessId: string) {
-  const session = await getServerSession(req, res, authOptions as any);
+  const session = await getServerSession(req, res, authOptions as any) as any;
   if (!session?.user?.email) {
     res.status(401).json({ error: 'Unauthorized' });
     throw new Error('Unauthorized');

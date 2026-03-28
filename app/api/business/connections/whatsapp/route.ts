@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { evolutionService } from "@/services/whatsapp/evolution";
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions) as any;
   if (!session?.user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions) as any;
   if (!session?.user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
