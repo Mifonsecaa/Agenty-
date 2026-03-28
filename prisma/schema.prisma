@@ -46,6 +46,9 @@ model User {
   role          Role       @default(USERDEFAULT)
   trialStartedAt DateTime?
   trialBusinessId String?
+  // Trial token fields: limit of tokens for trial users and cumulative usage
+  trialTokenLimit Int?
+  trialTokensUsed Int? @default(0)
   accounts      Account[]
   businesses    Business[]
   sessions      Session[]

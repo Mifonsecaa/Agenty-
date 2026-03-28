@@ -443,6 +443,23 @@ export const aiService = {
             );
             registerCacheKey(responseKeysByBusiness, businessId, responseCacheKey);
 
+            // Charge trial tokens if the business belongs to a trial user
+            try {
+                const owner = await prisma.business.findUnique({ where: { id: businessId }, select: { userId: true } });
+                if (owner?.userId) {
+                    const user = await prisma.user.findUnique({ where: { id: owner.userId }, select: { id: true, role: true, trialTokenLimit: true, trialTokensUsed: true } }) as any;
+                    if (user && user.role === 'USERTRY' && typeof user.trialTokenLimit === 'number') {
+                        // Simple heuristic: estimate tokens based on content length
+                        const inputText = messages.map(m => m.content || '').join(' ');
+                        const estimatedTokens = Math.max(1, Math.floor(inputText.length / 4 + finalResponse.length / 4));
+                        const newUsage = (user.trialTokensUsed || 0) + estimatedTokens;
+                        await prisma.$executeRaw`UPDATE "User" SET trialTokensUsed = ${newUsage} WHERE id = ${user.id}`;
+                    }
+                }
+            } catch (e) {
+                console.warn('[AIService] Could not charge trial tokens:', e);
+            }
+
             return finalResponse;
         } catch (error: any) {
             console.error("[AIService] FINAL CRITICAL ERROR:", error.message || error);

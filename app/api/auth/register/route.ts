@@ -28,6 +28,17 @@ export async function POST(request: Request) {
             },
         });
 
+        // Create a default business for the trial and set trial fields.
+        try {
+            const business = await prisma.business.create({ data: { name: `${newUser.name || 'Negocio'} (Prueba)`, userId: newUser.id, config: {} } });
+            const now = new Date();
+            // Use raw SQL to set trial fields and token limits to avoid Prisma enum/type drift in CI
+            // trialTokenLimit: set a modest default, e.g., 10000 tokens
+            await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${business.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${newUser.id}`;
+        } catch (err) {
+            console.warn('Could not create trial business automatically', err);
+        }
+
         try {
             const { verifyUrl } = await createEmailVerificationToken(normalizedEmail);
             await sendEmailVerificationMessage({

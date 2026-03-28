@@ -77,7 +77,10 @@ const Header = () => {
 											Playground
 										</Link>
 										<span className="text-sm text-gray-300 hidden lg:inline-block">
-											Hola, <span className="text-white font-medium">{session.user?.name?.split(' ')[0] || session.user?.email}</span>
+																										Hola, <span className="text-white font-medium">{session.user?.name?.split(' ')[0] || session.user?.email}</span>
+																										{(session.user as any)?.role === 'USERTRY' && (
+																											<span className="ml-2 inline-block text-xs text-emerald-300 bg-emerald-900/30 px-2 py-0.5 rounded">Free (7-day trial)</span>
+																										)}
 										</span>
 										<button
 											onClick={() => signOut({ callbackUrl: '/' })}

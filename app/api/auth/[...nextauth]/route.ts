@@ -68,6 +68,19 @@ export const authOptions: NextAuthOptions = {
                 // 3. Llamamos a la función para guardar el token en la base de datos
                 await saveWhatsAppCredentials(user.id, account.access_token);
             }
+            try {
+                // Ensure the user has a business and trial fields set on first sign in
+                const dbUser = await prisma.user.findUnique({ where: { id: user.id } }) as any;
+                if (dbUser) {
+                    if (!dbUser.trialStartedAt) {
+                        const b = await prisma.business.create({ data: { name: `${user.name || 'Negocio'} (Prueba)`, userId: dbUser.id, config: {} } });
+                        const now = new Date();
+                        await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${b.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${dbUser.id}`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Error ensuring trial for OAuth user:', e);
+            }
             return true; // Permitir siempre el inicio de sesión/conexión
         },
         async session({ session, token }) {

@@ -37,10 +37,18 @@ export async function authorizeBusinessAccess(req: any, res: any, businessId: st
       throw new Error('Forbidden');
     }
     const msSince = Date.now() - new Date(user.trialStartedAt).getTime();
-    const hours = msSince / (1000 * 60 * 60);
-    if (hours > 24) {
+    const days = msSince / (1000 * 60 * 60 * 24);
+    // Trial lasts 7 days
+    if (days > 7) {
       res.status(403).json({ error: 'Trial expired' });
       throw new Error('Forbidden');
+    }
+    // Enforce token quota if defined
+    if (typeof user.trialTokenLimit === 'number' && typeof user.trialTokensUsed === 'number') {
+      if (user.trialTokensUsed >= user.trialTokenLimit) {
+        res.status(403).json({ error: 'Trial token quota exhausted' });
+        throw new Error('Forbidden');
+      }
     }
     return user;
   }
@@ -71,7 +79,10 @@ export async function authorizeBusinessAccessSession(session: any, businessId: s
     }
     if (!user.trialStartedAt) throw { status: 403, message: 'Forbidden: trial start not set' };
     const msSince = Date.now() - new Date(user.trialStartedAt).getTime();
-    if (msSince / (1000 * 60 * 60) > 24) throw { status: 403, message: 'Trial expired' };
+    if (msSince / (1000 * 60 * 60 * 24) > 7) throw { status: 403, message: 'Trial expired' };
+    if (typeof user.trialTokenLimit === 'number' && typeof user.trialTokensUsed === 'number') {
+      if (user.trialTokensUsed >= user.trialTokenLimit) throw { status: 403, message: 'Trial token quota exhausted' };
+    }
     return user;
   }
 
