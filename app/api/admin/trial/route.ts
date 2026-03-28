@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     // Set role using a raw SQL statement as well. This is temporary; restore typed updates once CI runs `prisma generate`.
     await prisma.$executeRaw`UPDATE "User" SET role = 'USERTRY' WHERE id = ${user.id}`;
 
-    await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: user.id, action: 'activate', details: `businessId=${businessId}` } });
+    await prisma.$executeRaw`INSERT INTO "TrialAction" ("adminId","targetUserId","action","details") VALUES (${admin.id}, ${user.id}, 'activate', ${`businessId=${businessId}`})`;
 
     return NextResponse.json({ success: true, userId: user.id, businessId, trialStartedAt: now.toISOString() });
   } catch (err: any) {
@@ -81,7 +81,7 @@ export async function PATCH(req: Request) {
       // extend by moving start into the past so expires moves forward
       const newStart = new Date(current.getTime() - (24 - hours) * 3600 * 1000);
       await prisma.$executeRaw`UPDATE "User" SET trialStartedAt = ${newStart} WHERE id = ${userId}`;
-      await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'extend', details: `hours=${hours}` } });
+      await prisma.$executeRaw`INSERT INTO "TrialAction" ("adminId","targetUserId","action","details") VALUES (${admin.id}, ${userId}, 'extend', ${`hours=${hours}`})`;
       return NextResponse.json({ success: true, trialStartedAt: newStart.toISOString() });
     }
 
@@ -89,7 +89,7 @@ export async function PATCH(req: Request) {
       // avoid setting `role` in typed update to prevent TS errors during rollout
       await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = NULL, trialStartedAt = NULL WHERE id = ${userId}`;
       await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
-      await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'revoke', details: '' } });
+      await prisma.$executeRaw`INSERT INTO "TrialAction" ("adminId","targetUserId","action","details") VALUES (${admin.id}, ${userId}, 'revoke', ${''})`;
       return NextResponse.json({ success: true });
     }
 
@@ -99,7 +99,7 @@ export async function PATCH(req: Request) {
       const b = await prisma.business.findUnique({ where: { id: businessId } });
       if (!b) return NextResponse.json({ error: 'businessId not found' }, { status: 404 });
       await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${businessId} WHERE id = ${userId}`;
-      await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'setBusiness', details: `businessId=${businessId}` } });
+      await prisma.$executeRaw`INSERT INTO "TrialAction" ("adminId","targetUserId","action","details") VALUES (${admin.id}, ${userId}, 'setBusiness', ${`businessId=${businessId}`})`;
       return NextResponse.json({ success: true });
     }
 
@@ -130,7 +130,7 @@ export async function GET(req: Request) {
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-    const actions = await prisma.trialAction.findMany({ where: { targetUserId: user.id }, orderBy: { createdAt: 'desc' }, take: 50 });
+    const actions = await prisma.$queryRaw`SELECT id, "adminId", "targetUserId", action, details, "createdAt" FROM "TrialAction" WHERE "targetUserId" = ${user.id} ORDER BY "createdAt" DESC LIMIT 50` as any[];
 
     return NextResponse.json({ success: true, user: { id: user.id, email: user.email, role: user.role, trialBusinessId: user.trialBusinessId, trialStartedAt: user.trialStartedAt }, actions });
   } catch (err: any) {
@@ -152,7 +152,7 @@ export async function DELETE(req: Request) {
 
     await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = NULL, trialStartedAt = NULL WHERE id = ${userId}`;
     await prisma.$executeRaw`UPDATE "User" SET role = 'USERDEFAULT' WHERE id = ${userId}`;
-    await prisma.trialAction.create({ data: { adminId: admin.id, targetUserId: userId, action: 'delete', details: '' } });
+    await prisma.$executeRaw`INSERT INTO "TrialAction" ("adminId","targetUserId","action","details") VALUES (${admin.id}, ${userId}, 'delete', ${''})`;
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error('[ADMIN TRIAL DELETE] Error:', err);
