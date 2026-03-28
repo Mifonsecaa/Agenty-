@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   // Note: getServerSession is not available in edge runtime; assume default Node environment
   const session = await getServerSession(undefined as any, undefined as any, authOptions as any) as { user?: { email?: string; name?: string } } | null;
   if (!session?.user?.email) return NextResponse.json({ user: null });
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  const user = await prisma.user.findUnique({ where: { email: session.user.email } }) as any;
   if (!user) return NextResponse.json({ user: null });
   return NextResponse.json({ user: { id: user.id, email: user.email, role: user.role, name: user.name } });
 }
