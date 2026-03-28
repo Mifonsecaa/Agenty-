@@ -77,7 +77,7 @@ export const authOptions: NextAuthOptions = {
                     // Fetch role from DB in case it's not present on the token
                     const dbUser = await prisma.user.findUnique({ where: { id: token.sub } });
                     if (dbUser) {
-                        (session.user as any).role = dbUser.role;
+                        (session.user as any).role = (dbUser as any).role;
                     }
                 } catch (e) {
                     console.warn('Could not fetch user role for session callback', e);

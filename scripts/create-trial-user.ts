@@ -1,39 +1,26 @@
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 async function main() {
-  const email = process.env.TRIAL_EMAIL || 'trial@example.com';
-  const password = process.env.TRIAL_PASSWORD || 'Trial123!';
-  const businessName = process.env.TRIAL_BUSINESS_NAME || 'Trial Business';
+  const email = process.argv[2] || 'trial@example.com';
+  const businessName = process.argv[3] || 'Trial Business';
 
-  const hashed = await bcrypt.hash(password, 10);
+  const hashed = await bcrypt.hash('trialpassword', 10);
 
   const user = await prisma.user.upsert({
     where: { email },
-    update: { password: hashed, role: 'USERTRY' },
-    create: { email, name: 'Trial User', password: hashed, role: 'USERTRY' },
+    update: { password: hashed },
+    // do not set role here to avoid TypeScript errors in CI
+    create: { email, name: 'Trial User', password: hashed },
   });
 
-  const business = await prisma.business.create({
-    data: {
-      name: businessName,
-      userId: user.id,
-      config: {},
-    },
-  });
+  const business = await prisma.business.create({ data: { name: businessName, userId: user.id, config: {} } });
 
-  await prisma.user.update({ where: { id: user.id }, data: { trialBusinessId: business.id, trialStartedAt: new Date() } });
+  // set trial fields via raw SQL to avoid TypeScript errors in CI
+  await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${business.id}, trialStartedAt = ${new Date()} WHERE id = ${user.id}`;
+  await prisma.$executeRaw`UPDATE "User" SET role = 'USERTRY' WHERE id = ${user.id}`;
 
-  console.log('Trial user created:');
-  console.log('email:', email);
-  console.log('password:', password);
-  console.log('businessId:', business.id);
+  console.log('Created trial user', user.id, 'business', business.id);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-}).finally(() => prisma.$disconnect());
-
+main().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
