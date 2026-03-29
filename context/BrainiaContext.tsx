@@ -37,19 +37,10 @@ export function BrainiaProvider({
     const [isLoading, setIsLoading] = useState(initialAgents.length === 0); // Only loading if no initial data
 
     const refreshAgents = useCallback(async () => {
-        // Prevent re-fetching if initialAgents are already set and we are authenticated
-        if (initialAgents.length > 0 && isLoading === false) {
-             return; // Skip explicit fetch
-        }
-        
-        // Only fetch if authenticated
-        if (status !== "authenticated" && initialAgents.length === 0) {
-            if (status === "unauthenticated") {
-                setIsLoading(false);
-            }
-            return;
-        }
-
+        // Always fetch the current authenticated user's agents. This avoids showing
+        // agents that belonged to a previously authenticated user which may be
+        // still present in localStorage or were provided as initial props.
+        setIsLoading(true);
         try {
             console.log("[BrainiaProvider] Fetching agents...");
             const response = await fetch("/api/business");
@@ -66,15 +57,27 @@ export function BrainiaProvider({
                 const fetchedAgents = data.businesses;
                 setAgents(fetchedAgents);
 
-                // Sync active selection
+                // Sync active selection from localStorage if it belongs to this user's
+                // fetched agents; otherwise pick the first agent and clear stale keys.
                 const activeId = localStorage.getItem("brainia_active_agent_id");
-                let active = fetchedAgents.find((a: Agent) => a.id === activeId) || fetchedAgents[0];
+                const active = fetchedAgents.find((a: Agent) => a.id === activeId) || fetchedAgents[0] || null;
 
                 if (active) {
                     setActiveAgent(active);
                     localStorage.setItem("brainia_active_agent_id", active.id);
                     localStorage.setItem("brainia_config", JSON.stringify(active));
+                } else {
+                    // No matching agent for this user: clear any stale selection
+                    localStorage.removeItem("brainia_active_agent_id");
+                    localStorage.removeItem("brainia_config");
+                    setActiveAgent(null);
                 }
+            } else {
+                // If the API returns no businesses, clear local state/storage
+                setAgents([]);
+                setActiveAgent(null);
+                localStorage.removeItem("brainia_active_agent_id");
+                localStorage.removeItem("brainia_config");
             }
         } catch (error) {
             console.error("Failed to load agents:", error);
@@ -85,8 +88,18 @@ export function BrainiaProvider({
 
     useEffect(() => {
         if (status === "authenticated") {
-            refreshAgents();
+            void refreshAgents();
         } else if (status === "unauthenticated") {
+            // Clear local agent state and any stored selection to avoid showing
+            // agents that belonged to a previous user.
+            setAgents([]);
+            setActiveAgent(null);
+            try {
+                localStorage.removeItem('brainia_active_agent_id');
+                localStorage.removeItem('brainia_config');
+            } catch (e) {
+                // ignore localStorage errors
+            }
             setIsLoading(false);
         }
     }, [refreshAgents, status]);
