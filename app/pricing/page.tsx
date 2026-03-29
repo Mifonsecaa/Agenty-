@@ -156,16 +156,7 @@ const PricingPage = () => {
 									</li>
 								))}
 							</ul>
-							<Link
-								href="/register"
-								className={`mt-10 w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 text-center ${
-									plan.isPopular
-										? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
-										: 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
-								}`}
-							>
-								Empezar con {plan.name}
-							</Link>
+							<PaymentButton plan={plan} isPopular={plan.isPopular} />
 						</motion.div>
 					))}
 				</motion.div>
@@ -238,3 +229,58 @@ function FAQItem({ faq }: { faq: { question: string; answer: string } }) {
 }
 
 export default PricingPage;
+
+function centsFromPrice(price: string) {
+	// price example: "$120.000" or "$120000"
+	const digits = price.replace(/[^0-9]/g, '');
+	// assume COP, cents are just integer pesos * 100
+	const pesos = Number(digits) || 0;
+	return Math.round(pesos * 100);
+}
+
+function PaymentButton({ plan, isPopular }: { plan: any; isPopular: boolean }) {
+	const [loading, setLoading] = React.useState(false);
+
+	const handleClick = async () => {
+		try {
+			setLoading(true);
+			const amountInCents = centsFromPrice(plan.price);
+			const res = await fetch('/api/payments/wompi/create-session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ planName: plan.name, amount: amountInCents }),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'Error creating payment');
+			if (data.checkoutUrl) {
+				window.location.href = data.checkoutUrl;
+				return;
+			}
+			if (data.data && data.data.redirect_url) {
+				window.location.href = data.data.redirect_url;
+				return;
+			}
+			throw new Error('No checkout URL returned');
+		} catch (err) {
+			console.error('Payment error', err);
+			alert(err instanceof Error ? err.message : 'Error iniciando pago');
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	return (
+		<button
+			onClick={handleClick}
+			disabled={loading}
+			className={`mt-10 w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 text-center ${
+				isPopular
+					? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
+					: 'bg-white/5 border border-white/10 hover:bg-white/10 text-white'
+			}`}
+		>
+			{loading ? 'Redirigiendo a pago...' : `Empezar con ${plan.name}`}
+		</button>
+	);
+}
+
