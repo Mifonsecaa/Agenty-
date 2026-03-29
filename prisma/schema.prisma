@@ -43,7 +43,7 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
-  role          Role       @default(USERDEFAULT)
+  role          Role       @default(USERTRY)
   trialStartedAt DateTime?
   trialBusinessId String?
   // Trial token fields: limit of tokens for trial users and cumulative usage

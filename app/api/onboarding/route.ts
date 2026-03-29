@@ -251,6 +251,14 @@ export async function POST(req: Request) {
             }
         });
 
+        // Ensure trial fields are set for newly created users during onboarding
+        try {
+            const now = new Date();
+            await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${negocio.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${user.id}`;
+        } catch (e) {
+            console.warn('[Onboarding] Could not set trial fields for user:', e);
+        }
+
         // 6. Si hubo archivos, procesamos con AGENTE de Conocimiento
         if (filesContent.length > 0) {
             console.log(`[Onboarding] Invocando Agente de Conocimiento para ${filesContent.length} archivos...`);
