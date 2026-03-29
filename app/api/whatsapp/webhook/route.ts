@@ -103,6 +103,26 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true, message: "Agent not found" });
         }
 
+        // Resolver LID ANTES de identificar customer/conversation para no fragmentar memoria.
+        if (targetJid.includes("@lid")) {
+            const alternateJid = messageData.remoteJidAlt || messageData.senderPn;
+            if (alternateJid && !alternateJid.includes("@lid")) {
+                targetJid = alternateJid.includes("@") ? alternateJid : `${alternateJid}@s.whatsapp.net`;
+            } else {
+                try {
+                    const contactInfo = await evolutionService.fetchContact(instanceName, targetJid);
+                    if (contactInfo && contactInfo.id && !contactInfo.id.includes("@lid")) {
+                        targetJid = contactInfo.id;
+                    } else if (contactInfo && (contactInfo.number || contactInfo.phoneNumber)) {
+                        const num = contactInfo.number || contactInfo.phoneNumber;
+                        targetJid = num.includes("@") ? num : `${num}@s.whatsapp.net`;
+                    }
+                } catch (err) {
+                    console.error("[WhatsApp Webhook] Error resolving LID:", err);
+                }
+            }
+        }
+
         // --- GESTIÓN DE CONTACTO Y CONVERSACIÓN ---
         const customerPhone = targetJid.split('@')[0];
         let customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
@@ -153,26 +173,6 @@ export async function POST(req: Request) {
 
         // --- REGISTRO DE MÉTRICA: Mensaje Recibido ---
         await metricsService.incrementMetric(agent.id, 'messagesReceived');
-
-        // --- RESOLUCIÓN DE LID ---
-        if (targetJid.includes("@lid")) {
-            const alternateJid = messageData.remoteJidAlt || messageData.senderPn;
-            if (alternateJid && !alternateJid.includes("@lid")) {
-                targetJid = alternateJid.includes("@") ? alternateJid : `${alternateJid}@s.whatsapp.net`;
-            } else {
-                try {
-                    const contactInfo = await evolutionService.fetchContact(instanceName, targetJid);
-                    if (contactInfo && contactInfo.id && !contactInfo.id.includes("@lid")) {
-                        targetJid = contactInfo.id;
-                    } else if (contactInfo && (contactInfo.number || contactInfo.phoneNumber)) {
-                        const num = contactInfo.number || contactInfo.phoneNumber;
-                        targetJid = num.includes("@") ? num : `${num}@s.whatsapp.net`;
-                    }
-                } catch (err) {
-                    console.error("[WhatsApp Webhook] Error resolving LID:", err);
-                }
-            }
-        }
 
         // 2. Generar respuesta real con el Agente (LangGraph + RAG)
         let aiResponse = "Lo siento, tuve un problema interno.";

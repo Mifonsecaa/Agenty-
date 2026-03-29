@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { createHash } from "crypto";
 import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
@@ -10,6 +12,27 @@ console.log("[AIService] Module Loading...");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+
+// Arquitectura multi-agente: modelos especializados por rol.
+export const supervisorModel = new ChatOpenAI({
+    modelName: "gpt-4o-mini",
+    temperature: 0,
+});
+
+export const ragModel = new ChatGoogleGenerativeAI({
+    model: "gemini-1.5-flash",
+    temperature: 0.2,
+    apiKey: process.env.GEMINI_API_KEY,
+});
+
+export const toolModel = new ChatOpenAI({
+    modelName: "gpt-4o-mini",
+    temperature: 0,
+});
+
+export function createRequiredToolAgent(tools: any[]) {
+    return (toolModel as any).bindTools(tools, { tool_choice: "required" });
+}
 
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
