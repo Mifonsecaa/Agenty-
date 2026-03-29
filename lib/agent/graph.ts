@@ -49,6 +49,17 @@ function getLastUserMessage(messages: BaseMessage[]) {
     return "";
 }
 
+function getRecentConversationText(messages: BaseMessage[], take = 10) {
+    const slice = messages.slice(-Math.max(4, Math.min(20, take)));
+    return slice
+        .map((msg: any) => {
+            const role = msg?.getType?.() === "human" ? "usuario" : "asistente";
+            const content = normalizeMessageContent(msg?.content || "");
+            return `${role}: ${content}`;
+        })
+        .join("\n");
+}
+
 function trimMessagesForModel(messages: BaseMessage[]) {
     const maxMessages = Math.max(4, Math.min(16, AGENT_MAX_HISTORY_MESSAGES));
     if (messages.length <= maxMessages) return messages;
@@ -64,6 +75,10 @@ function isReservationIntent(text: string) {
     return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno)/i.test(String(text || ""));
 }
 
+function isReservationStatusQuestion(text: string) {
+    return /(si\s+realizaste|ya\s+quedo|quedo\s+la\s+reserva|confirmaste|esta\s+confirmada|se\s+hizo\s+la\s+reserva)/i.test(String(text || ""));
+}
+
 function hasReservationRequiredData(text: string) {
     const value = String(text || "");
     const hasDate = /\b(\d{4}-\d{2}-\d{2}|hoy|mañana|manana|pasado\s+mañana|pasado\s+manana|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i.test(value);
@@ -71,6 +86,46 @@ function hasReservationRequiredData(text: string) {
     const hasPeople = /\b\d+\s*(persona|personas|pax|comensales)\b/i.test(value);
     const hasName = /\b(a\s+nombre\s+de|nombre\s*[:\-]|soy\s+)\s*[a-záéíóúñ]/i.test(value);
     return hasDate && hasHour && hasPeople && hasName;
+}
+
+function extractLastMatch(value: string, regex: RegExp) {
+    const source = String(value || "");
+    const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+    const globalRegex = new RegExp(regex.source, flags);
+    let match: RegExpExecArray | null = null;
+    let last: RegExpExecArray | null = null;
+    while ((match = globalRegex.exec(source)) !== null) {
+        last = match;
+    }
+    return last;
+}
+
+function extractReservationSnapshot(conversationText: string, lastUserMessage: string) {
+    const dateMatch = extractLastMatch(
+        conversationText,
+        /(\b\d{4}-\d{2}-\d{2}\b|\bhoy\b|\bmañana\b|\bmanana\b|\bpasado\s+mañana\b|\bpasado\s+manana\b|\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b)/i,
+    );
+    const timeMatch = extractLastMatch(
+        conversationText,
+        /(\b(?:[01]?\d|2[0-3])[:.]\d{2}\b|\b\d{1,2}\s?(?:am|pm)\b|\ba\s+las\s+\d{1,2}(?::\d{2})?\b)/i,
+    );
+    const peopleMatch = extractLastMatch(conversationText, /(\b\d+)\s*(persona|personas|pax|comensales)\b/i);
+    const explicitName = extractLastMatch(conversationText, /(?:a\s+nombre\s+de|nombre\s*[:\-]|soy\s+)([a-záéíóúñ ]{3,60})/i);
+
+    let name = explicitName?.[1]?.trim() || "";
+    if (!name) {
+        const shortNameCandidate = String(lastUserMessage || "").trim();
+        if (/^[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){1,3}$/i.test(shortNameCandidate)) {
+            name = shortNameCandidate;
+        }
+    }
+
+    return {
+        date: dateMatch?.[1]?.trim() || "",
+        time: timeMatch?.[1]?.trim() || "",
+        people: peopleMatch?.[1]?.trim() || "",
+        name,
+    };
 }
 
 function isSpreadsheetEditIntent(text: string) {
@@ -141,12 +196,26 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
 
     const supervisorNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
+        const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
+        const reservationContextActive = isReservationIntent(recentConversation);
         const routerPrompt =
             "Eres un enrutador de tareas. NUNCA respondas al usuario directamente. " +
             "Si el usuario hace una pregunta o pide informacion, devuelve 'rag_agent'. " +
             "Si el usuario pide agendar, modificar, guardar o crear un registro en un documento, devuelve 'tool_agent'. " +
             "REGLA DE ENRUTAMIENTO PARA RESERVAS/EDICION: Antes de devolver 'tool_agent', VERIFICA estrictamente que el ultimo mensaje del usuario contenga TODOS los parametros necesarios para la accion (por ejemplo: Nombre, Fecha, Hora y Cantidad de personas para una reserva). Si falta ALGUN dato, devuelve 'rag_agent' para que el asistente le pregunte al usuario la informacion faltante. NUNCA derives a 'tool_agent' con datos incompletos. " +
             "Responde unicamente con el nombre exacto del nodo en formato texto.";
+
+        if (reservationContextActive && isReservationStatusQuestion(lastUserMessage)) {
+            return { nextNode: "rag_agent" as const };
+        }
+
+        if (reservationContextActive) {
+            const isComplete = Boolean(
+                reservationSnapshot.name && reservationSnapshot.date && reservationSnapshot.time && reservationSnapshot.people,
+            );
+            return { nextNode: isComplete ? ("tool_agent" as const) : ("rag_agent" as const) };
+        }
 
         if (isReservationIntent(lastUserMessage) && !hasReservationRequiredData(lastUserMessage)) {
             return { nextNode: "rag_agent" as const };
@@ -167,16 +236,58 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
 
     const toolNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
+        const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
         const toolPrompt =
             "Eres un automata de bases de datos. PROHIBIDO generar texto conversacional o saludos. " +
             "Ejecuta la herramienta requerida con los datos proporcionados por el usuario. " +
             "NUNCA digas 'voy a revisar' o 'espera un momento'. " +
             "Si faltan datos criticos, usa la herramienta mas adecuada para listar opciones y devolver evidencia tecnica.";
 
+        // Si ya tenemos toda la reserva en el historial reciente, ejecutamos CREATE de forma determinista.
+        if (
+            isReservationIntent(recentConversation) &&
+            !isReservationStatusQuestion(lastUserMessage) &&
+            reservationSnapshot.name &&
+            reservationSnapshot.date &&
+            reservationSnapshot.time &&
+            reservationSnapshot.people
+        ) {
+            const bookingTool = toolMap.get("booking_manager");
+            if (bookingTool) {
+                try {
+                    const details = `Reserva para ${reservationSnapshot.people} personas a nombre de ${reservationSnapshot.name}.`;
+                    const result = await bookingTool.invoke({
+                        action: "CREATE",
+                        date: reservationSnapshot.date,
+                        time: reservationSnapshot.time,
+                        details,
+                    });
+                    return {
+                        toolResult: typeof result === "string" ? result : JSON.stringify(result),
+                        nextNode: "rag_agent" as const,
+                    };
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    return {
+                        toolResult: `Error tecnico al ejecutar booking_manager CREATE: ${message}`,
+                        nextNode: "rag_agent" as const,
+                    };
+                }
+            }
+        }
+
         try {
             const modelReply = await boundToolModel.invoke([
                 new SystemMessage(toolPrompt),
-                new HumanMessage(lastUserMessage),
+                new HumanMessage(
+                    [
+                        `Ultimo mensaje del usuario: ${lastUserMessage}`,
+                        "Contexto reciente de la conversacion:",
+                        recentConversation,
+                        "Si la tarea es reserva y ya existen nombre, fecha, hora y personas en el contexto, debes ejecutar booking_manager con action='CREATE'.",
+                    ].join("\n\n"),
+                ),
             ]);
 
             const toolCalls = extractToolCalls(modelReply);
