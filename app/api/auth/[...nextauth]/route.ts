@@ -70,9 +70,11 @@ export const authOptions: NextAuthOptions = {
             }
             try {
                 // Ensure the user has a business and trial fields set on first sign in
+                // Only create a trial business if the user has no businesses yet and no trial started.
                 const dbUser = await prisma.user.findUnique({ where: { id: user.id } }) as any;
-                if (dbUser) {
-                    if (!dbUser.trialStartedAt) {
+                if (dbUser && !dbUser.trialStartedAt) {
+                    const existingCount = await prisma.business.count({ where: { userId: dbUser.id } });
+                    if (existingCount === 0) {
                         const b = await prisma.business.create({ data: { name: `${user.name || 'Negocio'} (Prueba)`, userId: dbUser.id, config: {} } });
                         const now = new Date();
                         await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${b.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${dbUser.id}`;
