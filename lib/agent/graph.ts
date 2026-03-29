@@ -3,7 +3,7 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
 import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
-import { ragModel, supervisorModel, toolModel } from "@/lib/ai";
+import { createRequiredToolAgent, ragModel, supervisorModel } from "@/lib/ai";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 let cachedGraphCheckpointer: any | undefined;
@@ -60,6 +60,41 @@ function parseRoute(raw: string): "rag_agent" | "tool_agent" {
     return value.includes("tool_agent") ? "tool_agent" : "rag_agent";
 }
 
+function isReservationIntent(text: string) {
+    return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno)/i.test(String(text || ""));
+}
+
+function hasReservationRequiredData(text: string) {
+    const value = String(text || "");
+    const hasDate = /\b(\d{4}-\d{2}-\d{2}|hoy|mañana|manana|pasado\s+mañana|pasado\s+manana|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i.test(value);
+    const hasHour = /\b([01]?\d|2[0-3])[:.]\d{2}\b|\b\d{1,2}\s?(am|pm)\b|\ba\s+las\s+\d{1,2}(?::\d{2})?\b/i.test(value);
+    const hasPeople = /\b\d+\s*(persona|personas|pax|comensales)\b/i.test(value);
+    const hasName = /\b(a\s+nombre\s+de|nombre\s*[:\-]|soy\s+)\s*[a-záéíóúñ]/i.test(value);
+    return hasDate && hasHour && hasPeople && hasName;
+}
+
+function isSpreadsheetEditIntent(text: string) {
+    return /(excel|xlsx|xlsm|hoja|celda|fila|columna|actualiza|actualizar|modifica|modificar|agrega|agregar|append_row|update_cell)/i.test(String(text || ""));
+}
+
+function hasSpreadsheetMinimumData(text: string) {
+    const value = String(text || "");
+    const hasSheet = /(hoja\s*[:\-]?\s*[\wáéíóúñ ]+|sheet\s*[:\-]?\s*[\w\- ]+)/i.test(value);
+    const hasCell = /\b[A-Z]{1,3}\d{1,5}\b/.test(value);
+    const hasAppendHint = /(fila|registro|append|nueva\s+fila)/i.test(value);
+    const hasFileRefHint = /(archivo|fileRef|url|\.xlsx|\.xlsm|\b\d+\b)/i.test(value);
+    return hasFileRefHint && hasSheet && (hasCell || hasAppendHint);
+}
+
+function asksForImageOrMenu(text: string) {
+    return /(imagen|foto|menu|carta|catalogo)/i.test(String(text || ""));
+}
+
+function extractMarkdownImageUrl(text: string) {
+    const match = String(text || "").match(/!\[[^\]]*]\(([^)]+)\)/);
+    return match?.[1]?.trim() || "";
+}
+
 function extractToolCalls(message: any): Array<{ name?: string; args?: unknown }> {
     const rawCalls = message?.additional_kwargs?.tool_calls || message?.tool_calls || [];
     if (!Array.isArray(rawCalls)) return [];
@@ -102,7 +137,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     ];
 
     const toolMap = new Map<string, any>(tools.map((tool) => [String(tool.name), tool]));
-    const boundToolModel = (toolModel as any).bindTools(tools, { tool_choice: "auto" });
+    const boundToolModel = createRequiredToolAgent(tools);
 
     const supervisorNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
@@ -110,7 +145,16 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             "Eres un enrutador de tareas. NUNCA respondas al usuario directamente. " +
             "Si el usuario hace una pregunta o pide informacion, devuelve 'rag_agent'. " +
             "Si el usuario pide agendar, modificar, guardar o crear un registro en un documento, devuelve 'tool_agent'. " +
+            "REGLA DE ENRUTAMIENTO PARA RESERVAS/EDICION: Antes de devolver 'tool_agent', VERIFICA estrictamente que el ultimo mensaje del usuario contenga TODOS los parametros necesarios para la accion (por ejemplo: Nombre, Fecha, Hora y Cantidad de personas para una reserva). Si falta ALGUN dato, devuelve 'rag_agent' para que el asistente le pregunte al usuario la informacion faltante. NUNCA derives a 'tool_agent' con datos incompletos. " +
             "Responde unicamente con el nombre exacto del nodo en formato texto.";
+
+        if (isReservationIntent(lastUserMessage) && !hasReservationRequiredData(lastUserMessage)) {
+            return { nextNode: "rag_agent" as const };
+        }
+
+        if (isSpreadsheetEditIntent(lastUserMessage) && !hasSpreadsheetMinimumData(lastUserMessage)) {
+            return { nextNode: "rag_agent" as const };
+        }
 
         const routeReply = await supervisorModel.invoke([
             new SystemMessage(routerPrompt),
@@ -193,6 +237,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             "Si el estado contiene un toolResult, informale al usuario de forma natural que la accion se completo o si hubo error.",
             "NUNCA digas 'espera un momento', 'voy a revisar' o similares.",
             "Si el usuario responde con una afirmacion corta (si, ok, dale), asume el contexto del mensaje anterior.",
+            "REGLA DE IMAGENES: NUNCA inventes URLs. Si el usuario solicita ver una imagen o menu, busca en los metadatos del [CONTEXTO RAG] el campo de la URL publica. Si la URL existe, devuelvela EXACTAMENTE asi: ![Descripcion](URL). Si el contexto no incluye una URL real, responde: 'Lo siento, no tengo la imagen disponible en este momento'.",
             "Si no hay evidencia suficiente en RAG o herramientas, responde exactamente: 'Lo siento, no tengo esa informacion especifica en mis registros'.",
             ragContext ? `\n[CONTEXTO RAG]\n${ragContext}` : "\n[CONTEXTO RAG]\n(Sin resultados relevantes)",
             state.toolResult ? `\n[TOOL_RESULT]\n${state.toolResult}` : "",
@@ -205,7 +250,13 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
-        const text = normalizeMessageContent((response as any)?.content) || "Lo siento, no tengo esa informacion especifica en mis registros";
+        let text = normalizeMessageContent((response as any)?.content) || "Lo siento, no tengo esa informacion especifica en mis registros";
+        if (asksForImageOrMenu(lastUserMessage)) {
+            const imgUrl = extractMarkdownImageUrl(text);
+            if (imgUrl && !ragContext.includes(imgUrl)) {
+                text = "Lo siento, no tengo la imagen disponible en este momento";
+            }
+        }
         return {
             messages: [new AIMessage(text)],
             nextNode: "__end__" as const,

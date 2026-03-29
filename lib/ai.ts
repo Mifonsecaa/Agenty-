@@ -30,6 +30,10 @@ export const toolModel = new ChatOpenAI({
     temperature: 0,
 });
 
+export function createRequiredToolAgent(tools: any[]) {
+    return (toolModel as any).bindTools(tools, { tool_choice: "required" });
+}
+
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
