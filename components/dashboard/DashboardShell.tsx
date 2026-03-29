@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 
 import { useState, useEffect, useRef } from "react";
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from "framer-motion";
 import { BrainiaProvider, useBrainia } from "@/context/BrainiaContext";
 import ActionConfirmationPanel from "@/components/dashboard/ActionConfirmationPanel";
@@ -146,6 +147,60 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
     const agentName = activeAgent?.name || "Mi Negocio";
     const initial = (activeAgent?.name || userName || "U").charAt(0).toUpperCase();
 
+    const { data: session } = useSession();
+    const userRole = (session?.user as any)?.role as string | undefined;
+    const planLabel = userRole === 'ADMIN'
+        ? 'Admin'
+        : userRole === 'USERTRY'
+            ? 'Free (7-day trial)'
+            : userRole === 'USERDEFAULT'
+                ? 'Plan Básico'
+                : userRole === 'USERPRO'
+                    ? 'Plan Pro'
+                    : 'Plan Pro';
+    const [trialInfo, setTrialInfo] = useState<{ trialStartedAt: string | null; trialTokenLimit: number | null; trialTokensUsed: number } | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function loadMe() {
+            try {
+                const res = await fetch('/api/me');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (cancelled) return;
+                if (data?.user) {
+                    setTrialInfo({ trialStartedAt: data.user.trialStartedAt || null, trialTokenLimit: data.user.trialTokenLimit ?? null, trialTokensUsed: data.user.trialTokensUsed ?? 0 });
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+        loadMe();
+        return () => { cancelled = true; };
+    }, []);
+
+    function formatTrialBadge() {
+        if (userRole !== 'USERTRY') return planLabel;
+        const now = Date.now();
+        let daysLeftText = '';
+        let tokensLeftText = '';
+        if (trialInfo?.trialStartedAt) {
+            const started = new Date(trialInfo.trialStartedAt).getTime();
+            const msSince = now - started;
+            const daysUsed = Math.floor(msSince / (1000 * 60 * 60 * 24));
+            const daysLeft = Math.max(0, 7 - daysUsed);
+            daysLeftText = `${daysLeft}d left`;
+        }
+        if (typeof trialInfo?.trialTokenLimit === 'number') {
+            const remaining = Math.max(0, (trialInfo.trialTokenLimit || 0) - (trialInfo.trialTokensUsed || 0));
+            tokensLeftText = `${remaining} tokens`;
+        }
+        const parts = ['Free (7-day trial)'];
+        if (daysLeftText) parts.push(daysLeftText);
+        if (tokensLeftText) parts.push(tokensLeftText);
+        return parts.join(' · ');
+    }
+
     const pendingDeleteAgent = agents.find((ag) => ag.id === pendingDeleteAgentId) || null;
 
     const openDeleteAgentConfirm = (e: React.MouseEvent, agentId: string) => {
@@ -211,7 +266,7 @@ function DashboardContent({ children, userName, userEmail }: { children: React.R
                             {!isCollapsed && (
                                 <div className="flex flex-col items-start truncate max-w-30">
                                     <span className="font-medium text-sm text-white/90 leading-tight truncate w-full">{agentName}</span>
-                                    <span className="text-[10px] text-white/40 font-medium tracking-wider">PLAN PRO</span>
+                                    <span className="text-[10px] text-white/40 font-medium tracking-wider">{formatTrialBadge()}</span>
                                 </div>
                             )}
                         </div>

@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { evolutionService } from "@/services/whatsapp/evolution";
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions) as any;
   if (!session?.user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }

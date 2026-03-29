@@ -68,11 +68,35 @@ export const authOptions: NextAuthOptions = {
                 // 3. Llamamos a la función para guardar el token en la base de datos
                 await saveWhatsAppCredentials(user.id, account.access_token);
             }
+            try {
+                // Ensure the user has a business and trial fields set on first sign in
+                // Only create a trial business if the user has no businesses yet and no trial started.
+                const dbUser = await prisma.user.findUnique({ where: { id: user.id } }) as any;
+                if (dbUser && !dbUser.trialStartedAt) {
+                    const existingCount = await prisma.business.count({ where: { userId: dbUser.id } });
+                    if (existingCount === 0) {
+                        const b = await prisma.business.create({ data: { name: `${user.name || 'Negocio'} (Prueba)`, userId: dbUser.id, config: {} } });
+                        const now = new Date();
+                        await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${b.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${dbUser.id}`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Error ensuring trial for OAuth user:', e);
+            }
             return true; // Permitir siempre el inicio de sesión/conexión
         },
         async session({ session, token }) {
             if (token && session.user) {
                 (session.user as any).id = token.sub;
+                try {
+                    // Fetch role from DB in case it's not present on the token
+                    const dbUser = await prisma.user.findUnique({ where: { id: token.sub } });
+                    if (dbUser) {
+                        (session.user as any).role = (dbUser as any).role;
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch user role for session callback', e);
+                }
             }
             return session;
         },

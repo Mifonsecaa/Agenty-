@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     try {
         console.log("[Onboarding] Recibiendo solicitud de onboarding...");
         // 1. Verificamos sesión
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado. Inicia sesión primero." }, { status: 401 });
         }
@@ -250,6 +250,14 @@ export async function POST(req: Request) {
                 userId: user.id
             }
         });
+
+        // Ensure trial fields are set for newly created users during onboarding
+        try {
+            const now = new Date();
+            await prisma.$executeRaw`UPDATE "User" SET trialBusinessId = ${negocio.id}, trialStartedAt = ${now}, role = 'USERTRY', trialTokenLimit = ${10000}, trialTokensUsed = ${0} WHERE id = ${user.id}`;
+        } catch (e) {
+            console.warn('[Onboarding] Could not set trial fields for user:', e);
+        }
 
         // 6. Si hubo archivos, procesamos con AGENTE de Conocimiento
         if (filesContent.length > 0) {

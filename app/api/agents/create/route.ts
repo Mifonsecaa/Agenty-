@@ -13,7 +13,7 @@ const openai = new OpenAI({
 export async function POST(req: Request) {
     try {
         // 1. Verificar que el usuario esté logueado
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado" }, { status: 401 });
         }

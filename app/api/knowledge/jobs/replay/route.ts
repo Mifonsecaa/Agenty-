@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 
 function hasValidWorkerToken(req: Request) {
   const workerToken = process.env.KNOWLEDGE_WORKER_TOKEN;
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     if (!workerAuthorized) {
-      const session = await getServerSession(authOptions);
+      const session = await getServerSession(authOptions) as any;
       if (!session?.user?.email) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
@@ -60,13 +61,10 @@ export async function POST(req: Request) {
       }
 
       if (businessId) {
-        const business = await prisma.business.findFirst({
-          where: { id: businessId, user: { email: session.user.email } },
-          select: { id: true },
-        });
-
-        if (!business) {
-          return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        try {
+          await authorizeBusinessAccessSession(session, businessId);
+        } catch (authErr: any) {
+          return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
       }
 
@@ -76,13 +74,10 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
-        const business = await prisma.business.findFirst({
-          where: { id: job.businessId, user: { email: session.user.email } },
-          select: { id: true },
-        });
-
-        if (!business) {
-          return NextResponse.json({ error: "Business not found or unauthorized" }, { status: 404 });
+        try {
+          await authorizeBusinessAccessSession(session, job.businessId);
+        } catch (authErr: any) {
+          return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
       }
     }

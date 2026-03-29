@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { authorizeBusinessAccessSession } from '@/lib/auth';
 
 export async function GET(req: Request) {
     try {
-        const session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions) as any;
         if (!session?.user?.email) {
             return NextResponse.json({ error: "No autorizado" }, { status: 401 });
         }
@@ -18,16 +19,10 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: "businessId es requerido" }, { status: 400 });
         }
 
-        // Verificar pertenencia
-        const business = await prisma.business.findFirst({
-            where: {
-                id: businessId,
-                user: { email: session.user.email }
-            }
-        });
-
-        if (!business) {
-            return NextResponse.json({ error: "Negocio no encontrado" }, { status: 404 });
+        try {
+            await authorizeBusinessAccessSession(session, businessId);
+        } catch (authErr: any) {
+            return NextResponse.json({ error: authErr.message || 'Forbidden' }, { status: authErr.status || 403 });
         }
 
         // Calcular fecha de inicio

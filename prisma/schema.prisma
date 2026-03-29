@@ -43,6 +43,12 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
+  role          Role       @default(USERTRY)
+  trialStartedAt DateTime?
+  trialBusinessId String?
+  // Trial token fields: limit of tokens for trial users and cumulative usage
+  trialTokenLimit Int?
+  trialTokensUsed Int? @default(0)
   accounts      Account[]
   businesses    Business[]
   sessions      Session[]
@@ -190,3 +196,24 @@ enum KnowledgeIngestionJobStatus {
   FAILED
   DLQ
 }
+
+// Roles for application users
+enum Role {
+  ADMIN
+  USERDEFAULT
+  USERPRO
+  USERTRY
+}
+
+model TrialAction {
+  id          String   @id @default(cuid())
+  adminId     String
+  targetUserId String
+  action      String
+  details     String?  @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([adminId])
+  @@index([targetUserId])
+}
+
