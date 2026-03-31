@@ -2,7 +2,7 @@ import { Annotation, END, MessagesAnnotation, START, StateGraph } from "@langcha
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
-import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
+import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { createRequiredToolAgent, ragModel, supervisorModel } from "@/lib/ai";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
@@ -19,6 +19,10 @@ const AgentGraphState = Annotation.Root({
         default: () => undefined,
     }),
     toolResult: Annotation<string | undefined>({
+        reducer: (_prev, next) => next,
+        default: () => undefined,
+    }),
+    availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
@@ -194,11 +198,25 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     const toolMap = new Map<string, any>(tools.map((tool) => [String(tool.name), tool]));
     const boundToolModel = createRequiredToolAgent(tools);
 
+    const ensureAvailableFiles = async (state: AgentGraphStateType) => {
+        if (Array.isArray(state.availableFiles) && state.availableFiles.length > 0) {
+            return state.availableFiles;
+        }
+
+        const files = await listSpreadsheetFilesForBusiness(businessId);
+        return files.map((file) => ({
+            fileName: file.fileName,
+            sourceId: String(file.sourceId || ""),
+            fileUrl: file.fileUrl,
+        }));
+    };
+
     const supervisorNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
         const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
         const reservationContextActive = isReservationIntent(recentConversation);
+        const availableFiles = await ensureAvailableFiles(state);
         const routerPrompt =
             "Eres un enrutador de tareas. NUNCA respondas al usuario directamente. " +
             "Si el usuario hace una pregunta o pide informacion, devuelve 'rag_agent'. " +
@@ -207,22 +225,22 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             "Responde unicamente con el nombre exacto del nodo en formato texto.";
 
         if (reservationContextActive && isReservationStatusQuestion(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
+            return { nextNode: "rag_agent" as const, availableFiles };
         }
 
         if (reservationContextActive) {
             const isComplete = Boolean(
                 reservationSnapshot.name && reservationSnapshot.date && reservationSnapshot.time && reservationSnapshot.people,
             );
-            return { nextNode: isComplete ? ("tool_agent" as const) : ("rag_agent" as const) };
+            return { nextNode: isComplete ? ("tool_agent" as const) : ("rag_agent" as const), availableFiles };
         }
 
         if (isReservationIntent(lastUserMessage) && !hasReservationRequiredData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
+            return { nextNode: "rag_agent" as const, availableFiles };
         }
 
         if (isSpreadsheetEditIntent(lastUserMessage) && !hasSpreadsheetMinimumData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
+            return { nextNode: "rag_agent" as const, availableFiles };
         }
 
         const routeReply = await supervisorModel.invoke([
@@ -231,15 +249,22 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         ]);
 
         const nextNode = parseRoute(normalizeMessageContent((routeReply as any)?.content));
-        return { nextNode };
+        return { nextNode, availableFiles };
     };
 
     const toolNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
         const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
+        const availableFiles = await ensureAvailableFiles(state);
+        const availableFilesText = availableFiles.length
+            ? JSON.stringify(availableFiles.slice(0, 20), null, 2)
+            : "[]";
         const toolPrompt =
-            "Eres un automata de bases de datos. PROHIBIDO generar texto conversacional o saludos. " +
+            "Eres un automata de gestion de datos. PROHIBIDO generar texto conversacional o saludos. " +
+            `El negocio tiene los siguientes archivos disponibles: ${availableFilesText}. ` +
+            "Si el usuario pide guardar un dato (reserva, venta, registro), identifica el archivo correcto. " +
+            "Si no existe un archivo adecuado, ejecuta knowledge_spreadsheet_editor con action='CREATE_FILE' usando targetFileName antes de guardar datos. " +
             "Ejecuta la herramienta requerida con los datos proporcionados por el usuario. " +
             "NUNCA digas 'voy a revisar' o 'espera un momento'. " +
             "Si faltan datos criticos, usa la herramienta mas adecuada para listar opciones y devolver evidencia tecnica.";

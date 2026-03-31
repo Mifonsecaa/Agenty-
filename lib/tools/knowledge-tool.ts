@@ -12,7 +12,7 @@ import {
     normalizeSpreadsheetCellAddress,
     readWorkbookCellValue,
 } from "@/lib/knowledge/spreadsheet";
-import { replaceKnowledgeFileByPublicUrl } from "@/lib/storage/knowledge-files";
+import { replaceKnowledgeFileByPublicUrl, uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import path from "path";
 import { readFile, writeFile } from "fs/promises";
 
@@ -22,6 +22,7 @@ type SpreadsheetFileRef = {
     fileUrl: string;
     fileName: string;
     fileType: string;
+    sourceId?: string;
 };
 
 type FileResolution =
@@ -39,7 +40,7 @@ function isSpreadsheetMeta(fileName?: string, fileType?: string) {
     ].includes(fileType || "");
 }
 
-async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFileRef[]> {
+export async function listSpreadsheetFilesForBusiness(businessId: string): Promise<SpreadsheetFileRef[]> {
     const items = await prisma.knowledgeItem.findMany({
         where: { businessId },
         orderBy: { createdAt: "desc" },
@@ -59,15 +60,39 @@ async function listSpreadsheetFiles(businessId: string): Promise<SpreadsheetFile
         const fileUrl = typeof meta.fileUrl === "string" ? meta.fileUrl : "";
         const fileName = typeof meta.fileName === "string" ? meta.fileName : "archivo.xlsx";
         const fileType = typeof meta.fileType === "string" ? meta.fileType : "";
+        const sourceId = typeof meta.sourceId === "string" ? meta.sourceId : "";
 
         if (!fileUrl || seen.has(fileUrl)) continue;
         if (!isSpreadsheetMeta(fileName, fileType)) continue;
 
         seen.add(fileUrl);
-        files.push({ fileUrl, fileName, fileType });
+        files.push({ fileUrl, fileName, fileType, sourceId: sourceId || undefined });
     }
 
     return files;
+}
+
+function buildExcelBuffer(params: { fileName: string; sheetName?: string; headers?: string[] }) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const XLSX = require("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const safeSheetName = String(params.sheetName || "Datos").trim() || "Datos";
+    const normalizedHeaders = Array.isArray(params.headers)
+        ? params.headers.map((h) => String(h || "").trim()).filter(Boolean).slice(0, 40)
+        : [];
+
+    const sheetData = normalizedHeaders.length ? [normalizedHeaders] : [[]];
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+
+    const outType = /\.xlsm$/i.test(params.fileName) ? "xlsm" : "xlsx";
+    const out = XLSX.write(workbook, {
+        type: "buffer",
+        bookType: outType,
+        bookVBA: outType === "xlsm",
+    });
+
+    return Buffer.from(out);
 }
 
 function fileBaseName(fileNameOrUrl: string) {
@@ -193,18 +218,102 @@ async function loadSpreadsheetBuffer(fileUrl: string) {
 export const createSpreadsheetUpdateTool = (businessId: string) => {
     return new DynamicStructuredTool({
         name: "knowledge_spreadsheet_editor",
-        description: "Edita celdas en archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
+        description: "Edita o crea archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
         schema: z.object({
-            action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar y APPEND_ROW para agregar registros."),
+            action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar, APPEND_ROW para agregar registros y CREATE_FILE para crear un archivo Excel nuevo."),
+            targetFileName: z.string().optional().describe("Nombre de archivo objetivo, por ejemplo 'reservas.xlsx'."),
+            sourceId: z.string().optional().describe("sourceId del archivo en knowledge metadata."),
             fileRef: z.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
             sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
+            sheetName: z.string().optional().describe("Alias de sheet para compatibilidad con prompts/tool-calling."),
             cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
             value: z.string().optional().describe("Nuevo valor textual de la celda."),
             rowValues: z.array(z.string()).optional().describe("Valores de una nueva fila para APPEND_ROW."),
+            data: z.any().optional().describe("Datos libres para crear/editar (ej: { headers: [...], rowValues: [...] })."),
+        }).superRefine((payload, ctx) => {
+            if (payload.action !== "LIST" && !payload.targetFileName && !payload.sourceId) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "Debes indicar targetFileName o sourceId para esta operacion.",
+                    path: ["targetFileName"],
+                });
+            }
         }),
-        func: async ({ action, fileRef, sheet, cell, value, rowValues }) => {
+        func: async ({ action, targetFileName, sourceId, fileRef, sheet, sheetName, cell, value, rowValues, data }) => {
             try {
-                const files = await listSpreadsheetFiles(businessId);
+                const files = await listSpreadsheetFilesForBusiness(businessId);
+                const effectiveSheet = String(sheetName || sheet || "").trim();
+
+                if (action === "CREATE_FILE") {
+                    const rawTargetFileName = String(targetFileName || "").trim();
+                    if (!rawTargetFileName) {
+                        return "Falta 'targetFileName'. Indica un nombre de archivo, por ejemplo 'reservas.xlsx'.";
+                    }
+
+                    const safeFileName = /\.(xlsx|xlsm)$/i.test(rawTargetFileName)
+                        ? rawTargetFileName
+                        : `${rawTargetFileName}.xlsx`;
+
+                    const existingSameName = files.find((f) => normalizeRef(f.fileName) === normalizeRef(safeFileName));
+                    if (existingSameName) {
+                        return [
+                            `El archivo ya existe: ${existingSameName.fileName}`,
+                            `URL: ${existingSameName.fileUrl}`,
+                            "Usa APPEND_ROW o UPDATE_CELL para guardar datos.",
+                        ].join("\n");
+                    }
+
+                    const headers = Array.isArray((data as any)?.headers)
+                        ? (data as any).headers.map((h: unknown) => String(h || "")).filter(Boolean)
+                        : [];
+
+                    const createdBuffer = buildExcelBuffer({
+                        fileName: safeFileName,
+                        sheetName: effectiveSheet || "Datos",
+                        headers,
+                    });
+
+                    const upload = await uploadKnowledgeFileToStorage({
+                        buffer: createdBuffer,
+                        fileName: safeFileName,
+                        contentType: /\.xlsm$/i.test(safeFileName)
+                            ? "application/vnd.ms-excel.sheet.macroEnabled.12"
+                            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        businessId,
+                    });
+
+                    if (!upload.publicUrl) {
+                        return `No se pudo crear el archivo en storage: ${upload.error || "error desconocido"}`;
+                    }
+
+                    const extractedText = extractSpreadsheetText(createdBuffer);
+                    const text = extractedText
+                        ? `[EXCEL_ACTUALIZADO: ${safeFileName}]\n${extractedText}`
+                        : `[EXCEL_ACTUALIZADO: ${safeFileName}] Archivo creado sin celdas legibles.`;
+
+                    const enqueue = await enqueueKnowledgeIngestion({
+                        businessId,
+                        text,
+                        metadata: {
+                            fileName: safeFileName,
+                            fileType: /\.xlsm$/i.test(safeFileName)
+                                ? "application/vnd.ms-excel.sheet.macroEnabled.12"
+                                : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            fileUrl: upload.publicUrl,
+                            source: "spreadsheet_create_by_agent",
+                            updatedCells: true,
+                            updatedAt: new Date().toISOString(),
+                        },
+                    });
+
+                    await processKnowledgeQueueBatch(1).catch(() => undefined);
+
+                    return [
+                        `Archivo creado: ${safeFileName}`,
+                        `URL: ${upload.publicUrl}`,
+                        enqueue?.job?.id ? `Job de reindexacion: ${enqueue.job.id}` : "Job de reindexacion: en cola",
+                    ].join("\n");
+                }
 
                 if (action === "LIST") {
                     if (!files.length) {
@@ -213,8 +322,8 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
 
                     return [
                         "Archivos Excel disponibles:",
-                        ...files.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})`),
-                        "Usa ese numero como fileRef para seleccionar el archivo correcto.",
+                        ...files.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})${f.sourceId ? ` [sourceId: ${f.sourceId}]` : ""}`),
+                        "Usa fileRef, sourceId o targetFileName para seleccionar el archivo correcto.",
                     ].join("\n");
                 }
 
@@ -222,12 +331,18 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     return "No hay archivos Excel para editar. Sube primero un .xlsm o .xlsx a Knowledge.";
                 }
 
-                const inferredBySheet = await tryResolveBySheetName(files, sheet);
-                const resolution = resolveSpreadsheetFile(files, inferredBySheet?.fileUrl || fileRef);
+                let resolvedBySourceId: SpreadsheetFileRef | null = null;
+                if (sourceId) {
+                    resolvedBySourceId = files.find((f) => normalizeRef(f.sourceId || "") === normalizeRef(sourceId)) || null;
+                }
+
+                const inferredBySheet = await tryResolveBySheetName(files, effectiveSheet);
+                const effectiveRef = resolvedBySourceId?.fileUrl || targetFileName || inferredBySheet?.fileUrl || fileRef;
+                const resolution = resolveSpreadsheetFile(files, effectiveRef);
                 if (resolution.status === "missing_file_ref") {
                     return [
                         "Hay mas de un archivo Excel en la base de conocimiento. Necesito que indiques cual editar.",
-                        sheet ? `Nota: busque la hoja '${sheet}' en varios archivos y no fue suficiente para resolver uno unico.` : "",
+                        effectiveSheet ? `Nota: busque la hoja '${effectiveSheet}' en varios archivos y no fue suficiente para resolver uno unico.` : "",
                         buildFileOptionsMessage(resolution.options),
                     ].filter(Boolean).join("\n\n");
                 }
@@ -263,23 +378,23 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 }
 
                 if (action === "READ_CELL") {
-                    const sheetName = String(sheet || "").trim();
+                    const sheetNameResolved = effectiveSheet;
                     const cellAddress = normalizeSpreadsheetCellAddress(String(cell || ""));
-                    if (!sheetName) {
+                    if (!sheetNameResolved) {
                         return "Falta 'sheet'. Indica el nombre exacto de la hoja.";
                     }
 
-                    const cellValue = readWorkbookCellValue(loaded.buffer, sheetName, cellAddress);
+                    const cellValue = readWorkbookCellValue(loaded.buffer, sheetNameResolved, cellAddress);
                     return [
                         `Archivo: ${target.fileName}`,
-                        `Hoja: ${sheetName}`,
+                        `Hoja: ${sheetNameResolved}`,
                         `Celda: ${cellAddress}`,
                         `Valor: ${cellValue || "(vacio)"}`,
                     ].join("\n");
                 }
 
-                const sheetName = String(sheet || "").trim();
-                if (!sheetName) {
+                const sheetNameResolved = effectiveSheet;
+                if (!sheetNameResolved) {
                     return "Falta 'sheet'. Indica el nombre exacto de la hoja.";
                 }
 
@@ -299,24 +414,29 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     const normalizedCell = normalizeSpreadsheetCellAddress(cellAddress);
                     updatedBuffer = applyCellUpdatesToWorkbookBuffer(
                         loaded.buffer,
-                        [{ sheet: sheetName, cell: normalizedCell, value: String(value ?? "") }],
+                        [{ sheet: sheetNameResolved, cell: normalizedCell, value: String(value ?? "") }],
                         target.fileName
                     );
-                    updateSummary = [`Hoja: ${sheetName}`, `Celda: ${normalizedCell}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
-                    updatedCellsMeta = [{ sheet: sheetName, cell: normalizedCell }];
+                    updateSummary = [`Hoja: ${sheetNameResolved}`, `Celda: ${normalizedCell}`, `Valor aplicado: ${String(value ?? "")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetNameResolved, cell: normalizedCell }];
                 } else {
-                    const safeRowValues = Array.isArray(rowValues) ? rowValues.slice(0, 80) : [];
+                    const dataRowValues = Array.isArray((data as any)?.rowValues)
+                        ? (data as any).rowValues.map((v: unknown) => String(v ?? ""))
+                        : [];
+                    const safeRowValues = Array.isArray(rowValues) && rowValues.length > 0
+                        ? rowValues.slice(0, 80)
+                        : dataRowValues.slice(0, 80);
                     if (!safeRowValues.length) {
                         return "Falta 'rowValues'. Envia una lista de columnas para la nueva fila.";
                     }
 
                     updatedBuffer = appendRowsToWorkbookBuffer(
                         loaded.buffer,
-                        [{ sheet: sheetName, values: safeRowValues }],
+                        [{ sheet: sheetNameResolved, values: safeRowValues }],
                         target.fileName
                     );
-                    updateSummary = [`Hoja: ${sheetName}`, `Fila agregada: ${safeRowValues.join(" | ")}`].join("\n");
-                    updatedCellsMeta = [{ sheet: sheetName, cell: "APPEND_ROW" }];
+                    updateSummary = [`Hoja: ${sheetNameResolved}`, `Fila agregada: ${safeRowValues.join(" | ")}`].join("\n");
+                    updatedCellsMeta = [{ sheet: sheetNameResolved, cell: "APPEND_ROW" }];
                 }
 
                 if (loaded.source === "local" && loaded.localPath) {
