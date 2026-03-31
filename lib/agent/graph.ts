@@ -218,29 +218,20 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const reservationContextActive = isReservationIntent(recentConversation);
         const availableFiles = await ensureAvailableFiles(state);
         const routerPrompt =
-            "Eres un enrutador de tareas. NUNCA respondas al usuario directamente. " +
-            "Si el usuario hace una pregunta o pide informacion, devuelve 'rag_agent'. " +
-            "Si el usuario pide agendar, modificar, guardar o crear un registro en un documento, devuelve 'tool_agent'. " +
-            "REGLA DE ENRUTAMIENTO PARA RESERVAS/EDICION: Antes de devolver 'tool_agent', VERIFICA estrictamente que el ultimo mensaje del usuario contenga TODOS los parametros necesarios para la accion (por ejemplo: Nombre, Fecha, Hora y Cantidad de personas para una reserva). Si falta ALGUN dato, devuelve 'rag_agent' para que el asistente le pregunte al usuario la informacion faltante. NUNCA derives a 'tool_agent' con datos incompletos. " +
-            "Responde unicamente con el nombre exacto del nodo en formato texto.";
+            "Eres un enrutador de tareas especializado. NUNCA respondas al usuario directamente. " +
+            "Responde de forma estricta ÚNICAMENTE con 'rag_agent' o 'tool_agent'.\n" +
+            "REGLAS:\n" +
+            "1. Si el usuario pide AGENDAR, MODIFICAR, GUARDAR, CREAR o ELIMINAR información (reservas, ventas, registros, actualizar Excel o documento), devuelve 'tool_agent'. " +
+            "INCLUSO si crees que faltan datos, envíalo a 'tool_agent' para que la herramienta evalúe y exija lo faltante si es necesario.\n" +
+            "2. Si el usuario simplemente está pidiendo información, saludando, o haciendo una pregunta general, devuelve 'rag_agent'.";
 
         if (reservationContextActive && isReservationStatusQuestion(lastUserMessage)) {
             return { nextNode: "rag_agent" as const, availableFiles };
         }
 
-        if (reservationContextActive) {
-            const isComplete = Boolean(
-                reservationSnapshot.name && reservationSnapshot.date && reservationSnapshot.time && reservationSnapshot.people,
-            );
-            return { nextNode: isComplete ? ("tool_agent" as const) : ("rag_agent" as const), availableFiles };
-        }
-
-        if (isReservationIntent(lastUserMessage) && !hasReservationRequiredData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const, availableFiles };
-        }
-
-        if (isSpreadsheetEditIntent(lastUserMessage) && !hasSpreadsheetMinimumData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const, availableFiles };
+        // Ya no evitamos tool_agent con datos incompletos, delegamos en la herramienta.
+        if (reservationContextActive || isSpreadsheetEditIntent(recentConversation)) {
+            // Evaluamos la intencion de forma determinista o con el LLM
         }
 
         const routeReply = await supervisorModel.invoke([
@@ -261,13 +252,13 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
             ? JSON.stringify(availableFiles.slice(0, 20), null, 2)
             : "[]";
         const toolPrompt =
-            "Eres un automata de gestion de datos. PROHIBIDO generar texto conversacional o saludos. " +
-            `El negocio tiene los siguientes archivos disponibles: ${availableFilesText}. ` +
-            "Si el usuario pide guardar un dato (reserva, venta, registro), identifica el archivo correcto. " +
-            "Si no existe un archivo adecuado, ejecuta knowledge_spreadsheet_editor con action='CREATE_FILE' usando targetFileName antes de guardar datos. " +
-            "Ejecuta la herramienta requerida con los datos proporcionados por el usuario. " +
-            "NUNCA digas 'voy a revisar' o 'espera un momento'. " +
-            "Si faltan datos criticos, usa la herramienta mas adecuada para listar opciones y devolver evidencia tecnica.";
+            "Eres un agente ejecutor de herramientas (tool_agent). PROHIBIDO generar texto conversacional o saludos. " +
+            `El negocio tiene estos archivos: ${availableFilesText}. ` +
+            "REGLAS ESTRICTAS:\n" +
+            "1. Si el usuario pide guardar o modificar algo y no hay un archivo Excel adecuado, ACTÚA INMEDIATAMENTE usando 'knowledge_spreadsheet_editor' con action='CREATE_FILE' y un targetFileName apropiado (ej: 'ventas.xlsx', 'reservas.xlsx').\n" +
+            "2. Si el archivo apropiado ya existe, usa 'knowledge_spreadsheet_editor' con action='APPEND_ROW' o 'UPDATE_CELL'. Trata de deducir las columnas de los valores requeridos.\n" +
+            "3. OBLIGATORIO: Llama a la herramienta pertinente AHORA MISMO. No digas 'voy a revisar' ni pidas permiso para crear el archivo. Sólo HAZLO.\n" +
+            "4. Si de verdad no entiendes qué quiere guardar, utiliza booking_manager o search si es para buscar, si no, usa cualquier herramienta disponible con parámetros vacíos para que devuelva error y el sistema le pida los datos al usuario.";
 
         // Si ya tenemos toda la reserva en el historial reciente, ejecutamos CREATE de forma determinista.
         if (
@@ -370,7 +361,7 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const ragSystemPrompt = [
             String(effectiveConfig?.systemPrompt || `Eres un asistente amable para ${businessName}.`),
             "Usa el [CONTEXTO RAG] para responder.",
-            "Si el estado contiene un toolResult, informale al usuario de forma natural que la accion se completo o si hubo error.",
+            "Si el estado contiene un toolResult, significa que se ejecutó una acción técnica (como agendar o guardar algo en Excel). Informa al usuario natural y directamente que la accion se completó (ej. '¡Listo! He guardado tu reserva/venta'). Muestra de manera resumida qué se guardó. OBLIGATORIO: NUNCA envíes enlaces de descarga de hojas de cálculo ni muestres URLs de archivos .xlsx/.xlsm al usuario. El negocio los revisará en su visor interno.",
             "NUNCA digas 'espera un momento', 'voy a revisar' o similares.",
             "Si el usuario responde con una afirmacion corta (si, ok, dale), asume el contexto del mensaje anterior.",
             "REGLA DE IMAGENES: NUNCA inventes URLs. Si el usuario solicita ver una imagen o menu, busca en los metadatos del [CONTEXTO RAG] el campo de la URL publica. Si la URL existe, devuelvela EXACTAMENTE asi: ![Descripcion](URL). Si el contexto no incluye una URL real, responde: 'Lo siento, no tengo la imagen disponible en este momento'.",
