@@ -20,11 +20,15 @@ export default function CheckoutSuccessPage() {
         );
     }, [searchParams]);
 
+    const reference = useMemo(() => {
+        return searchParams.get('ref') || searchParams.get('reference') || '';
+    }, [searchParams]);
+
     useEffect(() => {
         async function verify() {
-            if (!transactionId) {
+            if (!transactionId && !reference) {
                 setState('error');
-                setMessage('No encontramos el ID de la transaccion en la URL de retorno.');
+                setMessage('No encontramos datos de la transaccion en la URL de retorno.');
                 return;
             }
 
@@ -33,7 +37,7 @@ export default function CheckoutSuccessPage() {
                 const res = await fetch('/api/payments/wompi/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ transactionId }),
+                    body: JSON.stringify({ transactionId: transactionId || undefined, reference: reference || undefined }),
                 });
                 const data = await res.json();
 
@@ -50,7 +54,11 @@ export default function CheckoutSuccessPage() {
                 }
 
                 setState('not_approved');
-                setMessage(`Pago en estado ${data?.status || 'PENDING'}. Te avisaremos cuando cambie.`);
+                if (data?.status === 'NOT_FOUND') {
+                    setMessage('Aun no encontramos la transaccion. Espera unos segundos y recarga esta pagina.');
+                } else {
+                    setMessage(`Pago en estado ${data?.status || 'PENDING'}. Te avisaremos cuando cambie.`);
+                }
             } catch (err) {
                 console.error('Wompi verify error', err);
                 setState('error');
@@ -59,7 +67,7 @@ export default function CheckoutSuccessPage() {
         }
 
         verify();
-    }, [transactionId]);
+    }, [transactionId, reference]);
 
     return (
         <main className="min-h-screen bg-[#050505] text-white flex items-center justify-center px-6">

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 
 type VerifyBody = {
     transactionId?: string;
+    reference?: string;
 };
 
 const PLAN_ROLE_MAP: Record<string, 'USERDEFAULT' | 'USERPRO'> = {
@@ -15,6 +16,12 @@ const PLAN_ROLE_MAP: Record<string, 'USERDEFAULT' | 'USERPRO'> = {
 
 function extractTransaction(payload: any) {
     return payload?.data?.transaction || payload?.data || payload?.transaction || null;
+}
+
+function extractTransactionFromList(payload: any) {
+    const list = payload?.data?.data || payload?.data || [];
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list[0];
 }
 
 function resolveWompiApiBase(privateKey: string) {
@@ -31,16 +38,37 @@ export async function POST(req: Request) {
         const wompiApiBase = resolveWompiApiBase(WOMPI_PRIVATE_KEY);
 
         const body = (await req.json().catch(() => ({}))) as VerifyBody;
-        if (!body.transactionId) return NextResponse.json({ error: 'transactionId is required' }, { status: 400 });
+        if (!body.transactionId && !body.reference) {
+            return NextResponse.json({ error: 'transactionId or reference is required' }, { status: 400 });
+        }
 
-        const resp = await fetch(`${wompiApiBase}/v1/transactions/${body.transactionId}`, {
-            headers: { Authorization: `Bearer ${WOMPI_PRIVATE_KEY}` },
-            cache: 'no-store',
-        });
-        const raw = await resp.json().catch(() => ({}));
-        if (!resp.ok) return NextResponse.json({ error: 'Wompi error', details: raw }, { status: 502 });
+        let tx: any = null;
 
-        const tx = extractTransaction(raw);
+        if (body.transactionId) {
+            const resp = await fetch(`${wompiApiBase}/v1/transactions/${body.transactionId}`, {
+                headers: { Authorization: `Bearer ${WOMPI_PRIVATE_KEY}` },
+                cache: 'no-store',
+            });
+            const raw = await resp.json().catch(() => ({}));
+            if (!resp.ok) return NextResponse.json({ error: 'Wompi error', details: raw }, { status: 502 });
+            tx = extractTransaction(raw);
+        } else {
+            const resp = await fetch(`${wompiApiBase}/v1/transactions?reference=${encodeURIComponent(String(body.reference))}`, {
+                headers: { Authorization: `Bearer ${WOMPI_PRIVATE_KEY}` },
+                cache: 'no-store',
+            });
+            const raw = await resp.json().catch(() => ({}));
+            if (!resp.ok) return NextResponse.json({ error: 'Wompi error', details: raw }, { status: 502 });
+            tx = extractTransactionFromList(raw);
+            if (!tx) {
+                return NextResponse.json({ ok: true, approved: false, status: 'NOT_FOUND' });
+            }
+        }
+
+        if (!tx) {
+            return NextResponse.json({ ok: true, approved: false, status: 'NOT_FOUND' });
+        }
+
         const status = tx?.status || 'UNKNOWN';
         const txEmail = (tx?.customer_email || '').toLowerCase();
         const sessionEmail = String(session.user.email || '').toLowerCase();
