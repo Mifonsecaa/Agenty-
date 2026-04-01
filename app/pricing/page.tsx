@@ -256,8 +256,16 @@ function PaymentButton({ plan, isPopular }: { plan: any; isPopular: boolean }) {
 				window.location.href = data.checkoutUrl;
 				return;
 			}
+			if (data.data && data.data.payment_link) {
+				window.location.href = data.data.payment_link;
+				return;
+			}
 			if (data.data && data.data.redirect_url) {
 				window.location.href = data.data.redirect_url;
+				return;
+			}
+			if (data.transaction && data.transaction.payment_link) {
+				window.location.href = data.transaction.payment_link;
 				return;
 			}
 			throw new Error('No checkout URL returned');
