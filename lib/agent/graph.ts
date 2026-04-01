@@ -242,14 +242,23 @@ Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactame
     };
 
     const workerNode = async (state: AgentGraphStateType) => {
+        const availableFiles = await ensureAvailableFiles(state);
+        const availableFilesText = availableFiles.length
+            ? JSON.stringify(availableFiles.slice(0, 20), null, 2)
+            : "[]";
+
         const toolPrompt = `Eres un Obrero ejecutor. Sigue EXACTAMENTE este plan: ${state.currentPlan}. 
-Ejecuta las herramientas necesarias y devuelve el resultado en texto plano. No agregues saludos ni comentarios.`;
+Ejecuta las herramientas necesarias y devuelve el resultado en texto plano. No agregues saludos ni comentarios.
+El negocio tiene estos archivos u hojas de cálculo disponibles para consulta/edición:
+${availableFilesText}
+
+SI LA TAREA ES EDITAR UN ARCHIVO, DEBES LLAMAR A LA HERRAMIENTA AHORA MISMO CON LOS PARÁMETROS ADECUADOS.`;
 
         let resultText = "No result";
         try {
             const modelReply = await boundToolModel.invoke([
                 new SystemMessage(toolPrompt),
-                new HumanMessage(getLastUserMessage(state.messages as BaseMessage[]))
+                ...trimMessagesForModel(state.messages as BaseMessage[])
             ]);
 
             const toolCalls = extractToolCalls(modelReply);
