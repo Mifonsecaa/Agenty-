@@ -224,11 +224,14 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         console.log("⚙️ [ACTION NODE] Extrayendo JSON...");
         const availableFiles = await ensureAvailableFiles(state);
 
-        const systemPrompt = `El usuario quiere modificar un documento. Archivos disponibles en el negocio: ${JSON.stringify(availableFiles)}. Extrae los datos requeridos. Si faltan datos vitales, pon actionType en NONE y usa responseToUser para preguntarlos.`;
+        const systemPrompt = `Eres el extractor de datos (Obrero).
+El Cerebro analizó la solicitud y dejó este insight/plan: "${state.currentPlan || 'Interpreta la conversación para extraer datos'}".
+El usuario quiere modificar un documento. Archivos disponibles en el negocio: ${JSON.stringify(availableFiles)}. 
+Extrae los datos requeridos de la conversación. Si faltan datos vitales, pon actionType en NONE y usa responseToUser para preguntarlos.`;
 
         const workOrder = await jsonExtractorModel.invoke([
-            ...trimMessagesForModel(state.messages as BaseMessage[]),
-            new SystemMessage(systemPrompt)
+            new SystemMessage(systemPrompt),
+            ...trimMessagesForModel(state.messages as BaseMessage[])
         ]);
 
         if (workOrder.actionType !== "NONE") {
