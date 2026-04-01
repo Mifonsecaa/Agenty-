@@ -7,6 +7,7 @@ import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
+import { z } from "zod";
 
 console.log("[AIService] Module Loading...");
 
@@ -40,6 +41,19 @@ export const toolModel = new ChatOpenAI({
     modelName: "gpt-4o-mini",
     temperature: 0,
 });
+
+export const ExcelWorkOrderSchema = z.object({
+  actionType: z.enum(["APPEND_ROW", "UPDATE_CELL", "CREATE_FILE", "NONE"])
+    .describe("El tipo de acción a realizar en el Excel."),
+  targetFileName: z.string()
+    .describe("Nombre del archivo Excel objetivo (ej. 'reservas.xlsx'). Si no existe en availableFiles y se necesita, usa CREATE_FILE."),
+  extractedData: z.record(z.any()).optional()
+    .describe("Los datos estructurados a guardar (ej. {'Nombre': 'Juan', 'Hora': '20:00'})."),
+  responseToUser: z.string()
+    .describe("El mensaje final que se le mostrará al usuario confirmando la acción o pidiendo datos faltantes.")
+});
+
+export const jsonExtractorModel = brainModel.withStructuredOutput(ExcelWorkOrderSchema);
 
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
@@ -481,8 +495,8 @@ export const aiService = {
             try {
                 const owner = await prisma.business.findUnique({ where: { id: businessId }, select: { userId: true } });
                 if (owner?.userId) {
-                    const user = await prisma.user.findUnique({ where: { id: owner.userId }, select: { id: true, role: true, trialTokenLimit: true, trialTokensUsed: true } }) as any;
-                    if (user && user.role === 'USERTRY' && typeof user.trialTokenLimit === 'number') {
+                    const user = await prisma.user.findUnique({ where: { id: owner.userId }, select: { id: true, trialTokenLimit: true, trialTokensUsed: true } }) as any;
+                    if (user && typeof user.trialTokenLimit === 'number') {
                         // Simple heuristic: estimate tokens based on content length
                         const inputText = messages.map(m => m.content || '').join(' ');
                         const estimatedTokens = Math.max(1, Math.floor(inputText.length / 4 + finalResponse.length / 4));

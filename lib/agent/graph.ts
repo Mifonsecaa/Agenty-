@@ -3,7 +3,8 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
 import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
-import { brainModel, createRequiredToolAgent, workerModel } from "@/lib/ai";
+import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel } from "@/lib/ai";
+import { processExcelWorkOrder } from "../tools/excel-handler";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 let cachedGraphCheckpointer: any | undefined;
@@ -219,6 +220,32 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         }));
     };
 
+    const actionNode = async (state: AgentGraphStateType) => {
+        console.log("⚙️ [ACTION NODE] Extrayendo JSON...");
+        const availableFiles = await ensureAvailableFiles(state);
+
+        const systemPrompt = `El usuario quiere modificar un documento. Archivos disponibles en el negocio: ${JSON.stringify(availableFiles)}. Extrae los datos requeridos. Si faltan datos vitales, pon actionType en NONE y usa responseToUser para preguntarlos.`;
+
+        const workOrder = await jsonExtractorModel.invoke([
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
+            new SystemMessage(systemPrompt)
+        ]);
+
+        if (workOrder.actionType !== "NONE") {
+            console.log("💾 [ACTION NODE] Ejecutando guardado físico...");
+            try {
+                await processExcelWorkOrder(businessId, workOrder);
+            } catch (e) {
+                return { isTaskComplete: true, messages: [new AIMessage("Lo siento, hubo un problema técnico al guardar la información.")] };
+            }
+        }
+
+        return {
+            isTaskComplete: true,
+            messages: [new AIMessage(workOrder.responseToUser)]
+        };
+    };
+
     const plannerNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
@@ -227,7 +254,8 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         const systemPrompt = `Eres el Cerebro del sistema. Tu trabajo NO es usar herramientas ni hablar con el usuario aún. 
 Analiza la petición del usuario y redacta un plan de acción estricto para tu Obrero. 
 Si el usuario hace una pregunta general y requiere RAG o herramientas, elabora un plan indicando qué herramienta usar o sobre qué tema consultar. 
-Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.`;
+Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.
+Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.`;
 
         const reply = await brainModel.invoke([
             new SystemMessage(systemPrompt),
@@ -351,6 +379,7 @@ Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
 
     const routeAfterPlanner = (state: AgentGraphStateType) => {
         if (state.currentPlan === "RESPONDER_DIRECTO") return "directResponse";
+        if (state.currentPlan === "ACCION_EXCEL") return "actionNode";
         return "workerNode";
     };
 
@@ -366,11 +395,13 @@ Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
         .addNode("workerNode", workerNode)
         .addNode("reviewerNode", reviewerNode)
         .addNode("directResponse", directResponseNode)
+        .addNode("actionNode", actionNode)
         .addEdge(START, "plannerNode")
         .addConditionalEdges("plannerNode", routeAfterPlanner)
         .addEdge("workerNode", "reviewerNode")
         .addConditionalEdges("reviewerNode", routeAfterReviewer)
-        .addEdge("directResponse", END);
+        .addEdge("directResponse", END)
+        .addEdge("actionNode", END);
 
     const checkpointer = getOptionalGraphCheckpointer();
     if (checkpointer) {
