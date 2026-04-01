@@ -44,19 +44,22 @@ export async function POST(req: Request) {
         const reference = `agenty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const redirectUrl = `${baseUrl}/checkout/success?plan=${encodeURIComponent(body.planName)}&ref=${encodeURIComponent(reference)}`;
 
-        // Build the transaction payload for Wompi Checkout
+        // Build hosted checkout payload (payment link) so payment method is collected by Wompi UI.
         const payload = {
+            name: `Plan ${body.planName} - Agenty`,
+            description: `Suscripcion ${body.planName}`,
+            single_use: true,
+            collect_shipping: false,
             amount_in_cents: amountInCents,
             currency: 'COP',
-            customer_email: session.user.email,
             reference,
             redirect_url: redirectUrl,
             // Additional metadata can be added here
             metadata: { plan: body.planName, email: session.user.email },
         };
 
-        // Wompi checkout creation endpoint
-        const res = await fetch(`${wompiApiBase}/v1/transactions`, {
+        // Wompi hosted checkout endpoint
+        const res = await fetch(`${wompiApiBase}/v1/payment_links`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -78,8 +81,11 @@ export async function POST(req: Request) {
         }
 
         const checkoutUrl =
+            data?.data?.permalink ||
+            data?.data?.url ||
             data?.data?.payment_link ||
             data?.data?.redirect_url ||
+            (data?.data?.id ? `https://checkout.wompi.co/l/${data.data.id}` : null) ||
             data?.transaction?.payment_link ||
             null;
 
