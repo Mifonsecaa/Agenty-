@@ -251,7 +251,7 @@ function PaymentButton({ plan, isPopular }: { plan: any; isPopular: boolean }) {
 				body: JSON.stringify({ planName: plan.name, amount: amountInCents }),
 			});
 			const data = await res.json();
-			if (!res.ok) throw new Error(data?.error || 'Error creating payment');
+			if (!res.ok) throw new Error(data?.providerMessage || data?.error || 'Error creating payment');
 			if (data.checkoutUrl) {
 				window.location.href = data.checkoutUrl;
 				return;

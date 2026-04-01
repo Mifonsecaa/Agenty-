@@ -19,6 +19,10 @@ function resolveBaseUrl() {
     return null;
 }
 
+function resolveWompiApiBase(privateKey: string) {
+    return privateKey.startsWith('prv_test_') ? 'https://sandbox.wompi.co' : 'https://production.wompi.co';
+}
+
 export async function POST(req: Request) {
     try {
         const session = (await getServerSession(authOptions as any)) as any;
@@ -32,6 +36,7 @@ export async function POST(req: Request) {
 
         const WOMPI_PRIVATE_KEY = process.env.WOMPI_PRIVATE_KEY;
         if (!WOMPI_PRIVATE_KEY) return NextResponse.json({ error: 'WOMPI_PRIVATE_KEY not configured' }, { status: 500 });
+        const wompiApiBase = resolveWompiApiBase(WOMPI_PRIVATE_KEY);
 
         const baseUrl = resolveBaseUrl();
         if (!baseUrl) return NextResponse.json({ error: 'NEXTAUTH_URL not configured' }, { status: 500 });
@@ -41,19 +46,17 @@ export async function POST(req: Request) {
 
         // Build the transaction payload for Wompi Checkout
         const payload = {
-            acceptance_token: '', // Not needed for redirect-based checkout
             amount_in_cents: amountInCents,
             currency: 'COP',
             customer_email: session.user.email,
             reference,
-            payment_method: 'CARD',
             redirect_url: redirectUrl,
             // Additional metadata can be added here
             metadata: { plan: body.planName, email: session.user.email },
         };
 
         // Wompi checkout creation endpoint
-        const res = await fetch('https://production.wompi.co/v1/transactions', {
+        const res = await fetch(`${wompiApiBase}/v1/transactions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -64,8 +67,14 @@ export async function POST(req: Request) {
 
         const data = await res.json();
         if (!res.ok) {
+            const providerMessage =
+                data?.error?.reason ||
+                data?.error?.messages?.[0]?.message ||
+                data?.error?.messages?.[0] ||
+                data?.message ||
+                'Wompi request failed';
             console.error('Wompi error:', data);
-            return NextResponse.json({ error: 'Wompi error', details: data }, { status: 500 });
+            return NextResponse.json({ error: 'Wompi error', providerMessage, details: data }, { status: res.status });
         }
 
         const checkoutUrl =

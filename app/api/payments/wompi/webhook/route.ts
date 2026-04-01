@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+function resolveWompiApiBase(privateKey: string) {
+    return privateKey.startsWith('prv_test_') ? 'https://sandbox.wompi.co' : 'https://production.wompi.co';
+}
+
 export async function POST(req: Request) {
     try {
         const body = await req.json().catch(() => ({}));
@@ -17,9 +21,10 @@ export async function POST(req: Request) {
             console.error('[WOMPI WEBHOOK] WOMPI_PRIVATE_KEY not configured');
             return NextResponse.json({ ok: false }, { status: 500 });
         }
+        const wompiApiBase = resolveWompiApiBase(WOMPI_PRIVATE_KEY);
 
         // Fetch transaction state from Wompi to verify
-        const resp = await fetch(`https://production.wompi.co/v1/transactions/${transactionId}`, {
+        const resp = await fetch(`${wompiApiBase}/v1/transactions/${transactionId}`, {
             headers: { Authorization: `Bearer ${WOMPI_PRIVATE_KEY}` },
         });
         const tx = await resp.json().catch(() => ({}));

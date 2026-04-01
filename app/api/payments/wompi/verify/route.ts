@@ -17,6 +17,10 @@ function extractTransaction(payload: any) {
     return payload?.data?.transaction || payload?.data || payload?.transaction || null;
 }
 
+function resolveWompiApiBase(privateKey: string) {
+    return privateKey.startsWith('prv_test_') ? 'https://sandbox.wompi.co' : 'https://production.wompi.co';
+}
+
 export async function POST(req: Request) {
     try {
         const session = (await getServerSession(authOptions as any)) as any;
@@ -24,11 +28,12 @@ export async function POST(req: Request) {
 
         const WOMPI_PRIVATE_KEY = process.env.WOMPI_PRIVATE_KEY;
         if (!WOMPI_PRIVATE_KEY) return NextResponse.json({ error: 'WOMPI_PRIVATE_KEY not configured' }, { status: 500 });
+        const wompiApiBase = resolveWompiApiBase(WOMPI_PRIVATE_KEY);
 
         const body = (await req.json().catch(() => ({}))) as VerifyBody;
         if (!body.transactionId) return NextResponse.json({ error: 'transactionId is required' }, { status: 400 });
 
-        const resp = await fetch(`https://production.wompi.co/v1/transactions/${body.transactionId}`, {
+        const resp = await fetch(`${wompiApiBase}/v1/transactions/${body.transactionId}`, {
             headers: { Authorization: `Bearer ${WOMPI_PRIVATE_KEY}` },
             cache: 'no-store',
         });
