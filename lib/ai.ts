@@ -19,6 +19,17 @@ export const supervisorModel = new ChatOpenAI({
     temperature: 0,
 });
 
+export const brainModel = new ChatOpenAI({
+    modelName: "gpt-4o",
+    temperature: 0,
+});
+
+export const workerModel = new ChatGoogleGenerativeAI({
+    model: "gemini-1.5-pro",
+    temperature: 0,
+    apiKey: process.env.GEMINI_API_KEY,
+});
+
 export const ragModel = new ChatGoogleGenerativeAI({
     model: "gemini-1.5-flash",
     temperature: 0.2,
