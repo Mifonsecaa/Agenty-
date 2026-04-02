@@ -2,8 +2,9 @@ import { Annotation, END, MessagesAnnotation, START, StateGraph } from "@langcha
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
-import { createKnowledgeTool, createSpreadsheetUpdateTool } from "../tools/knowledge-tool";
-import { createRequiredToolAgent, ragModel, supervisorModel } from "@/lib/ai";
+import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
+import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel, stateExtractorModel } from "@/lib/ai";
+import { processExcelWorkOrder } from "../tools/excel-handler";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 let cachedGraphCheckpointer: any | undefined;
@@ -14,11 +15,37 @@ const AgentGraphState = Annotation.Root({
     businessName: Annotation<string>(),
     config: Annotation<any>(),
     customerPhone: Annotation<string | undefined>(),
-    nextNode: Annotation<"rag_agent" | "tool_agent" | "__end__" | undefined>({
+    currentPlan: Annotation<string | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
-    toolResult: Annotation<string | undefined>({
+    workerResult: Annotation<string | undefined>({
+        reducer: (_prev, next) => next,
+        default: () => undefined,
+    }),
+    isTaskComplete: Annotation<boolean | undefined>({
+        reducer: (_prev, next) => next,
+        default: () => undefined,
+    }),
+    retryCount: Annotation<number>({
+        reducer: (prev, next) => prev + next,
+        default: () => 0,
+    }),
+    extractionState: Annotation<{
+        status: "INIT" | "ASK_TIME" | "ASK_PEOPLE" | "ASK_NAME" | "CONFIRMED" | "DONE" | "";
+        data: Record<string, any>;
+    } | undefined>({
+        reducer: (prev, next) => {
+            if (!next) return prev;
+            if (!prev) return next;
+            return {
+                status: next.status || prev.status,
+                data: { ...(prev.data || {}), ...(next.data || {}) }
+            };
+        },
+        default: () => ({ status: "INIT", data: {} })
+    }),
+    availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
@@ -192,199 +219,270 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     ];
 
     const toolMap = new Map<string, any>(tools.map((tool) => [String(tool.name), tool]));
-    const boundToolModel = createRequiredToolAgent(tools);
+    const boundToolModel = (workerModel as any).bindTools(tools);
 
-    const supervisorNode = async (state: AgentGraphStateType) => {
-        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
-        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
-        const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
-        const reservationContextActive = isReservationIntent(recentConversation);
-        const routerPrompt =
-            "Eres un enrutador de tareas. NUNCA respondas al usuario directamente. " +
-            "Si el usuario hace una pregunta o pide informacion, devuelve 'rag_agent'. " +
-            "Si el usuario pide agendar, modificar, guardar o crear un registro en un documento, devuelve 'tool_agent'. " +
-            "REGLA DE ENRUTAMIENTO PARA RESERVAS/EDICION: Antes de devolver 'tool_agent', VERIFICA estrictamente que el ultimo mensaje del usuario contenga TODOS los parametros necesarios para la accion (por ejemplo: Nombre, Fecha, Hora y Cantidad de personas para una reserva). Si falta ALGUN dato, devuelve 'rag_agent' para que el asistente le pregunte al usuario la informacion faltante. NUNCA derives a 'tool_agent' con datos incompletos. " +
-            "Responde unicamente con el nombre exacto del nodo en formato texto.";
-
-        if (reservationContextActive && isReservationStatusQuestion(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
+    const ensureAvailableFiles = async (state: AgentGraphStateType) => {
+        if (Array.isArray(state.availableFiles) && state.availableFiles.length > 0) {
+            return state.availableFiles;
         }
 
-        if (reservationContextActive) {
-            const isComplete = Boolean(
-                reservationSnapshot.name && reservationSnapshot.date && reservationSnapshot.time && reservationSnapshot.people,
-            );
-            return { nextNode: isComplete ? ("tool_agent" as const) : ("rag_agent" as const) };
-        }
-
-        if (isReservationIntent(lastUserMessage) && !hasReservationRequiredData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
-        }
-
-        if (isSpreadsheetEditIntent(lastUserMessage) && !hasSpreadsheetMinimumData(lastUserMessage)) {
-            return { nextNode: "rag_agent" as const };
-        }
-
-        const routeReply = await supervisorModel.invoke([
-            new SystemMessage(routerPrompt),
-            new HumanMessage(lastUserMessage || "saludo"),
-        ]);
-
-        const nextNode = parseRoute(normalizeMessageContent((routeReply as any)?.content));
-        return { nextNode };
+        const files = await listSpreadsheetFilesForBusiness(businessId);
+        return files.map((file) => ({
+            fileName: file.fileName,
+            sourceId: String(file.sourceId || ""),
+            fileUrl: file.fileUrl,
+        }));
     };
 
-    const toolNode = async (state: AgentGraphStateType) => {
-        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
-        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
-        const reservationSnapshot = extractReservationSnapshot(recentConversation, lastUserMessage);
-        const toolPrompt =
-            "Eres un automata de bases de datos. PROHIBIDO generar texto conversacional o saludos. " +
-            "Ejecuta la herramienta requerida con los datos proporcionados por el usuario. " +
-            "NUNCA digas 'voy a revisar' o 'espera un momento'. " +
-            "Si faltan datos criticos, usa la herramienta mas adecuada para listar opciones y devolver evidencia tecnica.";
+    const actionNode = async (state: AgentGraphStateType) => {
+        console.log("⚙️ [ACTION NODE] Analizando extracción de estados o datos...");
 
-        // Si ya tenemos toda la reserva en el historial reciente, ejecutamos CREATE de forma determinista.
-        if (
-            isReservationIntent(recentConversation) &&
-            !isReservationStatusQuestion(lastUserMessage) &&
-            reservationSnapshot.name &&
-            reservationSnapshot.date &&
-            reservationSnapshot.time &&
-            reservationSnapshot.people
-        ) {
-            const bookingTool = toolMap.get("booking_manager");
-            if (bookingTool) {
-                try {
-                    const details = `Reserva para ${reservationSnapshot.people} personas a nombre de ${reservationSnapshot.name}.`;
-                    const result = await bookingTool.invoke({
-                        action: "CREATE",
-                        date: reservationSnapshot.date,
-                        time: reservationSnapshot.time,
-                        details,
-                    });
-                    return {
-                        toolResult: typeof result === "string" ? result : JSON.stringify(result),
-                        nextNode: "rag_agent" as const,
-                    };
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    return {
-                        toolResult: `Error tecnico al ejecutar booking_manager CREATE: ${message}`,
-                        nextNode: "rag_agent" as const,
-                    };
-                }
+        // Si es extracción de reservas:
+        if (state.currentPlan === "EXTRAER_DATOS") {
+            const systemPrompt = `Eres el Agente Extractor y Coordinador de Estados.
+El usuario quiere hacer una reserva o una acción estructurada de pasos.
+Debes revisar los datos actuales: ${JSON.stringify(state.extractionState?.data || {})}.
+Revisa la conversación, identifica los datos que el usuario ha proporcionado. Si faltan datos vitales (fecha/hora, personas, nombre), haz la pregunta. Si ya están todos, pon status en CONFIRMED.
+Reglas:
+- NUNCA repitas preguntas ya respondidas.
+- No reinicies la conversación si ya hay progreso.
+- No saludes nuevamente.`;
+
+            const extraction = await stateExtractorModel.invoke([
+                new SystemMessage(systemPrompt),
+                ...trimMessagesForModel(state.messages as BaseMessage[])
+            ]);
+
+            console.log("📊 Estado de extracción:", extraction);
+
+            // Merge de data
+            const mergedData = { ...(state.extractionState?.data || {}), ...(extraction.collectedData || {}) };
+
+            let finalResponseMsg = "";
+            let nextStatus: any = extraction.status;
+
+            if (nextStatus === "CONFIRMED" || nextStatus === "DONE") {
+                // Aquí el obrero enviará el dato real a la herramienta, sin mentir
+                nextStatus = "DONE";
+                return {
+                    isTaskComplete: false,
+                    currentPlan: `Guarda o anota la nueva reserva. Los datos recolectados y confirmados son: ${JSON.stringify(mergedData)}. Ejecuta la herramienta de guardado en el archivo excel / reservas que corresponda.`,
+                    extractionState: {
+                        status: nextStatus,
+                        data: mergedData
+                    }
+                };
+            } else {
+                finalResponseMsg = extraction.nextQuestionToUser;
+            }
+
+            return {
+                isTaskComplete: true,
+                extractionState: {
+                    status: nextStatus,
+                    data: mergedData
+                },
+                messages: [new AIMessage(finalResponseMsg)]
+            };
+        }
+
+        // --- EXCEL LOGIC ---
+        console.log("⚙️ [ACTION NODE] Extrayendo JSON Excel...");
+        const availableFiles = await ensureAvailableFiles(state);
+
+        const systemPrompt = `Eres el extractor de datos (Obrero).
+El Cerebro analizó la solicitud y dejó este insight/plan: "${state.currentPlan || 'Interpreta la conversación para extraer datos'}".
+El usuario quiere modificar un documento. Archivos disponibles en el negocio: ${JSON.stringify(availableFiles)}. 
+Extrae los datos requeridos de la conversación. Si faltan datos vitales, pon actionType en NONE y usa responseToUser para preguntarlos.`;
+
+        const workOrder = await jsonExtractorModel.invoke([
+            new SystemMessage(systemPrompt),
+            ...trimMessagesForModel(state.messages as BaseMessage[])
+        ]);
+
+        if (workOrder.actionType !== "NONE") {
+            console.log("💾 [ACTION NODE] Ejecutando guardado físico...");
+            try {
+                await processExcelWorkOrder(businessId, workOrder);
+            } catch (e) {
+                return { isTaskComplete: true, messages: [new AIMessage("Lo siento, hubo un problema técnico al guardar la información.")] };
             }
         }
 
+        return {
+            isTaskComplete: true,
+            messages: [new AIMessage(workOrder.responseToUser)]
+        };
+    };
+
+    const plannerNode = async (state: AgentGraphStateType) => {
+        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
+
+        // Si el estado de extracción está activo, seguimos la misma ruta
+        if (state.extractionState && ["ASK_TIME", "ASK_PEOPLE", "ASK_NAME", "CONFIRMED"].includes(state.extractionState.status)) {
+             return { currentPlan: "EXTRAER_DATOS" };
+        }
+
+        const availableFiles = await ensureAvailableFiles(state);
+
+        const systemPrompt = `Eres el Cerebro del sistema. Tu trabajo NO es usar herramientas ni hablar con el usuario aún. 
+Analiza la conversación reciente y redacta un plan de acción estricto para tu Obrero. 
+Si el usuario hace una pregunta general y requiere RAG o herramientas, elabora un plan indicando qué herramienta usar o sobre qué tema consultar. 
+Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.
+Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.
+Si el usuario quiere iniciar una reserva de mesa/cita, O SI LA CONVERSACIÓN ACTUAL ESTÁ EN MEDIO DE RECOLECTAR DATOS (ej. respondiendo día, hora, personas, nombre), escribe exactamente: EXTRAER_DATOS.`;
+
+        const reply = await brainModel.invoke([
+            new SystemMessage(systemPrompt),
+            ...trimMessagesForModel(state.messages as BaseMessage[])
+        ]);
+
+        const plan = normalizeMessageContent((reply as any)?.content);
+        return {
+            currentPlan: plan,
+            availableFiles
+        };
+    };
+
+    const workerNode = async (state: AgentGraphStateType) => {
+        const availableFiles = await ensureAvailableFiles(state);
+        const availableFilesText = availableFiles.length
+            ? JSON.stringify(availableFiles.slice(0, 20), null, 2)
+            : "[]";
+
+        const toolPrompt = `Eres un Obrero ejecutor. Sigue EXACTAMENTE este plan: ${state.currentPlan}. 
+Ejecuta las herramientas necesarias y devuelve el resultado en texto plano. No agregues saludos ni comentarios.
+El negocio tiene estos archivos u hojas de cálculo disponibles para consulta/edición:
+${availableFilesText}
+
+SI LA TAREA ES EDITAR UN ARCHIVO, DEBES LLAMAR A LA HERRAMIENTA AHORA MISMO CON LOS PARÁMETROS ADECUADOS.`;
+
+        let resultText = "No result";
         try {
             const modelReply = await boundToolModel.invoke([
                 new SystemMessage(toolPrompt),
-                new HumanMessage(
-                    [
-                        `Ultimo mensaje del usuario: ${lastUserMessage}`,
-                        "Contexto reciente de la conversacion:",
-                        recentConversation,
-                        "Si la tarea es reserva y ya existen nombre, fecha, hora y personas en el contexto, debes ejecutar booking_manager con action='CREATE'.",
-                    ].join("\n\n"),
-                ),
+                ...trimMessagesForModel(state.messages as BaseMessage[])
             ]);
 
             const toolCalls = extractToolCalls(modelReply);
             if (!toolCalls.length) {
-                return {
-                    toolResult: "Error tecnico: no se ejecuto ninguna herramienta para la solicitud.",
-                    nextNode: "rag_agent" as const,
-                };
-            }
-
-            const outputs: string[] = [];
-            for (const call of toolCalls) {
-                const tool = toolMap.get(call.name || "");
-                if (!tool) {
-                    outputs.push(`Error tecnico: herramienta no encontrada (${call.name || "desconocida"}).`);
-                    continue;
+                // If it doesn't call a tool, maybe it just answered the plan
+                resultText = normalizeMessageContent((modelReply as any)?.content) || "No se ejecutó herramienta.";
+            } else {
+                const outputs: string[] = [];
+                for (const call of toolCalls) {
+                    const tool = toolMap.get(call.name || "");
+                    if (!tool) {
+                        outputs.push(`Error: tool no encontrada (${call.name}).`);
+                        continue;
+                    }
+                    try {
+                        const res = await (tool as any).invoke(call.args || {});
+                        outputs.push(typeof res === "string" ? res : JSON.stringify(res));
+                    } catch (e: any) {
+                        outputs.push(`Error al ejecutar ${tool.name}: ${e.message}`);
+                    }
                 }
-
-                try {
-                    const result = await (tool as any).invoke(call.args || {});
-                    outputs.push(typeof result === "string" ? result : JSON.stringify(result));
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    outputs.push(`Error tecnico al ejecutar ${tool.name}: ${message}`);
-                }
+                resultText = outputs.join("\n\n");
             }
-
-            return {
-                toolResult: outputs.join("\n\n"),
-                nextNode: "rag_agent" as const,
-            };
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            return {
-                toolResult: `Error tecnico de tool_agent: ${message}`,
-                nextNode: "rag_agent" as const,
-            };
-        }
-    };
-
-    const ragNode = async (state: AgentGraphStateType) => {
-        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
-        const effectiveConfig = state.config || config || {};
-        let ragContext = "";
-
-        if (lastUserMessage) {
-            try {
-                const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
-                ragContext = retrieval.ragContext;
-            } catch (error) {
-                console.error("[AgentGraph] RAG retrieval error:", error);
-            }
+        } catch (e: any) {
+            resultText = `Fallo crítico: ${e.message}`;
         }
 
-        const ragSystemPrompt = [
-            String(effectiveConfig?.systemPrompt || `Eres un asistente amable para ${businessName}.`),
-            "Usa el [CONTEXTO RAG] para responder.",
-            "Si el estado contiene un toolResult, informale al usuario de forma natural que la accion se completo o si hubo error.",
-            "NUNCA digas 'espera un momento', 'voy a revisar' o similares.",
-            "Si el usuario responde con una afirmacion corta (si, ok, dale), asume el contexto del mensaje anterior.",
-            "REGLA DE IMAGENES: NUNCA inventes URLs. Si el usuario solicita ver una imagen o menu, busca en los metadatos del [CONTEXTO RAG] el campo de la URL publica. Si la URL existe, devuelvela EXACTAMENTE asi: ![Descripcion](URL). Si el contexto no incluye una URL real, responde: 'Lo siento, no tengo la imagen disponible en este momento'.",
-            "Si no hay evidencia suficiente en RAG o herramientas, responde exactamente: 'Lo siento, no tengo esa informacion especifica en mis registros'.",
-            ragContext ? `\n[CONTEXTO RAG]\n${ragContext}` : "\n[CONTEXTO RAG]\n(Sin resultados relevantes)",
-            state.toolResult ? `\n[TOOL_RESULT]\n${state.toolResult}` : "",
-        ]
-            .filter(Boolean)
-            .join("\n");
-
-        const response = await ragModel.invoke([
-            new SystemMessage(ragSystemPrompt),
-            ...trimMessagesForModel(state.messages as BaseMessage[]),
-        ]);
-
-        let text = normalizeMessageContent((response as any)?.content) || "Lo siento, no tengo esa informacion especifica en mis registros";
-        if (asksForImageOrMenu(lastUserMessage)) {
-            const imgUrl = extractMarkdownImageUrl(text);
-            if (imgUrl && !ragContext.includes(imgUrl)) {
-                text = "Lo siento, no tengo la imagen disponible en este momento";
-            }
-        }
         return {
-            messages: [new AIMessage(text)],
-            nextNode: "__end__" as const,
-            toolResult: undefined,
+            workerResult: resultText,
+            retryCount: 1
         };
     };
 
-    const routeAfterSupervisor = (state: AgentGraphStateType) => (state.nextNode === "tool_agent" ? "tool_agent" : "rag_agent");
+    const reviewerNode = async (state: AgentGraphStateType) => {
+        let ragContext = "";
+        try {
+            const retrieval = await retrieveRagContext({ businessId, query: getLastUserMessage(state.messages as BaseMessage[]) });
+            ragContext = retrieval.ragContext;
+        } catch (e) {
+            console.error("RAG retrieval error:", e);
+        }
+
+        const effectiveConfig = state.config || config || {};
+        const reviewerPrompt = `Eres el Supervisor de Calidad y la voz final del sistema.
+Revisa el plan original: ${state.currentPlan} y el resultado del obrero: ${state.workerResult}.
+Contexto del negocio: ${effectiveConfig?.businessDescription || ''}
+Contexto RAG:
+${ragContext}
+
+¿Cumplió con la orden del usuario? 
+Si SÍ, redacta la respuesta final amigable para el usuario. IMPORTANTE: Inicia tu respuesta con 'FINAL_OK:'.
+Si NO (o falló la herramienta), redacta una justificación y corrección para que el obrero lo intente de nuevo. IMPORTANTE: Inicia tu respuesta con 'FINAL_RETRY:'.`;
+
+        const reply = await brainModel.invoke([
+            new SystemMessage(reviewerPrompt),
+            ...trimMessagesForModel(state.messages as BaseMessage[])
+        ]);
+
+        const content = normalizeMessageContent((reply as any)?.content);
+        if (content.startsWith("FINAL_OK:") || state.retryCount >= 3) {
+            let finalText = content.replace("FINAL_OK:", "").trim();
+            if (content.startsWith("FINAL_RETRY:")) finalText = content.replace("FINAL_RETRY:", "").trim(); // En caso de que se pase de los reintentos
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(finalText)]
+            };
+        } else {
+            return {
+                isTaskComplete: false,
+                currentPlan: content.replace("FINAL_RETRY:", "").trim()
+            };
+        }
+    };
+
+    const directResponseNode = async (state: AgentGraphStateType) => {
+        const effectiveConfig = state.config || config || {};
+        const reviewerPrompt = `Eres el Asistente del sistema. El usuario requiere una respuesta directa. 
+Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
+
+        const reply = await brainModel.invoke([
+            new SystemMessage(reviewerPrompt),
+            ...trimMessagesForModel(state.messages as BaseMessage[])
+        ]);
+
+        return {
+            isTaskComplete: true,
+            messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))]
+        };
+    };
+
+    const routeAfterPlanner = (state: AgentGraphStateType) => {
+        if (state.currentPlan === "RESPONDER_DIRECTO") return "directResponse";
+        if (state.currentPlan === "ACCION_EXCEL" || state.currentPlan === "EXTRAER_DATOS") return "actionNode";
+        return "workerNode";
+    };
+
+    const routeAfterReviewer = (state: AgentGraphStateType) => {
+        if (state.isTaskComplete === true || state.retryCount >= 3) {
+            return END;
+        }
+        return "workerNode";
+    };
+
+    const routeAfterAction = (state: AgentGraphStateType) => {
+        if (state.isTaskComplete) return END;
+        return "workerNode";
+    };
 
     const workflow = new StateGraph(AgentGraphState)
-        .addNode("supervisor", supervisorNode)
-        .addNode("tool_agent", toolNode)
-        .addNode("rag_agent", ragNode)
-        .addEdge(START, "supervisor")
-        .addConditionalEdges("supervisor", routeAfterSupervisor)
-        .addEdge("tool_agent", "rag_agent")
-        .addEdge("rag_agent", END);
+        .addNode("plannerNode", plannerNode)
+        .addNode("workerNode", workerNode)
+        .addNode("reviewerNode", reviewerNode)
+        .addNode("directResponse", directResponseNode)
+        .addNode("actionNode", actionNode)
+        .addEdge(START, "plannerNode")
+        .addConditionalEdges("plannerNode", routeAfterPlanner)
+        .addEdge("workerNode", "reviewerNode")
+        .addConditionalEdges("reviewerNode", routeAfterReviewer)
+        .addEdge("directResponse", END)
+        .addConditionalEdges("actionNode", routeAfterAction);
 
     const checkpointer = getOptionalGraphCheckpointer();
     if (checkpointer) {

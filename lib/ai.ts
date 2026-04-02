@@ -7,6 +7,7 @@ import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
+import { z } from "zod";
 
 console.log("[AIService] Module Loading...");
 
@@ -19,6 +20,17 @@ export const supervisorModel = new ChatOpenAI({
     temperature: 0,
 });
 
+export const brainModel = new ChatOpenAI({
+    modelName: "gpt-4o",
+    temperature: 0,
+});
+
+export const workerModel = new ChatGoogleGenerativeAI({
+    model: "gemini-1.5-pro",
+    temperature: 0,
+    apiKey: process.env.GEMINI_API_KEY,
+});
+
 export const ragModel = new ChatGoogleGenerativeAI({
     model: "gemini-1.5-flash",
     temperature: 0.2,
@@ -29,6 +41,28 @@ export const toolModel = new ChatOpenAI({
     modelName: "gpt-4o-mini",
     temperature: 0,
 });
+
+export const ExcelWorkOrderSchema = z.object({
+  actionType: z.enum(["APPEND_ROW", "UPDATE_CELL", "CREATE_FILE", "NONE"])
+    .describe("El tipo de acción a realizar en el Excel."),
+  targetFileName: z.string()
+    .describe("Nombre del archivo Excel objetivo (ej. 'reservas.xlsx'). Si no existe en availableFiles y se necesita, usa CREATE_FILE."),
+  extractedData: z.record(z.any()).optional()
+    .describe("Los datos estructurados a guardar (ej. {'Nombre': 'Juan', 'Hora': '20:00'})."),
+  responseToUser: z.string()
+    .describe("El mensaje final que se le mostrará al usuario confirmando la acción o pidiendo datos faltantes.")
+});
+
+export const jsonExtractorModel = brainModel.withStructuredOutput(ExcelWorkOrderSchema);
+
+export const ConversationStateSchema = z.object({
+    status: z.enum(["INIT", "ASK_TIME", "ASK_PEOPLE", "ASK_NAME", "CONFIRMED", "DONE", ""]).describe("El estado actual de la conversación/extracción de datos."),
+    collectedData: z.record(z.any()).describe("Los datos recolectados hasta el momento (ej: hora, persona, etc)"),
+    missingData: z.array(z.string()).describe("Los datos que aún faltan por recolectar"),
+    nextQuestionToUser: z.string().describe("Si faltan datos, formula la pregunta directa al usuario. Si no falta nada y se puede confirmar, confirmarlo amablemente sin saludar.")
+});
+
+export const stateExtractorModel = brainModel.withStructuredOutput(ConversationStateSchema);
 
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
@@ -470,8 +504,8 @@ export const aiService = {
             try {
                 const owner = await prisma.business.findUnique({ where: { id: businessId }, select: { userId: true } });
                 if (owner?.userId) {
-                    const user = await prisma.user.findUnique({ where: { id: owner.userId }, select: { id: true, role: true, trialTokenLimit: true, trialTokensUsed: true } }) as any;
-                    if (user && user.role === 'USERTRY' && typeof user.trialTokenLimit === 'number') {
+                    const user = await prisma.user.findUnique({ where: { id: owner.userId }, select: { id: true, trialTokenLimit: true, trialTokensUsed: true } }) as any;
+                    if (user && typeof user.trialTokenLimit === 'number') {
                         // Simple heuristic: estimate tokens based on content length
                         const inputText = messages.map(m => m.content || '').join(' ');
                         const estimatedTokens = Math.max(1, Math.floor(inputText.length / 4 + finalResponse.length / 4));
