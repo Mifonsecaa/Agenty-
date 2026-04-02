@@ -262,9 +262,16 @@ Reglas:
             let nextStatus: any = extraction.status;
 
             if (nextStatus === "CONFIRMED" || nextStatus === "DONE") {
-                // Aquí el ejecutor enviaría el dato
-                finalResponseMsg = "¡Perfecto! Tu reserva está confirmada con estos datos: " + JSON.stringify(mergedData) + ". ¡Te esperamos!";
+                // Aquí el obrero enviará el dato real a la herramienta, sin mentir
                 nextStatus = "DONE";
+                return {
+                    isTaskComplete: false,
+                    currentPlan: `Guarda o anota la nueva reserva. Los datos recolectados y confirmados son: ${JSON.stringify(mergedData)}. Ejecuta la herramienta de guardado en el archivo excel / reservas que corresponda.`,
+                    extractionState: {
+                        status: nextStatus,
+                        data: mergedData
+                    }
+                };
             } else {
                 finalResponseMsg = extraction.nextQuestionToUser;
             }
@@ -320,15 +327,15 @@ Extrae los datos requeridos de la conversación. Si faltan datos vitales, pon ac
         const availableFiles = await ensureAvailableFiles(state);
 
         const systemPrompt = `Eres el Cerebro del sistema. Tu trabajo NO es usar herramientas ni hablar con el usuario aún. 
-Analiza la petición del usuario y redacta un plan de acción estricto para tu Obrero. 
+Analiza la conversación reciente y redacta un plan de acción estricto para tu Obrero. 
 Si el usuario hace una pregunta general y requiere RAG o herramientas, elabora un plan indicando qué herramienta usar o sobre qué tema consultar. 
 Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.
 Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.
-Si el usuario quiere iniciar una reserva estructurada o pedir cita SIN ESPECIFICAR UN EXCEL EN SU LUGAR, escribe exactamente: EXTRAER_DATOS.`;
+Si el usuario quiere iniciar una reserva de mesa/cita, O SI LA CONVERSACIÓN ACTUAL ESTÁ EN MEDIO DE RECOLECTAR DATOS (ej. respondiendo día, hora, personas, nombre), escribe exactamente: EXTRAER_DATOS.`;
 
         const reply = await brainModel.invoke([
             new SystemMessage(systemPrompt),
-            new HumanMessage(lastUserMessage || "saludo")
+            ...trimMessagesForModel(state.messages as BaseMessage[])
         ]);
 
         const plan = normalizeMessageContent((reply as any)?.content);
@@ -459,6 +466,11 @@ Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
         return "workerNode";
     };
 
+    const routeAfterAction = (state: AgentGraphStateType) => {
+        if (state.isTaskComplete) return END;
+        return "workerNode";
+    };
+
     const workflow = new StateGraph(AgentGraphState)
         .addNode("plannerNode", plannerNode)
         .addNode("workerNode", workerNode)
@@ -470,7 +482,7 @@ Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
         .addEdge("workerNode", "reviewerNode")
         .addConditionalEdges("reviewerNode", routeAfterReviewer)
         .addEdge("directResponse", END)
-        .addEdge("actionNode", END);
+        .addConditionalEdges("actionNode", routeAfterAction);
 
     const checkpointer = getOptionalGraphCheckpointer();
     if (checkpointer) {
