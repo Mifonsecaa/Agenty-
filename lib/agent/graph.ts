@@ -3,7 +3,7 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
 import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
-import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel } from "@/lib/ai";
+import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel, stateExtractorModel } from "@/lib/ai";
 import { processExcelWorkOrder } from "../tools/excel-handler";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
@@ -30,6 +30,20 @@ const AgentGraphState = Annotation.Root({
     retryCount: Annotation<number>({
         reducer: (prev, next) => prev + next,
         default: () => 0,
+    }),
+    extractionState: Annotation<{
+        status: "INIT" | "ASK_TIME" | "ASK_PEOPLE" | "ASK_NAME" | "CONFIRMED" | "DONE" | "";
+        data: Record<string, any>;
+    } | undefined>({
+        reducer: (prev, next) => {
+            if (!next) return prev;
+            if (!prev) return next;
+            return {
+                status: next.status || prev.status,
+                data: { ...(prev.data || {}), ...(next.data || {}) }
+            };
+        },
+        default: () => ({ status: "INIT", data: {} })
     }),
     availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
@@ -221,7 +235,52 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     };
 
     const actionNode = async (state: AgentGraphStateType) => {
-        console.log("⚙️ [ACTION NODE] Extrayendo JSON...");
+        console.log("⚙️ [ACTION NODE] Analizando extracción de estados o datos...");
+
+        // Si es extracción de reservas:
+        if (state.currentPlan === "EXTRAER_DATOS") {
+            const systemPrompt = `Eres el Agente Extractor y Coordinador de Estados.
+El usuario quiere hacer una reserva o una acción estructurada de pasos.
+Debes revisar los datos actuales: ${JSON.stringify(state.extractionState?.data || {})}.
+Revisa la conversación, identifica los datos que el usuario ha proporcionado. Si faltan datos vitales (fecha/hora, personas, nombre), haz la pregunta. Si ya están todos, pon status en CONFIRMED.
+Reglas:
+- NUNCA repitas preguntas ya respondidas.
+- No reinicies la conversación si ya hay progreso.
+- No saludes nuevamente.`;
+
+            const extraction = await stateExtractorModel.invoke([
+                new SystemMessage(systemPrompt),
+                ...trimMessagesForModel(state.messages as BaseMessage[])
+            ]);
+
+            console.log("📊 Estado de extracción:", extraction);
+
+            // Merge de data
+            const mergedData = { ...(state.extractionState?.data || {}), ...(extraction.collectedData || {}) };
+
+            let finalResponseMsg = "";
+            let nextStatus: any = extraction.status;
+
+            if (nextStatus === "CONFIRMED" || nextStatus === "DONE") {
+                // Aquí el ejecutor enviaría el dato
+                finalResponseMsg = "¡Perfecto! Tu reserva está confirmada con estos datos: " + JSON.stringify(mergedData) + ". ¡Te esperamos!";
+                nextStatus = "DONE";
+            } else {
+                finalResponseMsg = extraction.nextQuestionToUser;
+            }
+
+            return {
+                isTaskComplete: true,
+                extractionState: {
+                    status: nextStatus,
+                    data: mergedData
+                },
+                messages: [new AIMessage(finalResponseMsg)]
+            };
+        }
+
+        // --- EXCEL LOGIC ---
+        console.log("⚙️ [ACTION NODE] Extrayendo JSON Excel...");
         const availableFiles = await ensureAvailableFiles(state);
 
         const systemPrompt = `Eres el extractor de datos (Obrero).
@@ -252,13 +311,20 @@ Extrae los datos requeridos de la conversación. Si faltan datos vitales, pon ac
     const plannerNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
+
+        // Si el estado de extracción está activo, seguimos la misma ruta
+        if (state.extractionState && ["ASK_TIME", "ASK_PEOPLE", "ASK_NAME", "CONFIRMED"].includes(state.extractionState.status)) {
+             return { currentPlan: "EXTRAER_DATOS" };
+        }
+
         const availableFiles = await ensureAvailableFiles(state);
 
         const systemPrompt = `Eres el Cerebro del sistema. Tu trabajo NO es usar herramientas ni hablar con el usuario aún. 
 Analiza la petición del usuario y redacta un plan de acción estricto para tu Obrero. 
 Si el usuario hace una pregunta general y requiere RAG o herramientas, elabora un plan indicando qué herramienta usar o sobre qué tema consultar. 
 Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.
-Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.`;
+Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.
+Si el usuario quiere iniciar una reserva estructurada o pedir cita SIN ESPECIFICAR UN EXCEL EN SU LUGAR, escribe exactamente: EXTRAER_DATOS.`;
 
         const reply = await brainModel.invoke([
             new SystemMessage(systemPrompt),
@@ -382,7 +448,7 @@ Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
 
     const routeAfterPlanner = (state: AgentGraphStateType) => {
         if (state.currentPlan === "RESPONDER_DIRECTO") return "directResponse";
-        if (state.currentPlan === "ACCION_EXCEL") return "actionNode";
+        if (state.currentPlan === "ACCION_EXCEL" || state.currentPlan === "EXTRAER_DATOS") return "actionNode";
         return "workerNode";
     };
 

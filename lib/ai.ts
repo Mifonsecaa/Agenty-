@@ -55,6 +55,15 @@ export const ExcelWorkOrderSchema = z.object({
 
 export const jsonExtractorModel = brainModel.withStructuredOutput(ExcelWorkOrderSchema);
 
+export const ConversationStateSchema = z.object({
+    status: z.enum(["INIT", "ASK_TIME", "ASK_PEOPLE", "ASK_NAME", "CONFIRMED", "DONE", ""]).describe("El estado actual de la conversación/extracción de datos."),
+    collectedData: z.record(z.any()).describe("Los datos recolectados hasta el momento (ej: hora, persona, etc)"),
+    missingData: z.array(z.string()).describe("Los datos que aún faltan por recolectar"),
+    nextQuestionToUser: z.string().describe("Si faltan datos, formula la pregunta directa al usuario. Si no falta nada y se puede confirmar, confirmarlo amablemente sin saludar.")
+});
+
+export const stateExtractorModel = brainModel.withStructuredOutput(ConversationStateSchema);
+
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
 }
