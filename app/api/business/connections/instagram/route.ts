@@ -2,10 +2,11 @@
 // Recibe mensajes entrantes desde Instagram Business y los procesa con el agente
 
 import { NextRequest, NextResponse } from "next/server";
-import { executeAgent } from "@/services/agent-execution";
 import { sendInstagramMessage } from "@/services/instagram-sender";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { runAgentOrchestrator } from "@/services/agent-orchestrator";
+import { aiService } from "@/lib/ai";
 
 // ─── Webhook Verification (GET) ───────────────────────────────────────────────
 // Meta sends a GET request to verify the webhook endpoint
@@ -73,14 +74,51 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Execute the AI agent
-        const agentResponse = await executeAgent({
-          businessId: business.id,
-          platform: "instagram",
-          userId: senderId,
-          message: messageText,
-          metadata: { pageId, senderId },
+        const { conversation } = await getOrCreateInstagramConversation(business.id, senderId);
+
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: "user",
+            content: messageText,
+          },
         });
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: new Date() },
+        });
+
+        const historyMessages = await buildConversationMessages(conversation.id);
+
+        let agentResponse = "";
+        try {
+          agentResponse = await runAgentOrchestrator({
+            businessId: business.id,
+            channel: "instagram",
+            conversationKey: conversation.id,
+            customerPhone: senderId,
+            messages: historyMessages,
+          });
+        } catch (orchestratorErr) {
+          console.warn("[Instagram Webhook] Orchestrator fallback to aiService:", orchestratorErr);
+          agentResponse = await aiService.generateResponse(business.id, [
+            { role: "user", content: messageText },
+          ]);
+        }
+
+        if (agentResponse?.trim()) {
+          await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              role: "agent",
+              content: agentResponse,
+            },
+          });
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { lastMessageAt: new Date() },
+          });
+        }
 
         // Send response back to Instagram
         await sendInstagramMessage({
@@ -110,4 +148,49 @@ function verifySignature(body: string, signature: string | null): boolean {
 
   const expectedSig = "sha256=" + crypto.createHmac("sha256", appSecret).update(body).digest("hex");
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig));
+}
+
+async function getOrCreateInstagramConversation(businessId: string, senderId: string) {
+  let customer = await prisma.customer.findUnique({ where: { phone: senderId } });
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: { phone: senderId, name: "Instagram User" },
+    });
+  }
+
+  let conversation = await prisma.conversation.findFirst({
+    where: {
+      businessId,
+      customerId: customer.id,
+      channel: "INSTAGRAM",
+      status: { not: "RESOLVED" },
+    },
+  });
+
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: {
+        businessId,
+        customerId: customer.id,
+        channel: "INSTAGRAM",
+        status: "ACTIVE",
+      },
+    });
+  }
+
+  return { customer, conversation };
+}
+
+async function buildConversationMessages(conversationId: string) {
+  const rows = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    take: 24,
+  });
+
+  return rows.map((row) => {
+    if (row.role === "user") return { role: "user" as const, content: row.content || "" };
+    if (row.role === "system") return { role: "system" as const, content: row.content || "" };
+    return { role: "assistant" as const, content: row.content || "" };
+  });
 }

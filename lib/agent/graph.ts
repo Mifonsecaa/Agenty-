@@ -3,7 +3,7 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/
 import { retrieveRagContext } from "@/lib/rag/retriever";
 import { createBookingTool } from "../tools/booking-tool";
 import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
-import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel, stateExtractorModel } from "@/lib/ai";
+import { brainModel, createRequiredToolAgent, createToolAgent, jsonExtractorModel, stateExtractorModel } from "@/lib/ai";
 import { processExcelWorkOrder } from "../tools/excel-handler";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
@@ -219,7 +219,8 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
     ];
 
     const toolMap = new Map<string, any>(tools.map((tool) => [String(tool.name), tool]));
-    const boundToolModel = (workerModel as any).bindTools(tools);
+    const optionalToolAgent = createToolAgent(tools);
+    const requiredToolAgent = createRequiredToolAgent(tools);
 
     const ensureAvailableFiles = async (state: AgentGraphStateType) => {
         if (Array.isArray(state.availableFiles) && state.availableFiles.length > 0) {
@@ -360,10 +361,18 @@ SI LA TAREA ES EDITAR UN ARCHIVO, DEBES LLAMAR A LA HERRAMIENTA AHORA MISMO CON 
 
         let resultText = "No result";
         try {
-            const modelReply = await boundToolModel.invoke([
+            const invokeMessages = [
                 new SystemMessage(toolPrompt),
                 ...trimMessagesForModel(state.messages as BaseMessage[])
-            ]);
+            ];
+
+            let modelReply: any;
+            try {
+                modelReply = await (optionalToolAgent as any).invoke(invokeMessages);
+            } catch (optionalErr: any) {
+                console.warn("[AgentGraph] Optional tool agent failed, trying required mode:", optionalErr?.message || optionalErr);
+                modelReply = await (requiredToolAgent as any).invoke(invokeMessages);
+            }
 
             const toolCalls = extractToolCalls(modelReply);
             if (!toolCalls.length) {

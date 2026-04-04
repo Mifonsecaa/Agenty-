@@ -86,9 +86,21 @@ export async function POST(req: Request) {
             }
         }
 
-        // Evitar responder a mensajes propios o vacíos
-        if (messageData.key.fromMe || !messageText || targetJid === body.sender) {
-            return NextResponse.json({ success: true });
+        // Evitar responder a mensajes propios o vacíos.
+        // Nota: algunos payloads de Evolution reportan `sender` igual a `remoteJid`
+        // para eventos válidos, por eso no lo usamos como criterio de descarte.
+        if (messageData.key.fromMe) {
+            console.log("[WhatsApp Webhook] Ignored message: fromMe=true");
+            return NextResponse.json({ success: true, message: "Ignored own message" });
+        }
+
+        if (!messageText || !String(messageText).trim()) {
+            console.log("[WhatsApp Webhook] Ignored message: empty content", {
+                eventType,
+                instanceName,
+                remoteJid: targetJid,
+            });
+            return NextResponse.json({ success: true, message: "Ignored empty message" });
         }
 
         console.log(`[WhatsApp Webhook] Message from ${pushName} (${targetJid}) for instance ${instanceName}`);

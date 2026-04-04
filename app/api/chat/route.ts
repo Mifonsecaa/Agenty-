@@ -5,10 +5,10 @@ import OpenAI from 'openai';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { aiService } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai';
-import { prisma } from '@/lib/prisma';
 import { authorizeBusinessAccessSession } from '@/lib/auth';
 import { acquireConcurrencySlot, buildRequesterKey, checkRateLimit } from '@/lib/security/traffic-control';
 import { incrementOpsCounter, recordOpsDuration } from '@/lib/observability/ops-metrics';
+import { runAgentOrchestrator } from '@/services/agent-orchestrator';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
@@ -232,12 +232,23 @@ export async function POST(request: Request) {
     }
 
     const conversationMessages = normalizedMessages.filter((m) => m.role !== 'system');
-    // Use agentId (validated earlier) instead of referencing `business` to avoid
-    // potential scope issues during compilation.
-    const content = await aiService.generateResponse(agentId as string, conversationMessages, {
-      provider,
-      systemPrompt,
-    });
+    const threadKey = String((session.user?.email || session.user?.id || requesterKey || 'private-chat')).trim();
+
+    let content = '';
+    try {
+      content = await runAgentOrchestrator({
+        businessId: agentId as string,
+        channel: 'chat',
+        conversationKey: threadKey,
+        messages: conversationMessages,
+      });
+    } catch (orchestratorErr) {
+      console.warn('[API Chat] Orchestrator fallback to aiService:', orchestratorErr);
+      content = await aiService.generateResponse(agentId as string, conversationMessages, {
+        provider,
+        systemPrompt,
+      });
+    }
 
     incrementOpsCounter('chat.success');
     recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
