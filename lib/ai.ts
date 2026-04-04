@@ -68,6 +68,10 @@ export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
 }
 
+export function createToolAgent(tools: any[]) {
+    return (toolModel as any).bindTools(tools);
+}
+
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
