@@ -446,23 +446,46 @@ export const aiService = {
                 return result.response.text();
             };
 
-            let finalResponse = "";
-            if (provider === 'openai') {
-                finalResponse = (await callOpenAI()) || "";
-            } else if (provider === 'github') {
-                finalResponse = (await callGitHub()) || "";
-            } else {
-                try {
-                    finalResponse = (await callGemini()) || "";
-                } catch (geminiErr: any) {
-                    console.error("[AIService] Gemini failed, checking for OpenAI fallback...", geminiErr.message || geminiErr);
-                    if (process.env.OPENAI_API_KEY) {
-                        console.log("[AIService] FALLBACK TO OPENAI TRIGGERED");
-                        finalResponse = (await callOpenAI()) || "";
-                    } else {
-                        throw geminiErr;
-                    }
+            const providerOrder: Array<'openai' | 'github' | 'gemini'> = [];
+            const pushProvider = (candidate: 'openai' | 'github' | 'gemini') => {
+                if (!providerOrder.includes(candidate)) {
+                    providerOrder.push(candidate);
                 }
+            };
+
+            // Respetamos la preferencia inicial pero habilitamos failover por disponibilidad/errores.
+            pushProvider(provider);
+            if (process.env.OPENAI_API_KEY) pushProvider('openai');
+            if (process.env.GITHUB_TOKEN) pushProvider('github');
+            if (process.env.GEMINI_API_KEY) pushProvider('gemini');
+
+            let finalResponse = "";
+            let lastProviderError: any = null;
+
+            for (const candidate of providerOrder) {
+                try {
+                    if (candidate === 'openai') {
+                        finalResponse = (await callOpenAI()) || "";
+                    } else if (candidate === 'github') {
+                        finalResponse = (await callGitHub()) || "";
+                    } else {
+                        finalResponse = (await callGemini()) || "";
+                    }
+
+                    if (finalResponse) {
+                        if (candidate !== provider) {
+                            console.log(`[AIService] Provider failover succeeded: ${provider} -> ${candidate}`);
+                        }
+                        break;
+                    }
+                } catch (providerErr: any) {
+                    lastProviderError = providerErr;
+                    console.error(`[AIService] Provider ${candidate} failed:`, providerErr?.message || providerErr);
+                }
+            }
+
+            if (!finalResponse) {
+                throw lastProviderError || new Error("NO_PROVIDER_AVAILABLE");
             }
 
             // Cuando el usuario pide explícitamente un archivo/menu, forzamos etiqueta MEDIA_URL
