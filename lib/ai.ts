@@ -26,7 +26,7 @@ export const brainModel = new ChatOpenAI({
 });
 
 export const workerModel = new ChatGoogleGenerativeAI({
-    model: "gemini-1.5-pro",
+    model: process.env.AGENT_WORKER_MODEL || "gemini-1.5-flash",
     temperature: 0,
     apiKey: process.env.GEMINI_API_KEY,
 });
