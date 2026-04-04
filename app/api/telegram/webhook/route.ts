@@ -4,6 +4,7 @@ import { aiService } from "@/lib/ai";
 import { transcriptionService } from "@/services/ai/transcription";
 import { sendTelegramMessage, sendTelegramMedia, sendTelegramTyping } from "@/services/telegram-sender";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
+import { runAgentOrchestrator } from "@/services/agent-orchestrator";
 
 export async function POST(req: Request) {
   try {
@@ -144,9 +145,23 @@ export async function POST(req: Request) {
     await sendTelegramTyping(TELEGRAM_BOT_TOKEN, numericChatId);
 
     console.log(`[Telegram Webhook] Generating AI response for business ${business.id}...`);
-    const aiReply = await aiService.generateResponse(business.id, [
-      { role: "user", content: messageText },
-    ]);
+
+    let aiReply = "";
+    const historyMessages = await buildConversationMessages(conversation.id);
+    try {
+      aiReply = await runAgentOrchestrator({
+        businessId: business.id,
+        channel: "telegram",
+        conversationKey: conversation.id,
+        customerPhone: chatId,
+        messages: historyMessages,
+      });
+    } catch (orchestratorErr) {
+      console.warn("[Telegram Webhook] Orchestrator fallback to aiService:", orchestratorErr);
+      aiReply = await aiService.generateResponse(business.id, [
+        { role: "user", content: messageText },
+      ]);
+    }
 
     let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
     const parsedReply = extractMediaFromAgentReply(replyText, requestOrigin);
@@ -243,6 +258,20 @@ async function getOrCreateCustomerAndConversation(businessId: string, chatId: st
       });
     }
     return { customer, conversation };
+}
+
+async function buildConversationMessages(conversationId: string) {
+  const rows = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    take: 24,
+  });
+
+  return rows.map((row) => {
+    if (row.role === "user") return { role: "user" as const, content: row.content || "" };
+    if (row.role === "system") return { role: "system" as const, content: row.content || "" };
+    return { role: "assistant" as const, content: row.content || "" };
+  });
 }
 
 
