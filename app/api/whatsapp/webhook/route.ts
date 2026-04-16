@@ -22,7 +22,12 @@ async function buildConversationMessages(conversationId: string) {
 }
 
 function detectWhatsAppMediaType(mediaUrl: string): "image" | "video" | "document" {
-    const normalized = mediaUrl.toLowerCase();
+    let normalized = mediaUrl.toLowerCase();
+    try {
+        normalized = new URL(mediaUrl).pathname.toLowerCase();
+    } catch {
+        // Mantener valor original para rutas relativas.
+    }
     if (/\.(jpg|jpeg|png|webp|gif)$/i.test(normalized)) return "image";
     if (/\.(mp4|mov|avi|mkv|webm)$/i.test(normalized)) return "video";
     return "document";

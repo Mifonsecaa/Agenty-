@@ -398,9 +398,15 @@ async function sendMediaViaMeta(
     try {
         // Determinar tipo de media por extensión
         let type = "document";
-        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(mediaUrl)) {
+        let mediaPath = mediaUrl;
+        try {
+            mediaPath = new URL(mediaUrl).pathname;
+        } catch {
+            // mediaPath queda igual para rutas relativas.
+        }
+        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(mediaPath)) {
             type = "image";
-        } else if (/\.(mp4|mov|avi|mkv|webm)$/i.test(mediaUrl)) {
+        } else if (/\.(mp4|mov|avi|mkv|webm)$/i.test(mediaPath)) {
             type = "video";
         }
 

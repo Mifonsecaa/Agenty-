@@ -95,7 +95,12 @@ export async function sendTelegramMedia({
   mediaUrl,
   caption,
 }: SendTelegramMediaParams): Promise<TelegramSendResult> {
-  const lowerUrl = mediaUrl.toLowerCase();
+  let lowerUrl = mediaUrl.toLowerCase();
+  try {
+    lowerUrl = new URL(mediaUrl).pathname.toLowerCase();
+  } catch {
+    // Mantener valor original para rutas relativas.
+  }
   const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(lowerUrl);
   const endpoint = isImage ? "sendPhoto" : "sendDocument";
   const mediaKey = isImage ? "photo" : "document";

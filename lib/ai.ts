@@ -265,6 +265,50 @@ function hasPriceSignals(text: string) {
     return /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(text || "");
 }
 
+function mediaQueryTerms(query: string) {
+    return String(query || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((t) => t.length >= 3)
+        .slice(0, 12);
+}
+
+function scoreMediaForQuery(file: { url: string; description: string }, query: string) {
+    const haystack = `${file.description} ${file.url}`.toLowerCase();
+    const terms = mediaQueryTerms(query);
+    if (!terms.length) return 0;
+    let score = 0;
+    for (const term of terms) {
+        if (haystack.includes(term)) score += 1;
+    }
+    return score;
+}
+
+function selectMediaByQuery(params: {
+    files: Array<{ url: string; description: string }>;
+    query: string;
+    asksForEverything: boolean;
+    asksImage: boolean;
+}) {
+    const ranked = [...params.files]
+        .map((file) => {
+            const score = scoreMediaForQuery(file, params.query);
+            const imageBoost = params.asksImage && /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(file.description)
+                ? 1
+                : 0;
+            return { file, score: score + imageBoost };
+        })
+        .sort((a, b) => b.score - a.score);
+
+    const filtered = ranked.filter((item) => item.score > 0).map((item) => item.file);
+    if (!filtered.length) return [] as Array<{ url: string; description: string }>;
+
+    return params.asksForEverything ? filtered.slice(0, 5) : filtered.slice(0, 1);
+}
+
 async function loadMenuFallbackContext(businessId: string) {
     const rows = await prisma.knowledgeItem.findMany({
         where: { businessId },
@@ -392,6 +436,7 @@ export const aiService = {
                 "Si no hay evidencia textual exacta, responde exactamente: 'Lo siento, no tengo esa información específica en mis registros'. No uses conocimiento externo.";
             systemPrompt += "\nREGLA ESTRICTA DE HERRAMIENTAS: nunca respondas con frases de espera tipo 'voy a revisar' o 'espera un momento'. " +
                 "Cuando una accion dependa de herramientas, prioriza ejecutar la herramienta y luego responder con el resultado.";
+            systemPrompt += "\nREGLA DE PRIVACIDAD: nunca reveles nombres, telefonos o datos personales de terceros en reservas o agendas. Solo informa disponibilidad (disponible/no disponible) sin identificar personas.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
@@ -499,21 +544,16 @@ export const aiService = {
                 }
             }
 
-            // Cuando el usuario pide explícitamente un archivo/menu, forzamos etiqueta MEDIA_URL
-            // para que el canal (Telegram/WhatsApp) envíe el adjunto real.
+            // Cuando el usuario pide archivos, solo adjuntamos media si existe coincidencia semántica mínima
+            // entre consulta y archivo para evitar enviar imágenes/documentos equivocados.
             if (asksForDocument && availableFiles.length > 0 && !/\[MEDIA_URL:\s*[^\]]+\]/i.test(finalResponse)) {
                 const asksImage = /(imagen|im[aá]genes|foto|fotos|jpg|jpeg|png|webp|gif)/i.test(lastUserMessage);
-                const prioritized = asksImage
-                    ? [...availableFiles].sort((a, b) => {
-                        const scoreA = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(a.description) ? 1 : 0;
-                        const scoreB = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(b.description) ? 1 : 0;
-                        return scoreB - scoreA;
-                    })
-                    : availableFiles;
-
-                const filesToShare = asksForEverything
-                    ? prioritized.slice(0, 5)
-                    : prioritized.slice(0, 1);
+                const filesToShare = selectMediaByQuery({
+                    files: availableFiles,
+                    query: lastUserMessage,
+                    asksForEverything,
+                    asksImage,
+                });
 
                 const mediaTags = filesToShare
                     .filter((file) => Boolean(file.url))

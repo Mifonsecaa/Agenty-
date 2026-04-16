@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { prisma } from "@/lib/prisma";
 import { authorizeBusinessAccessSession } from '@/lib/auth';
 import path from "path";
 import { readFile } from "fs/promises";
 import { isSpreadsheetFileName, workbookToPreview } from "@/lib/knowledge/spreadsheet";
 
-async function loadSpreadsheetBufferFromUrl(fileUrl: string) {
+async function loadSpreadsheetBufferFromUrl(fileUrl: string, cacheBuster?: string | null) {
   const normalizedFileUrl = fileUrl.trim();
 
   if (normalizedFileUrl.startsWith("/uploads/")) {
@@ -16,7 +15,18 @@ async function loadSpreadsheetBufferFromUrl(fileUrl: string) {
   }
 
   if (/^https?:\/\//i.test(normalizedFileUrl)) {
-    const response = await fetch(normalizedFileUrl, { cache: "no-store" });
+    let effectiveUrl = normalizedFileUrl;
+    if (cacheBuster) {
+      try {
+        const parsed = new URL(normalizedFileUrl);
+        parsed.searchParams.set("_ts", cacheBuster);
+        effectiveUrl = parsed.toString();
+      } catch {
+        // Si no es URL parseable, usamos la original.
+      }
+    }
+
+    const response = await fetch(effectiveUrl, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`REMOTE_FILE_FETCH_FAILED:${response.status}`);
     }
@@ -37,6 +47,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const businessId = searchParams.get("businessId");
     const fileUrl = searchParams.get("fileUrl");
+    const cacheBuster = searchParams.get("_ts");
 
     if (!businessId || !fileUrl) {
       return NextResponse.json({ error: "businessId y fileUrl son requeridos" }, { status: 400 });
@@ -54,7 +65,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Solo se pueden previsualizar archivos .xlsx, .xlsm o .xls" }, { status: 400 });
     }
 
-    const buffer = await loadSpreadsheetBufferFromUrl(normalizedFileUrl);
+    const buffer = await loadSpreadsheetBufferFromUrl(normalizedFileUrl, cacheBuster);
     const sheets = workbookToPreview(buffer, { maxSheets: 8, maxRows: 100 });
 
     return NextResponse.json({

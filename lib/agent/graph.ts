@@ -147,6 +147,47 @@ function normalizeSpreadsheetFailureMessage(raw: string) {
     return value;
 }
 
+function isReservationAvailabilityQuery(text: string) {
+    return /(reserva|reservar|disponible|disponibilidad|hora|horario|mesa|agenda|turno)/i.test(String(text || ""));
+}
+
+function isPrivacyProbeOnReservation(text: string) {
+    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona)/i.test(String(text || ""));
+}
+
+function sanitizeSpreadsheetResultForUser(params: {
+    action: string;
+    resultText: string;
+    requestedMessage: string;
+    fallback: string;
+}) {
+    const requested = String(params.requestedMessage || "");
+    const value = String(params.resultText || "").trim();
+
+    if (isReservationAvailabilityQuery(requested) && isPrivacyProbeOnReservation(requested)) {
+        return "Por seguridad, no comparto datos personales de reservas. Solo puedo confirmar disponibilidad general de horarios.";
+    }
+
+    if (params.action === "READ_CELL" && isReservationAvailabilityQuery(requested)) {
+        const valueMatch = value.match(/Valor:\s*(.*)$/im);
+        const cellValue = (valueMatch?.[1] || "").trim();
+        if (!cellValue || /^\(vacio\)$/i.test(cellValue)) {
+            return "Ese horario aparece disponible.";
+        }
+        return "Ese horario ya aparece ocupado. Si deseas, te propongo otro horario disponible.";
+    }
+
+    if (params.action === "LIST" || params.action === "LIST_SHEETS") {
+        return params.fallback || "Listo, encontré los archivos y hojas disponibles.";
+    }
+
+    if (isReservationAvailabilityQuery(requested) && /Fila agregada:/i.test(value)) {
+        return "Listo, la reserva fue registrada correctamente.";
+    }
+
+    return params.fallback || value;
+}
+
 export const createAgentGraph = async (businessId: string, businessName: string, config: any, customerPhone?: string) => {
     const spreadsheetTool = createSpreadsheetUpdateTool(businessId);
 
@@ -342,7 +383,12 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 messages: [new AIMessage(
                     failed
                         ? normalizeSpreadsheetFailureMessage(resultText)
-                        : (plan.responseToUser || resultText || "Listo, la acción en la hoja de cálculo se completó.")
+                        : sanitizeSpreadsheetResultForUser({
+                            action: String(plan.action || ""),
+                            resultText,
+                            requestedMessage: lastUserMessage,
+                            fallback: plan.responseToUser || "Listo, la acción en la hoja de cálculo se completó.",
+                        })
                 )],
             };
         } catch (error: any) {
@@ -368,7 +414,9 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             new SystemMessage(
                 `Responde con grounding estricto usando el contexto del negocio.\n` +
                 `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
-                `RAG:\n${ragContext || "(sin contexto adicional)"}`
+                `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
+                `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
+                `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`
             ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
