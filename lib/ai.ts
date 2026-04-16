@@ -64,6 +64,40 @@ export const ConversationStateSchema = z.object({
 
 export const stateExtractorModel = brainModel.withStructuredOutput(ConversationStateSchema);
 
+export const ReservationExtractionSchema = z.object({
+    time: z.string().nullable().default(null).describe("Hora de la reserva si fue mencionada, ej: 20:00, 8pm."),
+    people: z.string().nullable().default(null).describe("Cantidad de personas si fue mencionada."),
+    name: z.string().nullable().default(null).describe("Nombre del cliente si fue mencionado."),
+    date: z.string().nullable().default(null).describe("Fecha si fue mencionada, ej: mañana, 2026-04-16."),
+    isAffirmative: z.boolean().default(false).describe("true solo si el mensaje es una confirmación corta tipo si/ok/dale."),
+});
+
+export const reservationExtractorModel = workerModel.withStructuredOutput(ReservationExtractionSchema);
+
+export const ToolExecutionPlanSchema = z.object({
+    actionType: z.enum(["APPEND_ROW", "UPDATE_CELL", "CREATE_FILE", "NONE"]),
+    targetFileName: z.string().default(""),
+    extractedData: z.record(z.any()).default({}),
+    responseToUser: z.string().default(""),
+});
+
+export const toolExecutionPlanModel = workerModel.withStructuredOutput(ToolExecutionPlanSchema);
+
+export const SpreadsheetExecutorRequestSchema = z.object({
+    action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"]),
+    targetFileName: z.string().optional().default(""),
+    sourceId: z.string().optional().default(""),
+    fileRef: z.string().optional().default(""),
+    sheet: z.string().optional().default(""),
+    cell: z.string().optional().default(""),
+    value: z.string().optional().default(""),
+    rowValues: z.array(z.string()).optional().default([]),
+    data: z.record(z.any()).optional().default({}),
+    responseToUser: z.string().optional().default(""),
+});
+
+export const spreadsheetExecutorRequestModel = workerModel.withStructuredOutput(SpreadsheetExecutorRequestSchema);
+
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
 }

@@ -243,20 +243,21 @@ async function handleIncomingMessage(
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const historyMessages = await buildConversationMessages(conversation.id);
 
-            const agentExecutor = createAgentGraph(
+            const agentExecutor = await createAgentGraph(
                 business.id,
                 business.name,
                 business.config || {},
                 from // customerJid
             );
 
-            const threadId = `whatsapp:${business.id}:${conversation.id}`;
+            const threadId = `whatsapp:${business.id}:${from}`;
 
             const result = await agentExecutor.invoke({
                 messages: historyMessages,
                 businessId: business.id,
                 businessName: business.name,
                 config: business.config || {},
+                customerPhone: from,
             }, {
                 configurable: {
                     thread_id: threadId,
