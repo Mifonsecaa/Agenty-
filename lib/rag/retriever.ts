@@ -1,5 +1,6 @@
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { createHash } from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 type RetrieverCandidate = {
@@ -13,12 +14,23 @@ type RetrieverCandidate = {
 
 type RetrieverRow = { content: string; metadata: unknown; distance: number };
 
+type RetrieverFileTypeFilter = {
+  includeHints?: string[];
+  excludeHints?: string[];
+};
+
 type RetrieverResult = {
   selected: RetrieverCandidate[];
   ragContext: string;
   availableFiles: Array<{ url: string; description: string }>;
   skipped: boolean;
   skipReason?: string;
+};
+
+type RetrieverParams = {
+  businessId: string;
+  query: string;
+  fileTypeFilter?: RetrieverFileTypeFilter;
 };
 
 type CacheEntry<T> = {
@@ -44,6 +56,7 @@ const RAG_CONTEXT_MAX_TOKENS = Number(process.env.RAG_CONTEXT_MAX_TOKENS || 900)
 const RAG_MULTI_QUERY_ENABLED = (process.env.RAG_MULTI_QUERY_ENABLED || "true").toLowerCase() !== "false";
 const RAG_MULTI_QUERY_MAX_VARIANTS = Number(process.env.RAG_MULTI_QUERY_MAX_VARIANTS || 2);
 const RAG_KNOWLEDGE_PRESENCE_TTL_MS = Number(process.env.RAG_KNOWLEDGE_PRESENCE_TTL_MS || 90000);
+const RAG_METADATA_FILTERING_ENABLED = (process.env.RAG_METADATA_FILTERING_ENABLED || "true").toLowerCase() !== "false";
 
 let embeddingsClient: OpenAIEmbeddings | null = null;
 
@@ -150,6 +163,112 @@ function estimateTokens(value: string) {
   return Math.max(1, Math.ceil(value.length / 4));
 }
 
+function normalizeFilterHints(hints?: string[]) {
+  if (!Array.isArray(hints)) return [];
+  return hints
+    .map((h) => String(h || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function normalizeFileTypeFilter(filter?: RetrieverFileTypeFilter): RetrieverFileTypeFilter | null {
+  if (!RAG_METADATA_FILTERING_ENABLED) return null;
+  const includeHints = normalizeFilterHints(filter?.includeHints);
+  const excludeHints = normalizeFilterHints(filter?.excludeHints);
+  if (!includeHints.length && !excludeHints.length) return null;
+  return { includeHints, excludeHints };
+}
+
+function inferFileTypeFilterFromQuery(query: string): RetrieverFileTypeFilter | null {
+  if (!RAG_METADATA_FILTERING_ENABLED) return null;
+  const text = normalizeForMatch(query);
+  if (!text) return null;
+
+  if (/(imagen|imagenes|foto|fotos|logo|png|jpg|jpeg|webp|gif)\b/i.test(text)) {
+    return { includeHints: ["image/", ".png", ".jpg", ".jpeg", ".webp", ".gif"] };
+  }
+
+  if (/(excel|hoja|calculo|xlsx|xlsm|xls|reserva|agenda|turno|disponibilidad|cupo)\b/i.test(text)) {
+    return { includeHints: ["sheet", ".xlsx", ".xlsm", ".xls"] };
+  }
+
+  if (/(pdf|documento|manual|contrato|adjunto)\b/i.test(text)) {
+    return { includeHints: ["application/pdf", ".pdf", "document"] };
+  }
+
+  if (/(menu|menú|carta|catalogo|catálogo)\b/i.test(text)) {
+    return { includeHints: [".pdf", "image/"] };
+  }
+
+  return null;
+}
+
+function getMetadataText(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "";
+  const md = metadata as Record<string, unknown>;
+  const fileType = typeof md.fileType === "string" ? md.fileType : "";
+  const fileName = typeof md.fileName === "string" ? md.fileName : "";
+  const fileUrl = typeof md.fileUrl === "string" ? md.fileUrl : "";
+  const source = typeof md.source === "string" ? md.source : "";
+  return `${fileType} ${fileName} ${fileUrl} ${source}`.toLowerCase();
+}
+
+function metadataMatchesFileTypeFilter(metadata: unknown, filter?: RetrieverFileTypeFilter | null) {
+  const normalizedFilter = normalizeFileTypeFilter(filter || undefined);
+  if (!normalizedFilter) return true;
+
+  const metadataText = getMetadataText(metadata);
+  if (!metadataText) return false;
+
+  if (normalizedFilter.includeHints?.length) {
+    const includeOk = normalizedFilter.includeHints.some((hint) => metadataText.includes(hint));
+    if (!includeOk) return false;
+  }
+
+  if (normalizedFilter.excludeHints?.length) {
+    const excluded = normalizedFilter.excludeHints.some((hint) => metadataText.includes(hint));
+    if (excluded) return false;
+  }
+
+  return true;
+}
+
+function buildMetadataSqlFilter(filter?: RetrieverFileTypeFilter | null) {
+  const normalizedFilter = normalizeFileTypeFilter(filter || undefined);
+  if (!normalizedFilter) return Prisma.sql``;
+
+  const clauses: Prisma.Sql[] = [];
+
+  if (normalizedFilter.includeHints?.length) {
+    const includeOr = normalizedFilter.includeHints.map((hint) => {
+      const like = `%${hint}%`;
+      return Prisma.sql`(
+        lower(coalesce(metadata->>'fileType', '')) LIKE ${like}
+        OR lower(coalesce(metadata->>'fileName', '')) LIKE ${like}
+        OR lower(coalesce(metadata->>'fileUrl', '')) LIKE ${like}
+        OR lower(coalesce(metadata->>'source', '')) LIKE ${like}
+      )`;
+    });
+    clauses.push(Prisma.sql`(${Prisma.join(includeOr, " OR ")})`);
+  }
+
+  if (normalizedFilter.excludeHints?.length) {
+    const excludeAnd = normalizedFilter.excludeHints.map((hint) => {
+      const like = `%${hint}%`;
+      return Prisma.sql`(
+        lower(coalesce(metadata->>'fileType', '')) NOT LIKE ${like}
+        AND lower(coalesce(metadata->>'fileName', '')) NOT LIKE ${like}
+        AND lower(coalesce(metadata->>'fileUrl', '')) NOT LIKE ${like}
+        AND lower(coalesce(metadata->>'source', '')) NOT LIKE ${like}
+      )`;
+    });
+    clauses.push(Prisma.sql`(${Prisma.join(excludeAnd, " AND ")})`);
+  }
+
+  if (!clauses.length) return Prisma.sql``;
+  return Prisma.sql` AND ${Prisma.join(clauses, " AND ")}`;
+}
+
 function shouldSkipRag(query: string) {
   if ((process.env.RAG_ENABLE_HEURISTIC_SKIP || "true").toLowerCase() === "false") {
     return { skipped: false as const };
@@ -194,23 +313,38 @@ function buildQueryVariants(query: string) {
   return Array.from(variants).filter(Boolean).slice(0, Math.max(1, Math.min(3, RAG_MULTI_QUERY_MAX_VARIANTS)));
 }
 
-async function retrieveRowsForQuery(params: { businessId: string; queryText: string; embeddings: OpenAIEmbeddings; candidatesLimit: number }) {
+async function retrieveRowsForQuery(params: {
+  businessId: string;
+  queryText: string;
+  embeddings: OpenAIEmbeddings;
+  candidatesLimit: number;
+  fileTypeFilter?: RetrieverFileTypeFilter | null;
+}) {
   const queryVector = await params.embeddings.embedQuery(params.queryText);
   const vectorStr = `[${queryVector.join(",")}]`;
+  const metadataSqlFilter = buildMetadataSqlFilter(params.fileTypeFilter);
 
-  const rows = await prisma.$queryRaw<Array<{ content: string; metadata: unknown; distance: number }>>`
-    SELECT content, metadata, (embedding <-> ${vectorStr}::vector) AS distance
-    FROM "KnowledgeItem"
-    WHERE "businessId" = ${params.businessId}
-      AND embedding IS NOT NULL
-    ORDER BY embedding <-> ${vectorStr}::vector
-    LIMIT ${params.candidatesLimit}
-  `;
+  const rows = await prisma.$queryRaw<Array<{ content: string; metadata: unknown; distance: number }>>(
+    Prisma.sql`
+      SELECT content, metadata, (embedding <-> ${vectorStr}::vector) AS distance
+      FROM "KnowledgeItem"
+      WHERE "businessId" = ${params.businessId}
+        AND embedding IS NOT NULL
+        ${metadataSqlFilter}
+      ORDER BY embedding <-> ${vectorStr}::vector
+      LIMIT ${params.candidatesLimit}
+    `
+  );
 
   return rows;
 }
 
-async function retrieveRowsLexicalFallback(params: { businessId: string; queryText: string; candidatesLimit: number }): Promise<RetrieverRow[]> {
+async function retrieveRowsLexicalFallback(params: {
+  businessId: string;
+  queryText: string;
+  candidatesLimit: number;
+  fileTypeFilter?: RetrieverFileTypeFilter | null;
+}): Promise<RetrieverRow[]> {
   const queryTerms = extractTerms(params.queryText);
   const terms = queryTerms.length > 0 ? queryTerms.slice(0, 5) : [params.queryText.trim()];
 
@@ -226,8 +360,10 @@ async function retrieveRowsLexicalFallback(params: { businessId: string; queryTe
     take: Math.max(params.candidatesLimit * 3, 18),
   });
 
+  const filteredRows = rows.filter((row) => metadataMatchesFileTypeFilter(row.metadata, params.fileTypeFilter));
+
   // Distancia sintética para reutilizar el mismo pipeline de ranking.
-  return rows.map((row, idx) => ({ content: row.content, metadata: row.metadata, distance: 0.95 + idx * 0.001 }));
+  return filteredRows.map((row, idx) => ({ content: row.content, metadata: row.metadata, distance: 0.95 + idx * 0.001 }));
 }
 
 function pruneExpired<T>(cache: Map<string, CacheEntry<T>>) {
@@ -346,7 +482,7 @@ function setCachedResultForPresence(businessId: string, hasKnowledge: boolean) {
   enforceMaxEntries(knowledgePresenceCache, 1000);
 }
 
-export async function retrieveRagContext(params: { businessId: string; query: string }): Promise<RetrieverResult> {
+export async function retrieveRagContext(params: RetrieverParams): Promise<RetrieverResult> {
   const businessId = params.businessId;
   const query = (params.query || "").trim();
 
@@ -364,7 +500,15 @@ export async function retrieveRagContext(params: { businessId: string; query: st
     return { selected: [], ragContext: "", availableFiles: [], skipped: true, skipReason: "no_knowledge" };
   }
 
-  const cacheKey = buildKey(["retrieval", businessId, normalizeForMatch(query)]);
+  const effectiveFileTypeFilter = normalizeFileTypeFilter(params.fileTypeFilter) || inferFileTypeFilterFromQuery(query);
+  const normalizedFilterKey = effectiveFileTypeFilter
+    ? {
+      includeHints: normalizeFilterHints(effectiveFileTypeFilter.includeHints),
+      excludeHints: normalizeFilterHints(effectiveFileTypeFilter.excludeHints),
+    }
+    : null;
+
+  const cacheKey = buildKey(["retrieval", businessId, normalizeForMatch(query), normalizedFilterKey]);
   const cached = getCachedResult(cacheKey);
   if (cached) return cached;
 
@@ -385,6 +529,7 @@ export async function retrieveRagContext(params: { businessId: string; query: st
             queryText: variant,
             embeddings,
             candidatesLimit,
+            fileTypeFilter: effectiveFileTypeFilter,
           })
         )
       );
@@ -400,6 +545,7 @@ export async function retrieveRagContext(params: { businessId: string; query: st
           businessId,
           queryText: variant,
           candidatesLimit,
+          fileTypeFilter: effectiveFileTypeFilter,
         })
       )
     );
