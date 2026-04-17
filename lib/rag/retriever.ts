@@ -31,6 +31,7 @@ type RetrieverParams = {
   businessId: string;
   query: string;
   fileTypeFilter?: RetrieverFileTypeFilter;
+  parentFolderId?: string;
 };
 
 type CacheEntry<T> = {
@@ -210,7 +211,8 @@ function getMetadataText(metadata: unknown) {
   const fileName = typeof md.fileName === "string" ? md.fileName : "";
   const fileUrl = typeof md.fileUrl === "string" ? md.fileUrl : "";
   const source = typeof md.source === "string" ? md.source : "";
-  return `${fileType} ${fileName} ${fileUrl} ${source}`.toLowerCase();
+  const parentFolderId = typeof md.parentFolderId === "string" ? md.parentFolderId : "";
+  return `${fileType} ${fileName} ${fileUrl} ${source} ${parentFolderId}`.toLowerCase();
 }
 
 function metadataMatchesFileTypeFilter(metadata: unknown, filter?: RetrieverFileTypeFilter | null) {
@@ -269,6 +271,17 @@ function buildMetadataSqlFilter(filter?: RetrieverFileTypeFilter | null) {
   return Prisma.sql` AND ${Prisma.join(clauses, " AND ")}`;
 }
 
+function normalizeParentFolderId(parentFolderId?: string) {
+  const normalized = String(parentFolderId || "").trim();
+  return normalized ? normalized.slice(0, 180) : "";
+}
+
+function buildParentFolderSqlFilter(parentFolderId?: string) {
+  const normalized = normalizeParentFolderId(parentFolderId);
+  if (!normalized) return Prisma.sql``;
+  return Prisma.sql` AND coalesce(metadata->>'parentFolderId', '') = ${normalized}`;
+}
+
 function shouldSkipRag(query: string) {
   if ((process.env.RAG_ENABLE_HEURISTIC_SKIP || "true").toLowerCase() === "false") {
     return { skipped: false as const };
@@ -319,10 +332,12 @@ async function retrieveRowsForQuery(params: {
   embeddings: OpenAIEmbeddings;
   candidatesLimit: number;
   fileTypeFilter?: RetrieverFileTypeFilter | null;
+  parentFolderId?: string;
 }) {
   const queryVector = await params.embeddings.embedQuery(params.queryText);
   const vectorStr = `[${queryVector.join(",")}]`;
   const metadataSqlFilter = buildMetadataSqlFilter(params.fileTypeFilter);
+  const parentFolderSqlFilter = buildParentFolderSqlFilter(params.parentFolderId);
 
   const rows = await prisma.$queryRaw<Array<{ content: string; metadata: unknown; distance: number }>>(
     Prisma.sql`
@@ -331,6 +346,7 @@ async function retrieveRowsForQuery(params: {
       WHERE "businessId" = ${params.businessId}
         AND embedding IS NOT NULL
         ${metadataSqlFilter}
+        ${parentFolderSqlFilter}
       ORDER BY embedding <-> ${vectorStr}::vector
       LIMIT ${params.candidatesLimit}
     `
@@ -344,6 +360,7 @@ async function retrieveRowsLexicalFallback(params: {
   queryText: string;
   candidatesLimit: number;
   fileTypeFilter?: RetrieverFileTypeFilter | null;
+  parentFolderId?: string;
 }): Promise<RetrieverRow[]> {
   const queryTerms = extractTerms(params.queryText);
   const terms = queryTerms.length > 0 ? queryTerms.slice(0, 5) : [params.queryText.trim()];
@@ -360,7 +377,13 @@ async function retrieveRowsLexicalFallback(params: {
     take: Math.max(params.candidatesLimit * 3, 18),
   });
 
-  const filteredRows = rows.filter((row) => metadataMatchesFileTypeFilter(row.metadata, params.fileTypeFilter));
+  const normalizedParentFolderId = normalizeParentFolderId(params.parentFolderId);
+  const filteredRows = rows.filter((row) => {
+    if (!metadataMatchesFileTypeFilter(row.metadata, params.fileTypeFilter)) return false;
+    if (!normalizedParentFolderId) return true;
+    if (!row.metadata || typeof row.metadata !== "object" || Array.isArray(row.metadata)) return false;
+    return (row.metadata as Record<string, unknown>).parentFolderId === normalizedParentFolderId;
+  });
 
   // Distancia sintética para reutilizar el mismo pipeline de ranking.
   return filteredRows.map((row, idx) => ({ content: row.content, metadata: row.metadata, distance: 0.95 + idx * 0.001 }));
@@ -501,6 +524,7 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
   }
 
   const effectiveFileTypeFilter = normalizeFileTypeFilter(params.fileTypeFilter) || inferFileTypeFilterFromQuery(query);
+  const normalizedParentFolderId = normalizeParentFolderId(params.parentFolderId);
   const normalizedFilterKey = effectiveFileTypeFilter
     ? {
       includeHints: normalizeFilterHints(effectiveFileTypeFilter.includeHints),
@@ -508,7 +532,7 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
     }
     : null;
 
-  const cacheKey = buildKey(["retrieval", businessId, normalizeForMatch(query), normalizedFilterKey]);
+  const cacheKey = buildKey(["retrieval", businessId, normalizeForMatch(query), normalizedFilterKey, normalizedParentFolderId]);
   const cached = getCachedResult(cacheKey);
   if (cached) return cached;
 
@@ -530,6 +554,7 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
             embeddings,
             candidatesLimit,
             fileTypeFilter: effectiveFileTypeFilter,
+            parentFolderId: normalizedParentFolderId || undefined,
           })
         )
       );
@@ -546,6 +571,7 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
           queryText: variant,
           candidatesLimit,
           fileTypeFilter: effectiveFileTypeFilter,
+          parentFolderId: normalizedParentFolderId || undefined,
         })
       )
     );

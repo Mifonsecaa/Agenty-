@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
       where: { id: businessId, userId: user.id },
       select: {
         id: true,
+        config: true,
         whatsappPhoneNumberId: true,
         whatsappAccessToken: true,
         telegramBotToken: true,
@@ -62,6 +63,14 @@ export async function GET(req: NextRequest) {
       whatsapp: whatsappByQr || !!(business.whatsappPhoneNumberId && business.whatsappAccessToken),
       telegram: !!business.telegramBotToken,
       instagram: !!(business.instagramPageId && business.instagramAccessToken),
+      googleDrive: Boolean(
+        business &&
+        business.id &&
+        typeof (business as any).config === "object" &&
+        (business as any).config &&
+        (business as any).config.googleDrive &&
+        (business as any).config.googleDrive.connected
+      ),
     });
   } catch (error) {
     console.error("[GET /connections]", error);

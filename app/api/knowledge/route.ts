@@ -430,7 +430,15 @@ export async function GET(req: Request) {
         const normalizedItems: KnowledgeItem[] = items.map((item) => {
             const metadata = item.metadata;
             const safeMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-                ? metadata as { fileName?: unknown; fileUrl?: unknown; fileType?: unknown }
+                ? metadata as {
+                    fileName?: unknown;
+                    fileUrl?: unknown;
+                    fileType?: unknown;
+                    source?: unknown;
+                    sourceId?: unknown;
+                    parentFolderId?: unknown;
+                    driveFileId?: unknown;
+                }
                 : undefined;
 
             return {
@@ -440,6 +448,10 @@ export async function GET(req: Request) {
                     fileName: typeof safeMetadata?.fileName === "string" ? safeMetadata.fileName : undefined,
                     fileUrl: typeof safeMetadata?.fileUrl === "string" ? safeMetadata.fileUrl : undefined,
                     fileType: typeof safeMetadata?.fileType === "string" ? safeMetadata.fileType : undefined,
+                    source: typeof safeMetadata?.source === "string" ? safeMetadata.source : undefined,
+                    sourceId: typeof safeMetadata?.sourceId === "string" ? safeMetadata.sourceId : undefined,
+                    parentFolderId: typeof safeMetadata?.parentFolderId === "string" ? safeMetadata.parentFolderId : undefined,
+                    driveFileId: typeof safeMetadata?.driveFileId === "string" ? safeMetadata.driveFileId : undefined,
                 },
                 createdAt: item.createdAt.toISOString(),
             };

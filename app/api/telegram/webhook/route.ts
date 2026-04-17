@@ -5,6 +5,8 @@ import { transcriptionService } from "@/services/ai/transcription";
 import { sendTelegramMessage, sendTelegramMedia, sendTelegramTyping } from "@/services/telegram-sender";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
 
+const MAX_HISTORY_MESSAGES = 12;
+
 export async function POST(req: Request) {
   try {
     const requestOrigin = new URL(req.url).origin;
@@ -143,10 +145,27 @@ export async function POST(req: Request) {
     // Enviamos "Escribiendo..." para dar feedback inmediato
     await sendTelegramTyping(TELEGRAM_BOT_TOKEN, numericChatId);
 
-    console.log(`[Telegram Webhook] Generating AI response for business ${business.id}...`);
-    const aiReply = await aiService.generateResponse(business.id, [
-      { role: "user", content: messageText },
-    ]);
+    const recentDbMessages = await prisma.message.findMany({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: "desc" },
+      take: MAX_HISTORY_MESSAGES,
+    });
+
+    const historyForAi = recentDbMessages
+      .reverse()
+      .map((msg) => {
+        if (msg.role === "user") {
+          return { role: "user" as const, content: msg.content };
+        }
+        if (msg.role === "agent" || msg.role === "assistant") {
+          return { role: "assistant" as const, content: msg.content };
+        }
+        return null;
+      })
+      .filter((msg): msg is { role: "user" | "assistant"; content: string } => Boolean(msg));
+
+    console.log(`[Telegram Webhook] Generating AI response for business ${business.id} with ${historyForAi.length} history messages...`);
+    const aiReply = await aiService.generateResponse(business.id, historyForAi);
 
     let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
     const parsedReply = extractMediaFromAgentReply(replyText, requestOrigin);

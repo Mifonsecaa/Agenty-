@@ -1,10 +1,12 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { ingestionService } from "@/lib/rag/ingestion";
+import { syncDriveFolder } from "@/services/google-drive";
 
 type EnqueuePayload = {
   businessId: string;
-  text: string;
+  action?: "INGEST_TEXT" | "SYNC_GOOGLE_DRIVE";
+  text?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -46,10 +48,11 @@ function sanitizeText(value: string) {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
 }
 
-function buildFingerprint({ businessId, text, metadata }: EnqueuePayload) {
+function buildFingerprint({ businessId, action, text, metadata }: EnqueuePayload) {
   const normalized = JSON.stringify({
     businessId,
-    text: sanitizeText(text).trim(),
+    action: action || "INGEST_TEXT",
+    text: sanitizeText(text || "").trim(),
     metadata: metadata || {},
   });
   return createHash("sha256").update(normalized).digest("hex");
@@ -163,14 +166,23 @@ export async function processNextKnowledgeJob() {
   }
 
   try {
-    const payload = job.payload || { businessId: job.businessId, text: "", metadata: {} };
-    const text = sanitizeText(payload.text || "");
+    const payload = job.payload || { businessId: job.businessId, action: "INGEST_TEXT", text: "", metadata: {} };
+    const action = payload.action || "INGEST_TEXT";
 
-    if (!text.trim()) {
-      throw new Error("EMPTY_TEXT_PAYLOAD");
+    let chunkCount = 0;
+    if (action === "SYNC_GOOGLE_DRIVE") {
+      const syncResult = await syncDriveFolder(job.businessId, {
+        parentFolderId: typeof payload.metadata?.parentFolderId === "string" ? payload.metadata.parentFolderId : undefined,
+        reason: "queue_webhook",
+      });
+      chunkCount = syncResult.ingestedFiles;
+    } else {
+      const text = sanitizeText(payload.text || "");
+      if (!text.trim()) {
+        throw new Error("EMPTY_TEXT_PAYLOAD");
+      }
+      chunkCount = await ingestionService.ingestText(job.businessId, text, payload.metadata || {});
     }
-
-    const chunkCount = await ingestionService.ingestText(job.businessId, text, payload.metadata || {});
 
     await model.update({
       where: { id: job.id },

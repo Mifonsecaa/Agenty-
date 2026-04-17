@@ -402,9 +402,14 @@ export const aiService = {
             }
 
             let systemPrompt = options.systemPrompt?.trim() || config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+            const hasAssistantHistory = messages.some((m) => m.role === "assistant");
 
             if (config?.welcomeMessage) {
                 systemPrompt += `\n\nAl iniciar una conversación o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversación ya está en curso.`;
+            }
+
+            if (hasAssistantHistory) {
+                systemPrompt += "\n\nCONTEXTO ACTIVO: esta conversacion ya fue iniciada. No envíes mensaje de bienvenida ni reinicies la charla; responde directamente a la última solicitud del usuario.";
             }
 
             if (config?.customResponses && Array.isArray(config.customResponses) && config.customResponses.length > 0) {
