@@ -243,20 +243,21 @@ async function handleIncomingMessage(
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const historyMessages = await buildConversationMessages(conversation.id);
 
-            const agentExecutor = createAgentGraph(
+            const agentExecutor = await createAgentGraph(
                 business.id,
                 business.name,
                 business.config || {},
                 from // customerJid
             );
 
-            const threadId = `whatsapp:${business.id}:${conversation.id}`;
+            const threadId = `whatsapp:${business.id}:${from}`;
 
             const result = await agentExecutor.invoke({
                 messages: historyMessages,
                 businessId: business.id,
                 businessName: business.name,
                 config: business.config || {},
+                customerPhone: from,
             }, {
                 configurable: {
                     thread_id: threadId,
@@ -397,9 +398,15 @@ async function sendMediaViaMeta(
     try {
         // Determinar tipo de media por extensión
         let type = "document";
-        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(mediaUrl)) {
+        let mediaPath = mediaUrl;
+        try {
+            mediaPath = new URL(mediaUrl).pathname;
+        } catch {
+            // mediaPath queda igual para rutas relativas.
+        }
+        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(mediaPath)) {
             type = "image";
-        } else if (/\.(mp4|mov|avi|mkv|webm)$/i.test(mediaUrl)) {
+        } else if (/\.(mp4|mov|avi|mkv|webm)$/i.test(mediaPath)) {
             type = "video";
         }
 

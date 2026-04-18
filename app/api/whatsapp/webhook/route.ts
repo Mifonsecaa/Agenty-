@@ -22,7 +22,12 @@ async function buildConversationMessages(conversationId: string) {
 }
 
 function detectWhatsAppMediaType(mediaUrl: string): "image" | "video" | "document" {
-    const normalized = mediaUrl.toLowerCase();
+    let normalized = mediaUrl.toLowerCase();
+    try {
+        normalized = new URL(mediaUrl).pathname.toLowerCase();
+    } catch {
+        // Mantener valor original para rutas relativas.
+    }
     if (/\.(jpg|jpeg|png|webp|gif)$/i.test(normalized)) return "image";
     if (/\.(mp4|mov|avi|mkv|webm)$/i.test(normalized)) return "video";
     return "document";
@@ -183,14 +188,15 @@ export async function POST(req: Request) {
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const historyMessages = await buildConversationMessages(conversation.id);
 
-            const agentExecutor = createAgentGraph(agent.id, agent.name, agent.config, targetJid);
-            const threadId = `whatsapp:${agent.id}:${conversation.id}`;
+            const agentExecutor = await createAgentGraph(agent.id, agent.name, agent.config, customerPhone);
+            const threadId = `whatsapp:${agent.id}:${customerPhone}`;
 
             const result = await agentExecutor.invoke({
                 messages: historyMessages,
                 businessId: agent.id,
                 businessName: agent.name,
-                config: agent.config
+                config: agent.config,
+                customerPhone,
             }, {
                 configurable: {
                     thread_id: threadId,

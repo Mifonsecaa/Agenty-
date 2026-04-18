@@ -69,6 +69,7 @@ export default function SettingsPage() {
             payments: { toolLabel: "MercadoPago / Wompi", section: "identity" },
             shopify: { toolLabel: "Shopify Inventory", section: "knowledge" },
             email: { toolLabel: "Gmail / Outlook", section: "knowledge" },
+            "knowledge-excel-viewer": { toolLabel: "Hojas de calculo", section: "knowledge" },
         };
 
         setIntegrationHint(map[tool] || null);

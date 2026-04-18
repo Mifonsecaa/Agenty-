@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { evolutionService } from "@/services/whatsapp/evolution";
+import { invalidateAiCachesForBusiness } from "@/lib/ai";
 
 export async function GET(req: Request) {
     try {
@@ -120,6 +121,8 @@ export async function PUT(req: Request) {
                 config
             }
         });
+
+        invalidateAiCachesForBusiness(updatedBusiness.id);
 
         return NextResponse.json({ success: true, business: updatedBusiness });
 

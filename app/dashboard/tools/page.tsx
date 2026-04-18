@@ -40,6 +40,12 @@ type SpreadsheetPreview = {
     error?: string;
 };
 
+const GOOGLE_CONNECTION_TOOL_SLUGS: ToolCard["slug"][] = ["google-calendar", "knowledge-excel-viewer"];
+
+function usesGoogleConnection(slug: ToolCard["slug"]) {
+    return GOOGLE_CONNECTION_TOOL_SLUGS.includes(slug);
+}
+
 function isSpreadsheetFile(fileName: string, fileType?: string) {
     if (/\.(xlsx|xlsm|xls)$/i.test(fileName)) return true;
     return [
@@ -362,7 +368,7 @@ function ExcelViewerModal({
                 <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                         <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-                        Visor Excel (.xlsx / .xlsm / .xls)
+                        Hojas de calculo (.xlsx / .xlsm / .xls)
                     </h3>
                     <button onClick={onClose} className="text-white/60 hover:text-white">Cerrar</button>
                 </div>
@@ -691,10 +697,10 @@ export default function ToolsStore() {
         {
             id: 5,
             slug: "knowledge-excel-viewer",
-            name: "Visor Excel KB",
-            description: "Visualiza en modo lectura archivos .xlsx y .xlsm que tu usuario sube a la base de conocimiento.",
+            name: "Hojas de calculo",
+            description: "Conecta Google y administra hojas de calculo de tu base de conocimiento (.xlsx / .xlsm) en una grilla editable.",
             icon: <FileSpreadsheet className="w-6 h-6 text-emerald-300" />,
-            status: "connected",
+            status: "disconnected",
             category: "Knowledge"
         }
     ]);
@@ -709,19 +715,49 @@ export default function ToolsStore() {
     const [excelPreview, setExcelPreview] = useState<SpreadsheetPreview["data"] | null>(null);
     const [loadingExcelPreview, setLoadingExcelPreview] = useState(false);
 
+    useEffect(() => {
+        const googleDriveState = searchParams.get("googleDrive");
+        const toolSlug = searchParams.get("tool");
+        if (!googleDriveState) return;
+
+        if (googleDriveState === "connected") {
+            setStatusMessage({
+                type: "success",
+                text: `Google conectado correctamente${toolSlug ? ` para ${toolSlug}` : ""}.`,
+            });
+            return;
+        }
+
+        setStatusMessage({
+            type: "error",
+            text: `No se pudo completar la conexion con Google (${googleDriveState}).`,
+        });
+    }, [searchParams]);
+
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
         if (!activeAgent) return;
 
         const config = activeAgent.config || activeAgent;
+        const googleDriveConnected = Boolean(
+            config?.googleDrive && typeof config.googleDrive === "object" && (config.googleDrive as Record<string, unknown>).connected
+        );
         if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
             setTools(prevTools => prevTools.map(tool => ({
                 ...tool,
-                status: tool.slug === "knowledge-excel-viewer"
-                    ? "connected"
+                status: usesGoogleConnection(tool.slug)
+                    ? (googleDriveConnected ? "connected" : "disconnected")
                     : (config.recommendedTools.includes(tool.id) ? "connected" : "disconnected")
             })));
+            return;
         }
+
+        setTools(prevTools => prevTools.map(tool => ({
+            ...tool,
+            status: usesGoogleConnection(tool.slug)
+                ? (googleDriveConnected ? "connected" : "disconnected")
+                : tool.status,
+        })));
     }, [activeAgent]);
 
     const handleToggleTool = async (toolId: number) => {
@@ -771,7 +807,19 @@ export default function ToolsStore() {
     };
 
     const handlePrimaryAction = (tool: ToolCard) => {
-        if (tool.slug === "knowledge-excel-viewer") {
+        if (usesGoogleConnection(tool.slug) && tool.status === "disconnected") {
+            const businessId = activeAgent?.id;
+            if (!businessId) {
+                setStatusMessage({ type: "error", text: "Selecciona un agente para conectar Google." });
+                return;
+            }
+
+            const connectUrl = `/api/integrations/google-drive/connect?businessId=${encodeURIComponent(businessId)}&tool=${encodeURIComponent(tool.slug)}`;
+            window.location.href = connectUrl;
+            return;
+        }
+
+        if (tool.slug === "knowledge-excel-viewer" && tool.status === "connected") {
             void openExcelViewer();
             return;
         }
@@ -792,6 +840,20 @@ export default function ToolsStore() {
         }
 
         handleToggleTool(tool.id);
+    };
+
+    const getPrimaryLabel = (tool: ToolCard) => {
+        if (savingToolId === tool.id) {
+            return tool.status === "connected" ? "Guardando..." : "Conectando...";
+        }
+
+        if (tool.status === "connected") {
+            if (tool.slug === "knowledge-excel-viewer") return "Abrir hojas";
+            return "Configurar";
+        }
+
+        if (usesGoogleConnection(tool.slug)) return "Conectar Google";
+        return "Conectar";
     };
 
     const fetchExcelFiles = async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -975,6 +1037,9 @@ export default function ToolsStore() {
                         </div>
 
                         <h3 className="text-xl font-bold mb-2 relative z-10">{tool.name}</h3>
+                        {usesGoogleConnection(tool.slug) && (
+                            <p className="text-[11px] text-blue-300/90 mb-2 relative z-10">Integracion con Google</p>
+                        )}
                         <p className="text-sm text-white/50 mb-6 min-h-10 relative z-10">
                             {tool.description}
                         </p>
@@ -983,7 +1048,7 @@ export default function ToolsStore() {
                             {tool.status === "connected" ? (
                                 <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
                                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                    Activado
+                                    {usesGoogleConnection(tool.slug) ? "Google conectado" : "Activado"}
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2 text-sm text-white/40 font-medium">
@@ -999,13 +1064,11 @@ export default function ToolsStore() {
                                 onClick={() => handlePrimaryAction(tool)}
                                 disabled={savingToolId !== null}
                             >
-                                {savingToolId === tool.id
-                                    ? (tool.status === "connected" ? "Guardando..." : "Conectando...")
-                                    : (tool.status === "connected" ? "Configurar" : "Conectar")}
+                                {getPrimaryLabel(tool)}
                             </button>
                         </div>
 
-                        {tool.status === "connected" && tool.slug !== "knowledge-excel-viewer" && (
+                        {tool.status === "connected" && (
                             <button
                                 onClick={() => openDeactivateConfirm(tool.id)}
                                 disabled={savingToolId !== null}

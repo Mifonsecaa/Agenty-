@@ -1,5 +1,5 @@
-import { enqueueKnowledgeIngestion } from "../rag/queue";
-import { applyCellUpdatesToWorkbookBuffer, appendRowsToWorkbookBuffer, extractSpreadsheetText, isSpreadsheetFileName, listWorkbookSheets, normalizeSpreadsheetCellAddress, readWorkbookCellValue } from "../knowledge/spreadsheet";
+import { enqueueKnowledgeIngestion, processKnowledgeQueueBatch } from "../rag/queue";
+import { applyCellUpdatesToWorkbookBuffer, appendRowsToWorkbookBuffer, extractSpreadsheetText, listWorkbookSheets } from "../knowledge/spreadsheet";
 import { listSpreadsheetFilesForBusiness } from "./knowledge-tool";
 import { replaceKnowledgeFileByPublicUrl, uploadKnowledgeFileToStorage } from "../storage/knowledge-files";
 import path from "path";
@@ -78,12 +78,14 @@ export async function processExcelWorkOrder(
                 throw new Error("Archivo no encontrado.");
             }
             const loaded = await loadSpreadsheetBuffer(targetFile.fileUrl);
+            const workbookSheets = listWorkbookSheets(loaded.buffer);
+            const fallbackSheet = workbookSheets[0]?.name || "Datos";
 
             if (workOrder.actionType === "APPEND_ROW") {
                const rowValues = Object.values(workOrder.extractedData || {}).map(v => String(v));
-               updatedBuffer = appendRowsToWorkbookBuffer(loaded.buffer, [{ sheet: "Datos", values: rowValues }], targetFileName);
+               updatedBuffer = appendRowsToWorkbookBuffer(loaded.buffer, [{ sheet: fallbackSheet, values: rowValues }], targetFileName);
             } else {
-               updatedBuffer = applyCellUpdatesToWorkbookBuffer(loaded.buffer, [{ sheet: "Datos", cell: "A1", value: JSON.stringify(workOrder.extractedData) }], targetFileName);
+               updatedBuffer = applyCellUpdatesToWorkbookBuffer(loaded.buffer, [{ sheet: fallbackSheet, cell: "A1", value: JSON.stringify(workOrder.extractedData) }], targetFileName);
             }
 
              if (loaded.source === "local" && loaded.localPath) {
@@ -117,6 +119,10 @@ export async function processExcelWorkOrder(
                     isManualUpdate: true,
                     updatedAt: new Date().toISOString()
                 }
+            });
+
+            await processKnowledgeQueueBatch(1).catch((queueError) => {
+                console.error("[ExcelHandler] Queue kickoff error:", queueError);
             });
         }
 

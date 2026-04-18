@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendWhatsAppMessage } from '@/services/whatsapp-sender';
 import { aiService } from '@/lib/ai';
+import { HumanMessage } from '@langchain/core/messages';
 
 // 🔑 Asegúrate de que la API Key exista para que la app no explote silenciosamente
 if (!process.env.GEMINI_API_KEY) {
@@ -27,13 +28,49 @@ export interface ExecuteAgentInput {
 }
 
 export async function executeAgent(input: ExecuteAgentInput): Promise<string> {
-    const response = await aiService.generateResponse(
-        input.businessId,
-        [{ role: 'user', content: input.message }],
-        {}
-    );
+    try {
+        const business = await prisma.business.findUnique({
+            where: { id: input.businessId },
+            select: { id: true, name: true, config: true },
+        });
 
-    return typeof response === 'string' ? response : String(response || '');
+        if (!business) {
+            throw new Error(`Business not found: ${input.businessId}`);
+        }
+
+        const { createAgentGraph } = await import('@/lib/agent/graph');
+        const agentExecutor = await createAgentGraph(
+            business.id,
+            business.name,
+            business.config || {},
+            input.userId,
+        );
+
+        const threadId = `${input.platform}:${business.id}:${input.userId}`;
+        const result = await agentExecutor.invoke({
+            messages: [new HumanMessage(input.message)],
+            businessId: business.id,
+            businessName: business.name,
+            config: business.config || {},
+            customerPhone: input.userId,
+        }, {
+            configurable: {
+                thread_id: threadId,
+                sessionId: threadId,
+                checkpoint_ns: `business:${business.id}`,
+            },
+        });
+
+        const lastMsg = result?.messages?.[result.messages.length - 1];
+        return typeof lastMsg?.content === 'string' ? lastMsg.content : String(lastMsg?.content || '');
+    } catch (error) {
+        const fallback = await aiService.generateResponse(
+            input.businessId,
+            [{ role: 'user', content: input.message }],
+            {}
+        );
+        return typeof fallback === 'string' ? fallback : String(fallback || '');
+    }
 }
 
 // Esta es la función principal que orquesta todo

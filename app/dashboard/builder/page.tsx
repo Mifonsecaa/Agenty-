@@ -33,7 +33,7 @@ export default function BuilderPlayground() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isTyping]);
 
-    // Cargar la configuración mágica generada desde la Home
+    // Cargar la configuración del agente y priorizar prompt persistido
     useEffect(() => {
         if (!activeAgent) return;
 
@@ -42,9 +42,11 @@ export default function BuilderPlayground() {
         setAgentName(config.businessName || activeAgent.name || "AgentBot");
         setAiProvider(config.aiProvider || "openai");
 
-        // Si ya tiene un system prompt guardado, usamos ese. Si no, generamos uno a partir del config
-        if (activeAgent.systemPrompt) {
-            setSystemPrompt(activeAgent.systemPrompt);
+        // Fuente de verdad: config.systemPrompt (con fallback legacy)
+        const persistedPrompt = (config?.systemPrompt || activeAgent.systemPrompt || "").trim();
+
+        if (persistedPrompt) {
+            setSystemPrompt(persistedPrompt);
         } else if (config.schedules) {
             const generatedPrompt = `Eres el asistente virtual para: ${config.businessName || activeAgent.name}.
 Tu comportamiento y personalidad debe ser: ${config.agentTone || 'Amable y profesional'}.
@@ -75,6 +77,12 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
 
     const handleSave = async () => {
         if (!activeAgent || !fullAgentConfig) return;
+        const normalizedPrompt = systemPrompt.trim();
+        if (!normalizedPrompt) {
+            toast.error("El System Prompt no puede quedar vacio");
+            return;
+        }
+
         setIsSaving(true);
 
         try {
@@ -82,11 +90,13 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 ...fullAgentConfig,
                 businessName: agentName,
                 aiProvider,
-                systemPrompt: systemPrompt
+                systemPrompt: normalizedPrompt
             };
 
             const success = await saveAgent(activeAgent.id, agentName, updatedConfig);
             if (success) {
+                setSystemPrompt(normalizedPrompt);
+                setFullAgentConfig(updatedConfig);
                 toast.success("Borrador guardado correctamente");
             }
         } catch (error) {

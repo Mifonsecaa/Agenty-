@@ -1,13 +1,15 @@
 import { Annotation, END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
-import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { retrieveRagContext } from "@/lib/rag/retriever";
-import { createBookingTool } from "../tools/booking-tool";
-import { createKnowledgeTool, createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
-import { brainModel, createRequiredToolAgent, workerModel, jsonExtractorModel, stateExtractorModel } from "@/lib/ai";
+import { brainModel, reservationExtractorModel, spreadsheetExecutorRequestModel } from "@/lib/ai";
 import { processExcelWorkOrder } from "../tools/excel-handler";
+import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
+import { getGraphCheckpointer } from "./checkpointer";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
-let cachedGraphCheckpointer: any | undefined;
+
+type ReservationState = "INIT" | "EXTRACTING_RESERVATION" | "READY_TO_SAVE";
+type ReservationData = { date: string | null; time: string | null; people: string | null; name: string | null };
 
 const AgentGraphState = Annotation.Root({
     ...MessagesAnnotation.spec,
@@ -19,31 +21,22 @@ const AgentGraphState = Annotation.Root({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
-    workerResult: Annotation<string | undefined>({
-        reducer: (_prev, next) => next,
-        default: () => undefined,
-    }),
     isTaskComplete: Annotation<boolean | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
-    retryCount: Annotation<number>({
-        reducer: (prev, next) => prev + next,
-        default: () => 0,
+    currentState: Annotation<ReservationState>({
+        reducer: (_prev, next) => next,
+        default: () => "INIT",
     }),
-    extractionState: Annotation<{
-        status: "INIT" | "ASK_TIME" | "ASK_PEOPLE" | "ASK_NAME" | "CONFIRMED" | "DONE" | "";
-        data: Record<string, any>;
-    } | undefined>({
-        reducer: (prev, next) => {
-            if (!next) return prev;
-            if (!prev) return next;
-            return {
-                status: next.status || prev.status,
-                data: { ...(prev.data || {}), ...(next.data || {}) }
-            };
-        },
-        default: () => ({ status: "INIT", data: {} })
+    reservationData: Annotation<ReservationData>({
+        reducer: (prev, next) => ({
+            date: next?.date ?? prev?.date ?? null,
+            time: next?.time ?? prev?.time ?? null,
+            people: next?.people ?? prev?.people ?? null,
+            name: next?.name ?? prev?.name ?? null,
+        }),
+        default: () => ({ date: null, time: null, people: null, name: null }),
     }),
     availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
@@ -76,150 +69,127 @@ function getLastUserMessage(messages: BaseMessage[]) {
     return "";
 }
 
-function getRecentConversationText(messages: BaseMessage[], take = 10) {
-    const slice = messages.slice(-Math.max(4, Math.min(20, take)));
-    return slice
-        .map((msg: any) => {
-            const role = msg?.getType?.() === "human" ? "usuario" : "asistente";
-            const content = normalizeMessageContent(msg?.content || "");
-            return `${role}: ${content}`;
-        })
-        .join("\n");
-}
-
 function trimMessagesForModel(messages: BaseMessage[]) {
     const maxMessages = Math.max(4, Math.min(16, AGENT_MAX_HISTORY_MESSAGES));
     if (messages.length <= maxMessages) return messages;
     return messages.slice(-maxMessages);
 }
 
-function parseRoute(raw: string): "rag_agent" | "tool_agent" {
-    const value = String(raw || "").trim().toLowerCase();
-    return value.includes("tool_agent") ? "tool_agent" : "rag_agent";
-}
-
 function isReservationIntent(text: string) {
     return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno)/i.test(String(text || ""));
-}
-
-function isReservationStatusQuestion(text: string) {
-    return /(si\s+realizaste|ya\s+quedo|quedo\s+la\s+reserva|confirmaste|esta\s+confirmada|se\s+hizo\s+la\s+reserva)/i.test(String(text || ""));
-}
-
-function hasReservationRequiredData(text: string) {
-    const value = String(text || "");
-    const hasDate = /\b(\d{4}-\d{2}-\d{2}|hoy|mañana|manana|pasado\s+mañana|pasado\s+manana|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i.test(value);
-    const hasHour = /\b([01]?\d|2[0-3])[:.]\d{2}\b|\b\d{1,2}\s?(am|pm)\b|\ba\s+las\s+\d{1,2}(?::\d{2})?\b/i.test(value);
-    const hasPeople = /\b\d+\s*(persona|personas|pax|comensales)\b/i.test(value);
-    const hasName = /\b(a\s+nombre\s+de|nombre\s*[:\-]|soy\s+)\s*[a-záéíóúñ]/i.test(value);
-    return hasDate && hasHour && hasPeople && hasName;
-}
-
-function extractLastMatch(value: string, regex: RegExp) {
-    const source = String(value || "");
-    const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
-    const globalRegex = new RegExp(regex.source, flags);
-    let match: RegExpExecArray | null = null;
-    let last: RegExpExecArray | null = null;
-    while ((match = globalRegex.exec(source)) !== null) {
-        last = match;
-    }
-    return last;
-}
-
-function extractReservationSnapshot(conversationText: string, lastUserMessage: string) {
-    const dateMatch = extractLastMatch(
-        conversationText,
-        /(\b\d{4}-\d{2}-\d{2}\b|\bhoy\b|\bmañana\b|\bmanana\b|\bpasado\s+mañana\b|\bpasado\s+manana\b|\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b)/i,
-    );
-    const timeMatch = extractLastMatch(
-        conversationText,
-        /(\b(?:[01]?\d|2[0-3])[:.]\d{2}\b|\b\d{1,2}\s?(?:am|pm)\b|\ba\s+las\s+\d{1,2}(?::\d{2})?\b)/i,
-    );
-    const peopleMatch = extractLastMatch(conversationText, /(\b\d+)\s*(persona|personas|pax|comensales)\b/i);
-    const explicitName = extractLastMatch(conversationText, /(?:a\s+nombre\s+de|nombre\s*[:\-]|soy\s+)([a-záéíóúñ ]{3,60})/i);
-
-    let name = explicitName?.[1]?.trim() || "";
-    if (!name) {
-        const shortNameCandidate = String(lastUserMessage || "").trim();
-        if (/^[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){1,3}$/i.test(shortNameCandidate)) {
-            name = shortNameCandidate;
-        }
-    }
-
-    return {
-        date: dateMatch?.[1]?.trim() || "",
-        time: timeMatch?.[1]?.trim() || "",
-        people: peopleMatch?.[1]?.trim() || "",
-        name,
-    };
 }
 
 function isSpreadsheetEditIntent(text: string) {
     return /(excel|xlsx|xlsm|hoja|celda|fila|columna|actualiza|actualizar|modifica|modificar|agrega|agregar|append_row|update_cell)/i.test(String(text || ""));
 }
 
-function hasSpreadsheetMinimumData(text: string) {
-    const value = String(text || "");
-    const hasSheet = /(hoja\s*[:\-]?\s*[\wáéíóúñ ]+|sheet\s*[:\-]?\s*[\w\- ]+)/i.test(value);
-    const hasCell = /\b[A-Z]{1,3}\d{1,5}\b/.test(value);
-    const hasAppendHint = /(fila|registro|append|nueva\s+fila)/i.test(value);
-    const hasFileRefHint = /(archivo|fileRef|url|\.xlsx|\.xlsm|\b\d+\b)/i.test(value);
-    return hasFileRefHint && hasSheet && (hasCell || hasAppendHint);
+function isAffirmativeReply(text: string) {
+    return /^(si|sí|ok|dale|confirmo|confirmado|de acuerdo|listo|correcto|yes)\b/i.test(String(text || "").trim());
 }
 
-function asksForImageOrMenu(text: string) {
-    return /(imagen|foto|menu|carta|catalogo)/i.test(String(text || ""));
+function isNegativeReply(text: string) {
+    return /^(no|negativo|cancela|cancelar|mejor no)\b/i.test(String(text || "").trim());
 }
 
-function extractMarkdownImageUrl(text: string) {
-    const match = String(text || "").match(/!\[[^\]]*]\(([^)]+)\)/);
-    return match?.[1]?.trim() || "";
+function normalizeReservationData(base: ReservationData, partial: Partial<ReservationData>): ReservationData {
+    return {
+        date: partial.date || base.date || null,
+        time: partial.time || base.time || null,
+        people: partial.people || base.people || null,
+        name: partial.name || base.name || null,
+    };
 }
 
-function extractToolCalls(message: any): Array<{ name?: string; args?: unknown }> {
-    const rawCalls = message?.additional_kwargs?.tool_calls || message?.tool_calls || [];
-    if (!Array.isArray(rawCalls)) return [];
-
-    return rawCalls.map((call: any) => {
-        const fn = call?.function || {};
-        let args: unknown = fn.arguments ?? call?.args ?? {};
-        if (typeof args === "string") {
-            try {
-                args = JSON.parse(args);
-            } catch {
-                args = {};
-            }
-        }
-        return { name: fn.name || call?.name, args };
-    });
+function getFirstMissingReservationField(reservation: ReservationData): "time" | "people" | "name" | null {
+    if (!reservation.time) return "time";
+    if (!reservation.people) return "people";
+    if (!reservation.name) return "name";
+    return null;
 }
 
-function getOptionalGraphCheckpointer() {
-    if (cachedGraphCheckpointer !== undefined) return cachedGraphCheckpointer;
+function buildMissingFieldQuestion(field: "time" | "people" | "name") {
+    if (field === "time") return "¿A qué hora deseas la reserva?";
+    if (field === "people") return "¿Para cuántas personas?";
+    return "¿A nombre de quién reservo?";
+}
 
+function pickReservationFileName(files: Array<{ fileName: string }>) {
+    if (!files.length) return "reservas.xlsx";
+    const preferred = files.find((f) => /(reserv|agenda|booking|cita)/i.test(f.fileName));
+    return preferred?.fileName || files[0].fileName;
+}
+
+function tryParseExecutorRequest(raw: string): any | null {
+    const text = String(raw || "").trim();
+    if (!text.startsWith("{") || !text.endsWith("}")) return null;
     try {
-        // Lazy-load para mantener compatibilidad entre versiones de LangGraph.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const langgraphPkg = require("@langchain/langgraph");
-        const SaverCtor = langgraphPkg?.MemorySaver || langgraphPkg?.InMemorySaver;
-        cachedGraphCheckpointer = typeof SaverCtor === "function" ? new SaverCtor() : null;
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object") return null;
+        if (typeof parsed.action !== "string") return null;
+        return parsed;
     } catch {
-        cachedGraphCheckpointer = null;
+        return null;
+    }
+}
+
+function normalizeSpreadsheetFailureMessage(raw: string) {
+    const value = String(raw || "").trim();
+    if (!value) return "No pude procesar la hoja de cálculo por un problema técnico.";
+    if (/Opciones disponibles|indiques cual editar|referencia .* ambigua|No se encontro archivo/i.test(value)) {
+        return `Necesito que especifiques mejor el archivo a editar.\n${value}`;
+    }
+    if (/Falta '\w+'|Falta 'sheet'|Falta 'cell'|Falta 'rowValues'/i.test(value)) {
+        return `Faltan datos para completar la acción.\n${value}`;
+    }
+    if (/Error al guardar|No se pudo|FAILED|problema tecnico/i.test(value)) {
+        return `No pude completar la operación en la hoja de cálculo. ${value}`;
+    }
+    return value;
+}
+
+function isReservationAvailabilityQuery(text: string) {
+    return /(reserva|reservar|disponible|disponibilidad|hora|horario|mesa|agenda|turno)/i.test(String(text || ""));
+}
+
+function isPrivacyProbeOnReservation(text: string) {
+    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona)/i.test(String(text || ""));
+}
+
+function sanitizeSpreadsheetResultForUser(params: {
+    action: string;
+    resultText: string;
+    requestedMessage: string;
+    fallback: string;
+}) {
+    const requested = String(params.requestedMessage || "");
+    const value = String(params.resultText || "").trim();
+
+    if (isReservationAvailabilityQuery(requested) && isPrivacyProbeOnReservation(requested)) {
+        return "Por seguridad, no comparto datos personales de reservas. Solo puedo confirmar disponibilidad general de horarios.";
     }
 
-    return cachedGraphCheckpointer;
+    if (params.action === "READ_CELL" && isReservationAvailabilityQuery(requested)) {
+        const valueMatch = value.match(/Valor:\s*(.*)$/im);
+        const cellValue = (valueMatch?.[1] || "").trim();
+        if (!cellValue || /^\(vacio\)$/i.test(cellValue)) {
+            return "Ese horario aparece disponible.";
+        }
+        return "Ese horario ya aparece ocupado. Si deseas, te propongo otro horario disponible.";
+    }
+
+    if (params.action === "LIST" || params.action === "LIST_SHEETS") {
+        return params.fallback || "Listo, encontré los archivos y hojas disponibles.";
+    }
+
+    if (isReservationAvailabilityQuery(requested) && /Fila agregada:/i.test(value)) {
+        return "Listo, la reserva fue registrada correctamente.";
+    }
+
+    return params.fallback || value;
 }
 
-export const createAgentGraph = (businessId: string, businessName: string, config: any, customerPhone?: string) => {
-    const tools = [
-        createKnowledgeTool(businessId),
-        createSpreadsheetUpdateTool(businessId),
-        createBookingTool(businessId, customerPhone),
-    ];
-
-    const toolMap = new Map<string, any>(tools.map((tool) => [String(tool.name), tool]));
-    const boundToolModel = (workerModel as any).bindTools(tools);
+export const createAgentGraph = async (businessId: string, businessName: string, config: any, customerPhone?: string) => {
+    const spreadsheetTool = createSpreadsheetUpdateTool(businessId);
 
     const ensureAvailableFiles = async (state: AgentGraphStateType) => {
         if (Array.isArray(state.availableFiles) && state.availableFiles.length > 0) {
@@ -234,257 +204,270 @@ export const createAgentGraph = (businessId: string, businessName: string, confi
         }));
     };
 
-    const actionNode = async (state: AgentGraphStateType) => {
-        console.log("⚙️ [ACTION NODE] Analizando extracción de estados o datos...");
-
-        // Si es extracción de reservas:
-        if (state.currentPlan === "EXTRAER_DATOS") {
-            const systemPrompt = `Eres el Agente Extractor y Coordinador de Estados.
-El usuario quiere hacer una reserva o una acción estructurada de pasos.
-Debes revisar los datos actuales: ${JSON.stringify(state.extractionState?.data || {})}.
-Revisa la conversación, identifica los datos que el usuario ha proporcionado. Si faltan datos vitales (fecha/hora, personas, nombre), haz la pregunta. Si ya están todos, pon status en CONFIRMED.
-Reglas:
-- NUNCA repitas preguntas ya respondidas.
-- No reinicies la conversación si ya hay progreso.
-- No saludes nuevamente.`;
-
-            const extraction = await stateExtractorModel.invoke([
-                new SystemMessage(systemPrompt),
-                ...trimMessagesForModel(state.messages as BaseMessage[])
-            ]);
-
-            console.log("📊 Estado de extracción:", extraction);
-
-            // Merge de data
-            const mergedData = { ...(state.extractionState?.data || {}), ...(extraction.collectedData || {}) };
-
-            let finalResponseMsg = "";
-            let nextStatus: any = extraction.status;
-
-            if (nextStatus === "CONFIRMED" || nextStatus === "DONE") {
-                // Aquí el obrero enviará el dato real a la herramienta, sin mentir
-                nextStatus = "DONE";
-                return {
-                    isTaskComplete: false,
-                    currentPlan: `Guarda o anota la nueva reserva. Los datos recolectados y confirmados son: ${JSON.stringify(mergedData)}. Ejecuta la herramienta de guardado en el archivo excel / reservas que corresponda.`,
-                    extractionState: {
-                        status: nextStatus,
-                        data: mergedData
-                    }
-                };
-            } else {
-                finalResponseMsg = extraction.nextQuestionToUser;
-            }
-
-            return {
-                isTaskComplete: true,
-                extractionState: {
-                    status: nextStatus,
-                    data: mergedData
-                },
-                messages: [new AIMessage(finalResponseMsg)]
-            };
-        }
-
-        // --- EXCEL LOGIC ---
-        console.log("⚙️ [ACTION NODE] Extrayendo JSON Excel...");
-        const availableFiles = await ensureAvailableFiles(state);
-
-        const systemPrompt = `Eres el extractor de datos (Obrero).
-El Cerebro analizó la solicitud y dejó este insight/plan: "${state.currentPlan || 'Interpreta la conversación para extraer datos'}".
-El usuario quiere modificar un documento. Archivos disponibles en el negocio: ${JSON.stringify(availableFiles)}. 
-Extrae los datos requeridos de la conversación. Si faltan datos vitales, pon actionType en NONE y usa responseToUser para preguntarlos.`;
-
-        const workOrder = await jsonExtractorModel.invoke([
-            new SystemMessage(systemPrompt),
-            ...trimMessagesForModel(state.messages as BaseMessage[])
-        ]);
-
-        if (workOrder.actionType !== "NONE") {
-            console.log("💾 [ACTION NODE] Ejecutando guardado físico...");
-            try {
-                await processExcelWorkOrder(businessId, workOrder);
-            } catch (e) {
-                return { isTaskComplete: true, messages: [new AIMessage("Lo siento, hubo un problema técnico al guardar la información.")] };
-            }
-        }
-
-        return {
-            isTaskComplete: true,
-            messages: [new AIMessage(workOrder.responseToUser)]
-        };
-    };
-
     const plannerNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
-        const recentConversation = getRecentConversationText(state.messages as BaseMessage[]);
 
-        // Si el estado de extracción está activo, seguimos la misma ruta
-        if (state.extractionState && ["ASK_TIME", "ASK_PEOPLE", "ASK_NAME", "CONFIRMED"].includes(state.extractionState.status)) {
-             return { currentPlan: "EXTRAER_DATOS" };
+        if (state.currentState === "EXTRACTING_RESERVATION" || state.currentState === "READY_TO_SAVE") {
+            return { currentPlan: "RESERVATION_FLOW" };
         }
 
-        const availableFiles = await ensureAvailableFiles(state);
+        if (isReservationIntent(lastUserMessage)) {
+            return { currentPlan: "RESERVATION_FLOW", currentState: "EXTRACTING_RESERVATION" as ReservationState };
+        }
 
-        const systemPrompt = `Eres el Cerebro del sistema. Tu trabajo NO es usar herramientas ni hablar con el usuario aún. 
-Analiza la conversación reciente y redacta un plan de acción estricto para tu Obrero. 
-Si el usuario hace una pregunta general y requiere RAG o herramientas, elabora un plan indicando qué herramienta usar o sobre qué tema consultar. 
-Si no se necesitan herramientas ni RAG (ej. solo es un saludo), escribe exactamente: RESPONDER_DIRECTO.
-Si el usuario quiere modificar, guardar, agendar algo en un excel / tabla / hoja de calculo (ej: "anota una reserva", "guarda esta venta"), escribe exactamente: ACCION_EXCEL.
-Si el usuario quiere iniciar una reserva de mesa/cita, O SI LA CONVERSACIÓN ACTUAL ESTÁ EN MEDIO DE RECOLECTAR DATOS (ej. respondiendo día, hora, personas, nombre), escribe exactamente: EXTRAER_DATOS.`;
+        if (isSpreadsheetEditIntent(lastUserMessage)) {
+            return { currentPlan: "ACCION_EXCEL" };
+        }
 
         const reply = await brainModel.invoke([
-            new SystemMessage(systemPrompt),
-            ...trimMessagesForModel(state.messages as BaseMessage[])
+            new SystemMessage("Clasifica la intención en exactamente una etiqueta: RESPONDER_DIRECTO o RESPONDER_CON_RAG."),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
         const plan = normalizeMessageContent((reply as any)?.content);
         return {
-            currentPlan: plan,
-            availableFiles
+            currentPlan: /RESPONDER_DIRECTO/i.test(plan) ? "RESPONDER_DIRECTO" : "RESPONDER_CON_RAG",
         };
     };
 
-    const workerNode = async (state: AgentGraphStateType) => {
-        const availableFiles = await ensureAvailableFiles(state);
-        const availableFilesText = availableFiles.length
-            ? JSON.stringify(availableFiles.slice(0, 20), null, 2)
-            : "[]";
+    const reservationExtractorNode = async (state: AgentGraphStateType) => {
+        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const extracted = await reservationExtractorModel.invoke([
+            new SystemMessage("Extrae SOLO del ultimo mensaje del usuario los campos date/time/people/name y si es afirmacion corta. Si no aparece, devuelve null."),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
+        ]);
 
-        const toolPrompt = `Eres un Obrero ejecutor. Sigue EXACTAMENTE este plan: ${state.currentPlan}. 
-Ejecuta las herramientas necesarias y devuelve el resultado en texto plano. No agregues saludos ni comentarios.
-El negocio tiene estos archivos u hojas de cálculo disponibles para consulta/edición:
-${availableFilesText}
+        const mergedData = normalizeReservationData(state.reservationData, {
+            date: extracted?.date || null,
+            time: extracted?.time || null,
+            people: extracted?.people || null,
+            name: extracted?.name || null,
+        });
 
-SI LA TAREA ES EDITAR UN ARCHIVO, DEBES LLAMAR A LA HERRAMIENTA AHORA MISMO CON LOS PARÁMETROS ADECUADOS.`;
-
-        let resultText = "No result";
-        try {
-            const modelReply = await boundToolModel.invoke([
-                new SystemMessage(toolPrompt),
-                ...trimMessagesForModel(state.messages as BaseMessage[])
-            ]);
-
-            const toolCalls = extractToolCalls(modelReply);
-            if (!toolCalls.length) {
-                // If it doesn't call a tool, maybe it just answered the plan
-                resultText = normalizeMessageContent((modelReply as any)?.content) || "No se ejecutó herramienta.";
-            } else {
-                const outputs: string[] = [];
-                for (const call of toolCalls) {
-                    const tool = toolMap.get(call.name || "");
-                    if (!tool) {
-                        outputs.push(`Error: tool no encontrada (${call.name}).`);
-                        continue;
-                    }
-                    try {
-                        const res = await (tool as any).invoke(call.args || {});
-                        outputs.push(typeof res === "string" ? res : JSON.stringify(res));
-                    } catch (e: any) {
-                        outputs.push(`Error al ejecutar ${tool.name}: ${e.message}`);
-                    }
-                }
-                resultText = outputs.join("\n\n");
+        if (state.currentState === "READY_TO_SAVE") {
+            if (isAffirmativeReply(lastUserMessage) || extracted?.isAffirmative) {
+                return {
+                    isTaskComplete: false,
+                    currentPlan: "RESERVATION_SAVE",
+                    reservationData: mergedData,
+                };
             }
-        } catch (e: any) {
-            resultText = `Fallo crítico: ${e.message}`;
+
+            if (isNegativeReply(lastUserMessage)) {
+                return {
+                    isTaskComplete: true,
+                    currentState: "EXTRACTING_RESERVATION",
+                    reservationData: mergedData,
+                    messages: [new AIMessage("Perfecto, indícame qué dato deseas cambiar (hora, personas o nombre).")],
+                };
+            }
         }
 
+        const missingField = getFirstMissingReservationField(mergedData);
+        if (missingField) {
+            return {
+                isTaskComplete: true,
+                currentState: "EXTRACTING_RESERVATION",
+                reservationData: mergedData,
+                messages: [new AIMessage(buildMissingFieldQuestion(missingField))],
+            };
+        }
+
+        const summary = [
+            `Hora: ${mergedData.time}`,
+            `Personas: ${mergedData.people}`,
+            `Nombre: ${mergedData.name}`,
+            mergedData.date ? `Fecha: ${mergedData.date}` : "",
+        ].filter(Boolean).join("\n");
+
         return {
-            workerResult: resultText,
-            retryCount: 1
+            isTaskComplete: true,
+            currentState: "READY_TO_SAVE",
+            reservationData: mergedData,
+            messages: [new AIMessage(`Confírmame por favor con 'sí' para guardar esta reserva:\n${summary}`)],
         };
     };
 
-    const reviewerNode = async (state: AgentGraphStateType) => {
+    const reservationSaveNode = async (state: AgentGraphStateType) => {
+        const availableFiles = await ensureAvailableFiles(state);
+        const targetFileName = pickReservationFileName(availableFiles);
+        const reservation = state.reservationData;
+
+        try {
+            if (!availableFiles.length) {
+                await processExcelWorkOrder(businessId, {
+                    actionType: "CREATE_FILE",
+                    targetFileName,
+                    extractedData: {
+                        Fecha: "",
+                        Hora: "",
+                        Personas: "",
+                        Nombre: "",
+                        Canal: "",
+                        Cliente: "",
+                    },
+                });
+            }
+
+            await processExcelWorkOrder(businessId, {
+                actionType: "APPEND_ROW",
+                targetFileName,
+                extractedData: {
+                    Fecha: reservation.date || "",
+                    Hora: reservation.time || "",
+                    Personas: reservation.people || "",
+                    Nombre: reservation.name || "",
+                    Canal: "WHATSAPP",
+                    Cliente: state.customerPhone || customerPhone || "",
+                },
+            });
+
+            return {
+                isTaskComplete: true,
+                currentState: "INIT",
+                currentPlan: undefined,
+                reservationData: { date: null, time: null, people: null, name: null },
+                messages: [new AIMessage(`Listo ${reservation.name || ""}, tu reserva quedo confirmada.`)],
+            };
+        } catch (error: any) {
+            return {
+                isTaskComplete: true,
+                currentState: "READY_TO_SAVE",
+                messages: [new AIMessage(`No pude guardar la reserva por un problema tecnico: ${error?.message || "error desconocido"}. Intenta nuevamente.`)],
+            };
+        }
+    };
+
+    const actionNode = async (state: AgentGraphStateType) => {
+        const availableFiles = await ensureAvailableFiles(state);
+        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+
+        // Si otro agente ya envió JSON estructurado, se respeta y se ejecuta directo.
+        const directRequest = tryParseExecutorRequest(lastUserMessage);
+
+        const plan = directRequest || await spreadsheetExecutorRequestModel.invoke([
+            new SystemMessage(
+                `Convierte la petición a JSON para ejecutar spreadsheet. Responde SOLO JSON válido.\n` +
+                `Acciones permitidas: LIST, LIST_SHEETS, READ_CELL, UPDATE_CELL, APPEND_ROW, CREATE_FILE, NONE.\n` +
+                `Archivos disponibles: ${JSON.stringify(availableFiles)}\n` +
+                `Si no se puede ejecutar por datos faltantes o ambigüedad, usa action=NONE y explica en responseToUser.`
+            ),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
+        ]);
+
+        if (!plan || plan.action === "NONE") {
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(plan?.responseToUser || "Necesito más datos para buscar o editar la hoja de cálculo.")],
+            };
+        }
+
+        try {
+            const toolResult = await (spreadsheetTool as any).invoke({
+                action: plan.action,
+                targetFileName: plan.targetFileName || undefined,
+                sourceId: plan.sourceId || undefined,
+                fileRef: plan.fileRef || undefined,
+                sheet: plan.sheet || undefined,
+                cell: plan.cell || undefined,
+                value: plan.value || undefined,
+                rowValues: Array.isArray(plan.rowValues) ? plan.rowValues : undefined,
+                data: plan.data || undefined,
+            });
+
+            const resultText = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+            const failed = /Error al guardar|No se pudo|Falta '|ambigua|No se encontro archivo|necesito que indiques|problema tecnico/i.test(resultText);
+
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(
+                    failed
+                        ? normalizeSpreadsheetFailureMessage(resultText)
+                        : sanitizeSpreadsheetResultForUser({
+                            action: String(plan.action || ""),
+                            resultText,
+                            requestedMessage: lastUserMessage,
+                            fallback: plan.responseToUser || "Listo, la acción en la hoja de cálculo se completó.",
+                        })
+                )],
+            };
+        } catch (error: any) {
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(`No pude ejecutar la petición en la hoja de cálculo: ${error?.message || "error desconocido"}.`)],
+            };
+        }
+    };
+
+    const ragResponseNode = async (state: AgentGraphStateType) => {
+        const effectiveConfig = state.config || config || {};
         let ragContext = "";
+
         try {
             const retrieval = await retrieveRagContext({ businessId, query: getLastUserMessage(state.messages as BaseMessage[]) });
             ragContext = retrieval.ragContext;
-        } catch (e) {
-            console.error("RAG retrieval error:", e);
+        } catch (error) {
+            console.error("RAG retrieval error:", error);
         }
 
-        const effectiveConfig = state.config || config || {};
-        const reviewerPrompt = `Eres el Supervisor de Calidad y la voz final del sistema.
-Revisa el plan original: ${state.currentPlan} y el resultado del obrero: ${state.workerResult}.
-Contexto del negocio: ${effectiveConfig?.businessDescription || ''}
-Contexto RAG:
-${ragContext}
-
-¿Cumplió con la orden del usuario? 
-Si SÍ, redacta la respuesta final amigable para el usuario. IMPORTANTE: Inicia tu respuesta con 'FINAL_OK:'.
-Si NO (o falló la herramienta), redacta una justificación y corrección para que el obrero lo intente de nuevo. IMPORTANTE: Inicia tu respuesta con 'FINAL_RETRY:'.`;
-
         const reply = await brainModel.invoke([
-            new SystemMessage(reviewerPrompt),
-            ...trimMessagesForModel(state.messages as BaseMessage[])
-        ]);
-
-        const content = normalizeMessageContent((reply as any)?.content);
-        if (content.startsWith("FINAL_OK:") || state.retryCount >= 3) {
-            let finalText = content.replace("FINAL_OK:", "").trim();
-            if (content.startsWith("FINAL_RETRY:")) finalText = content.replace("FINAL_RETRY:", "").trim(); // En caso de que se pase de los reintentos
-            return {
-                isTaskComplete: true,
-                messages: [new AIMessage(finalText)]
-            };
-        } else {
-            return {
-                isTaskComplete: false,
-                currentPlan: content.replace("FINAL_RETRY:", "").trim()
-            };
-        }
-    };
-
-    const directResponseNode = async (state: AgentGraphStateType) => {
-        const effectiveConfig = state.config || config || {};
-        const reviewerPrompt = `Eres el Asistente del sistema. El usuario requiere una respuesta directa. 
-Contexto del negocio: ${effectiveConfig?.businessDescription || ''}`;
-
-        const reply = await brainModel.invoke([
-            new SystemMessage(reviewerPrompt),
-            ...trimMessagesForModel(state.messages as BaseMessage[])
+            new SystemMessage(
+                `Responde con grounding estricto usando el contexto del negocio.\n` +
+                `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
+                `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
+                `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
+                `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`
+            ),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
         return {
             isTaskComplete: true,
-            messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))]
+            messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))],
+        };
+    };
+
+    const directResponseNode = async (state: AgentGraphStateType) => {
+        const effectiveConfig = state.config || config || {};
+        const reply = await brainModel.invoke([
+            new SystemMessage(`Responde directo y breve. Contexto del negocio: ${effectiveConfig?.businessDescription || ""}`),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
+        ]);
+
+        return {
+            isTaskComplete: true,
+            messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))],
         };
     };
 
     const routeAfterPlanner = (state: AgentGraphStateType) => {
         if (state.currentPlan === "RESPONDER_DIRECTO") return "directResponse";
-        if (state.currentPlan === "ACCION_EXCEL" || state.currentPlan === "EXTRAER_DATOS") return "actionNode";
-        return "workerNode";
+        if (state.currentPlan === "ACCION_EXCEL") return "actionNode";
+        if (state.currentPlan === "RESERVATION_FLOW") return "reservationExtractorNode";
+        return "ragResponseNode";
     };
 
-    const routeAfterReviewer = (state: AgentGraphStateType) => {
-        if (state.isTaskComplete === true || state.retryCount >= 3) {
-            return END;
-        }
-        return "workerNode";
-    };
-
-    const routeAfterAction = (state: AgentGraphStateType) => {
-        if (state.isTaskComplete) return END;
-        return "workerNode";
+    const routeAfterReservationExtractor = (state: AgentGraphStateType) => {
+        if (state.currentPlan === "RESERVATION_SAVE" && state.isTaskComplete === false) return "reservationSaveNode";
+        return END;
     };
 
     const workflow = new StateGraph(AgentGraphState)
         .addNode("plannerNode", plannerNode)
-        .addNode("workerNode", workerNode)
-        .addNode("reviewerNode", reviewerNode)
-        .addNode("directResponse", directResponseNode)
         .addNode("actionNode", actionNode)
+        .addNode("reservationExtractorNode", reservationExtractorNode)
+        .addNode("reservationSaveNode", reservationSaveNode)
+        .addNode("ragResponseNode", ragResponseNode)
+        .addNode("directResponse", directResponseNode)
         .addEdge(START, "plannerNode")
         .addConditionalEdges("plannerNode", routeAfterPlanner)
-        .addEdge("workerNode", "reviewerNode")
-        .addConditionalEdges("reviewerNode", routeAfterReviewer)
-        .addEdge("directResponse", END)
-        .addConditionalEdges("actionNode", routeAfterAction);
+        .addConditionalEdges("reservationExtractorNode", routeAfterReservationExtractor)
+        .addEdge("reservationSaveNode", END)
+        .addEdge("actionNode", END)
+        .addEdge("ragResponseNode", END)
+        .addEdge("directResponse", END);
 
-    const checkpointer = getOptionalGraphCheckpointer();
+    const checkpointer = await getGraphCheckpointer();
     if (checkpointer) {
         return (workflow as any).compile({ checkpointer });
     }

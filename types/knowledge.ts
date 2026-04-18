@@ -5,6 +5,10 @@ export type KnowledgeItem = {
     fileName?: string;
     fileUrl?: string;
     fileType?: string;
+    source?: string;
+    sourceId?: string;
+    parentFolderId?: string;
+    driveFileId?: string;
   };
   createdAt?: string;
 };

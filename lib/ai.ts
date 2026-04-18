@@ -64,6 +64,40 @@ export const ConversationStateSchema = z.object({
 
 export const stateExtractorModel = brainModel.withStructuredOutput(ConversationStateSchema);
 
+export const ReservationExtractionSchema = z.object({
+    time: z.string().nullable().default(null).describe("Hora de la reserva si fue mencionada, ej: 20:00, 8pm."),
+    people: z.string().nullable().default(null).describe("Cantidad de personas si fue mencionada."),
+    name: z.string().nullable().default(null).describe("Nombre del cliente si fue mencionado."),
+    date: z.string().nullable().default(null).describe("Fecha si fue mencionada, ej: mañana, 2026-04-16."),
+    isAffirmative: z.boolean().default(false).describe("true solo si el mensaje es una confirmación corta tipo si/ok/dale."),
+});
+
+export const reservationExtractorModel = workerModel.withStructuredOutput(ReservationExtractionSchema);
+
+export const ToolExecutionPlanSchema = z.object({
+    actionType: z.enum(["APPEND_ROW", "UPDATE_CELL", "CREATE_FILE", "NONE"]),
+    targetFileName: z.string().default(""),
+    extractedData: z.record(z.any()).default({}),
+    responseToUser: z.string().default(""),
+});
+
+export const toolExecutionPlanModel = workerModel.withStructuredOutput(ToolExecutionPlanSchema);
+
+export const SpreadsheetExecutorRequestSchema = z.object({
+    action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"]),
+    targetFileName: z.string().optional().default(""),
+    sourceId: z.string().optional().default(""),
+    fileRef: z.string().optional().default(""),
+    sheet: z.string().optional().default(""),
+    cell: z.string().optional().default(""),
+    value: z.string().optional().default(""),
+    rowValues: z.array(z.string()).optional().default([]),
+    data: z.record(z.any()).optional().default({}),
+    responseToUser: z.string().optional().default(""),
+});
+
+export const spreadsheetExecutorRequestModel = workerModel.withStructuredOutput(SpreadsheetExecutorRequestSchema);
+
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });
 }
@@ -231,6 +265,50 @@ function hasPriceSignals(text: string) {
     return /([$€£]\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?\s?(usd|eur|mxn|cop|s\/))/i.test(text || "");
 }
 
+function mediaQueryTerms(query: string) {
+    return String(query || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((t) => t.length >= 3)
+        .slice(0, 12);
+}
+
+function scoreMediaForQuery(file: { url: string; description: string }, query: string) {
+    const haystack = `${file.description} ${file.url}`.toLowerCase();
+    const terms = mediaQueryTerms(query);
+    if (!terms.length) return 0;
+    let score = 0;
+    for (const term of terms) {
+        if (haystack.includes(term)) score += 1;
+    }
+    return score;
+}
+
+function selectMediaByQuery(params: {
+    files: Array<{ url: string; description: string }>;
+    query: string;
+    asksForEverything: boolean;
+    asksImage: boolean;
+}) {
+    const ranked = [...params.files]
+        .map((file) => {
+            const score = scoreMediaForQuery(file, params.query);
+            const imageBoost = params.asksImage && /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(file.description)
+                ? 1
+                : 0;
+            return { file, score: score + imageBoost };
+        })
+        .sort((a, b) => b.score - a.score);
+
+    const filtered = ranked.filter((item) => item.score > 0).map((item) => item.file);
+    if (!filtered.length) return [] as Array<{ url: string; description: string }>;
+
+    return params.asksForEverything ? filtered.slice(0, 5) : filtered.slice(0, 1);
+}
+
 async function loadMenuFallbackContext(businessId: string) {
     const rows = await prisma.knowledgeItem.findMany({
         where: { businessId },
@@ -324,9 +402,14 @@ export const aiService = {
             }
 
             let systemPrompt = options.systemPrompt?.trim() || config?.systemPrompt || `Eres un asistente virtual experto para ${business.name}. Sé amable, conciso y utiliza emojis. Contexto del negocio: ${config?.businessDescription || ''}`;
+            const hasAssistantHistory = messages.some((m) => m.role === "assistant");
 
             if (config?.welcomeMessage) {
                 systemPrompt += `\n\nAl iniciar una conversación o saludar, tu mensaje debe ser en base a la siguiente plantilla de bienvenida: "${config.welcomeMessage}". No repitas este saludo si la conversación ya está en curso.`;
+            }
+
+            if (hasAssistantHistory) {
+                systemPrompt += "\n\nCONTEXTO ACTIVO: esta conversacion ya fue iniciada. No envíes mensaje de bienvenida ni reinicies la charla; responde directamente a la última solicitud del usuario.";
             }
 
             if (config?.customResponses && Array.isArray(config.customResponses) && config.customResponses.length > 0) {
@@ -358,6 +441,7 @@ export const aiService = {
                 "Si no hay evidencia textual exacta, responde exactamente: 'Lo siento, no tengo esa información específica en mis registros'. No uses conocimiento externo.";
             systemPrompt += "\nREGLA ESTRICTA DE HERRAMIENTAS: nunca respondas con frases de espera tipo 'voy a revisar' o 'espera un momento'. " +
                 "Cuando una accion dependa de herramientas, prioriza ejecutar la herramienta y luego responder con el resultado.";
+            systemPrompt += "\nREGLA DE PRIVACIDAD: nunca reveles nombres, telefonos o datos personales de terceros en reservas o agendas. Solo informa disponibilidad (disponible/no disponible) sin identificar personas.";
 
             const asksSensitiveData = /(precio|precios|costo|costos|tarifa|tarifas|valor|cu[aá]nto|horario|horarios|stock|disponible|promoci[oó]n|promo|descuento|pol[ií]tica|condiciones)/i.test(lastUserMessage);
 
@@ -465,21 +549,16 @@ export const aiService = {
                 }
             }
 
-            // Cuando el usuario pide explícitamente un archivo/menu, forzamos etiqueta MEDIA_URL
-            // para que el canal (Telegram/WhatsApp) envíe el adjunto real.
+            // Cuando el usuario pide archivos, solo adjuntamos media si existe coincidencia semántica mínima
+            // entre consulta y archivo para evitar enviar imágenes/documentos equivocados.
             if (asksForDocument && availableFiles.length > 0 && !/\[MEDIA_URL:\s*[^\]]+\]/i.test(finalResponse)) {
                 const asksImage = /(imagen|im[aá]genes|foto|fotos|jpg|jpeg|png|webp|gif)/i.test(lastUserMessage);
-                const prioritized = asksImage
-                    ? [...availableFiles].sort((a, b) => {
-                        const scoreA = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(a.description) ? 1 : 0;
-                        const scoreB = /(image|png|jpg|jpeg|webp|gif|imagen|foto)/i.test(b.description) ? 1 : 0;
-                        return scoreB - scoreA;
-                    })
-                    : availableFiles;
-
-                const filesToShare = asksForEverything
-                    ? prioritized.slice(0, 5)
-                    : prioritized.slice(0, 1);
+                const filesToShare = selectMediaByQuery({
+                    files: availableFiles,
+                    query: lastUserMessage,
+                    asksForEverything,
+                    asksImage,
+                });
 
                 const mediaTags = filesToShare
                     .filter((file) => Boolean(file.url))
