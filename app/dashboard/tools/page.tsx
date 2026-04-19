@@ -40,12 +40,6 @@ type SpreadsheetPreview = {
     error?: string;
 };
 
-const GOOGLE_CONNECTION_TOOL_SLUGS: ToolCard["slug"][] = ["google-calendar", "knowledge-excel-viewer"];
-
-function usesGoogleConnection(slug: ToolCard["slug"]) {
-    return GOOGLE_CONNECTION_TOOL_SLUGS.includes(slug);
-}
-
 function isSpreadsheetFile(fileName: string, fileType?: string) {
     if (/\.(xlsx|xlsm|xls)$/i.test(fileName)) return true;
     return [
@@ -715,48 +709,22 @@ export default function ToolsStore() {
     const [excelPreview, setExcelPreview] = useState<SpreadsheetPreview["data"] | null>(null);
     const [loadingExcelPreview, setLoadingExcelPreview] = useState(false);
 
-    useEffect(() => {
-        const googleDriveState = searchParams.get("googleDrive");
-        const toolSlug = searchParams.get("tool");
-        if (!googleDriveState) return;
-
-        if (googleDriveState === "connected") {
-            setStatusMessage({
-                type: "success",
-                text: `Google conectado correctamente${toolSlug ? ` para ${toolSlug}` : ""}.`,
-            });
-            return;
-        }
-
-        setStatusMessage({
-            type: "error",
-            text: `No se pudo completar la conexion con Google (${googleDriveState}).`,
-        });
-    }, [searchParams]);
-
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
         if (!activeAgent) return;
 
         const config = activeAgent.config || activeAgent;
-        const googleDriveConnected = Boolean(
-            config?.googleDrive && typeof config.googleDrive === "object" && (config.googleDrive as Record<string, unknown>).connected
-        );
         if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
             setTools(prevTools => prevTools.map(tool => ({
                 ...tool,
-                status: usesGoogleConnection(tool.slug)
-                    ? (googleDriveConnected ? "connected" : "disconnected")
-                    : (config.recommendedTools.includes(tool.id) ? "connected" : "disconnected")
+                status: config.recommendedTools.includes(tool.id) ? "connected" : "disconnected"
             })));
             return;
         }
 
         setTools(prevTools => prevTools.map(tool => ({
             ...tool,
-            status: usesGoogleConnection(tool.slug)
-                ? (googleDriveConnected ? "connected" : "disconnected")
-                : tool.status,
+            status: tool.status,
         })));
     }, [activeAgent]);
 
@@ -807,18 +775,6 @@ export default function ToolsStore() {
     };
 
     const handlePrimaryAction = (tool: ToolCard) => {
-        if (usesGoogleConnection(tool.slug) && tool.status === "disconnected") {
-            const businessId = activeAgent?.id;
-            if (!businessId) {
-                setStatusMessage({ type: "error", text: "Selecciona un agente para conectar Google." });
-                return;
-            }
-
-            const connectUrl = `/api/integrations/google-drive/connect?businessId=${encodeURIComponent(businessId)}&tool=${encodeURIComponent(tool.slug)}`;
-            window.location.href = connectUrl;
-            return;
-        }
-
         if (tool.slug === "knowledge-excel-viewer" && tool.status === "connected") {
             void openExcelViewer();
             return;
@@ -852,7 +808,6 @@ export default function ToolsStore() {
             return "Configurar";
         }
 
-        if (usesGoogleConnection(tool.slug)) return "Conectar Google";
         return "Conectar";
     };
 
