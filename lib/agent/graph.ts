@@ -14,6 +14,7 @@ const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES
 
 type ReservationState = "INIT" | "EXTRACTING_RESERVATION" | "READY_TO_SAVE";
 type ReservationData = { date: string | null; time: string | null; people: string | null; name: string | null };
+type SpreadsheetSourceLock = { sourceIds: string[]; fileUrls: string[] };
 
 const AgentGraphState = Annotation.Root({
     ...MessagesAnnotation.spec,
@@ -49,6 +50,18 @@ const AgentGraphState = Annotation.Root({
     retrievalLayer: Annotation<"productos" | "operaciones" | "general">({
         reducer: (_prev, next) => next,
         default: () => "general",
+    }),
+    spreadsheetSourceLock: Annotation<SpreadsheetSourceLock>({
+        reducer: (_prev, next) => next,
+        default: () => ({ sourceIds: [], fileUrls: [] }),
+    }),
+    repeatedPromptCount: Annotation<number>({
+        reducer: (_prev, next) => next,
+        default: () => 0,
+    }),
+    lastPromptFingerprint: Annotation<string>({
+        reducer: (_prev, next) => next,
+        default: () => "",
     }),
 });
 
@@ -223,6 +236,10 @@ function hasRecentReservationContext(messages: BaseMessage[]) {
 
 function looksLikeReservationFollowUp(text: string) {
     return /(si|sí|ok|dale|confirmo|cambia|cambiar|mejor|para\s+las|a\s+las|somos|seremos|a nombre de|me llamo|soy\s+[A-Za-z])/i.test(String(text || "").toLowerCase());
+}
+
+function promptFingerprint(value: string) {
+    return normalizeKey(value).slice(0, 240);
 }
 
 async function loadSpreadsheetBufferForGraph(fileUrl: string) {
@@ -434,11 +451,28 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         const missingField = getFirstMissingReservationField(mergedData);
         if (missingField) {
+            const prompt = buildMissingFieldQuestion(missingField);
+            const fingerprint = promptFingerprint(prompt);
+            const repeated = state.lastPromptFingerprint === fingerprint ? (state.repeatedPromptCount || 0) + 1 : 1;
+
+            if (repeated >= 3) {
+                return {
+                    isTaskComplete: true,
+                    currentState: "EXTRACTING_RESERVATION",
+                    reservationData: mergedData,
+                    lastPromptFingerprint: fingerprint,
+                    repeatedPromptCount: repeated,
+                    messages: [new AIMessage("Para continuar sin errores, comparte todo junto en un solo mensaje: fecha, hora, cantidad de personas y nombre.")],
+                };
+            }
+
             return {
                 isTaskComplete: true,
                 currentState: "EXTRACTING_RESERVATION",
                 reservationData: mergedData,
-                messages: [new AIMessage(buildMissingFieldQuestion(missingField))],
+                lastPromptFingerprint: fingerprint,
+                repeatedPromptCount: repeated,
+                messages: [new AIMessage(prompt)],
             };
         }
 
@@ -454,6 +488,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             currentState: "READY_TO_SAVE",
             reservationData: mergedData,
             messages: [new AIMessage(`Confírmame por favor con 'sí' para guardar esta reserva:\n${summary}`)],
+            repeatedPromptCount: 0,
+            lastPromptFingerprint: "",
         };
     };
 
@@ -547,6 +583,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 currentState: "INIT",
                 currentPlan: undefined,
                 reservationData: { date: null, time: null, people: null, name: null },
+                repeatedPromptCount: 0,
+                lastPromptFingerprint: "",
                 messages: [new AIMessage(`Listo ${reservation.name || ""}, tu reserva quedo confirmada.`)],
             };
         } catch (error: any) {
@@ -564,6 +602,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         // Si otro agente ya envió JSON estructurado, se respeta y se ejecuta directo.
         const directRequest = tryParseExecutorRequest(lastUserMessage);
+        const allowedSourceIds = state.spreadsheetSourceLock?.sourceIds || [];
+        const allowedFileUrls = state.spreadsheetSourceLock?.fileUrls || [];
 
         const plan = directRequest || await spreadsheetExecutorRequestModel.invoke([
             new SystemMessage(
@@ -595,6 +635,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 value: plan.value || undefined,
                 rowValues: Array.isArray(plan.rowValues) ? plan.rowValues : undefined,
                 data: plan.data || undefined,
+                allowedSourceIds,
+                allowedFileUrls,
             });
 
             const resultText = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
@@ -624,6 +666,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const ragResponseNode = async (state: AgentGraphStateType) => {
         const effectiveConfig = state.config || config || {};
         let ragContext = "";
+        let nextSourceLock: SpreadsheetSourceLock = state.spreadsheetSourceLock || { sourceIds: [], fileUrls: [] };
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const retrievalLayer = state.retrievalLayer || classifyQueryLayer(lastUserMessage);
 
@@ -634,6 +677,24 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 retrievalLayer,
             });
             ragContext = retrieval.ragContext;
+
+            const spreadsheetCandidates = (retrieval.selected || [])
+                .filter((item) => {
+                    const md = item.metadata || {};
+                    const fileName = String((md as any).fileName || "").toLowerCase();
+                    const fileType = String((md as any).fileType || "").toLowerCase();
+                    return /\.xlsx|\.xlsm|\.xls/.test(fileName) || /spreadsheet|excel/.test(fileType);
+                })
+                .slice(0, 8);
+
+            nextSourceLock = {
+                sourceIds: Array.from(new Set(spreadsheetCandidates
+                    .map((x) => String((x.metadata as any)?.sourceId || "").trim())
+                    .filter(Boolean))),
+                fileUrls: Array.from(new Set(spreadsheetCandidates
+                    .map((x) => String((x.metadata as any)?.fileUrl || "").trim())
+                    .filter(Boolean))),
+            };
         } catch (error) {
             console.error("RAG retrieval error:", error);
         }
@@ -652,6 +713,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         return {
             isTaskComplete: true,
+            spreadsheetSourceLock: nextSourceLock,
             messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))],
         };
     };
@@ -659,7 +721,10 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const directResponseNode = async (state: AgentGraphStateType) => {
         const effectiveConfig = state.config || config || {};
         const reply = await brainModel.invoke([
-            new SystemMessage(`Responde directo y breve. Contexto del negocio: ${effectiveConfig?.businessDescription || ""}`),
+            new SystemMessage(
+                `Responde directo y breve. Contexto del negocio: ${effectiveConfig?.businessDescription || ""}. ` +
+                `Nunca reveles datos personales (nombre, telefono, identificadores) de otros clientes.`
+            ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
