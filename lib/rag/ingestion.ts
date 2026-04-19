@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
 import { invalidateAiCachesForBusiness } from "@/lib/ai";
 import { invalidateRagRetrieverCacheForBusiness } from "@/lib/rag/retriever";
-import { inferLayerFromMetadata } from "@/lib/rag/layers";
+import { inferLayerFromMetadata, normalizeKnowledgeLayer } from "@/lib/rag/layers";
 
 type IngestionMetadata = {
     source?: string;
@@ -188,7 +188,7 @@ export class IngestionService {
                                 : (typeof metadata.fileName === "string" ? metadata.fileName : "document"),
                             fileType: metadata.fileType || metadata.type || "txt",
                             layer: typeof metadata.layer === "string" && metadata.layer.trim()
-                                ? metadata.layer.trim().toLowerCase()
+                                ? normalizeKnowledgeLayer(metadata.layer.trim().toLowerCase())
                                 : inferredLayer,
                             lang: typeof metadata.lang === "string" ? metadata.lang : detectLang(chunk.content),
                             ingestedAt: new Date().toISOString(),
@@ -274,7 +274,7 @@ export class IngestionService {
                         ...metadata,
                         tags: item.tags,
                         layer: typeof metadata.layer === "string" && metadata.layer.trim()
-                            ? metadata.layer.trim().toLowerCase()
+                            ? normalizeKnowledgeLayer(metadata.layer.trim().toLowerCase())
                             : inferLayerFromMetadata({ ...metadata, tags: item.tags }),
                         relevance: item.relevance,
                         isAgentGenerated: true,

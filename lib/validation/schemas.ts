@@ -43,7 +43,8 @@ export const knowledgeCreateSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").optional(),
   url: z.string().url("La URL no es válida").optional(),
   type: z.string().optional(),
-  layer: z.enum(["productos", "operaciones", "general"]).optional(),
+  layer: z.enum(["products", "operations", "general", "productos", "operaciones"]).optional(),
+  category: z.enum(["products", "operations", "general", "productos", "operaciones"]).optional(),
 }).refine((data) => {
   if (data.url) return true;
   return Boolean(data.text && data.name);

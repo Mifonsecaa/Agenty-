@@ -103,6 +103,14 @@ function normalizeRef(value: string) {
     return String(value || "").trim().toLowerCase();
 }
 
+function redactSensitiveText(value: string) {
+    let safe = String(value || "");
+    safe = safe.replace(/(nombre\s*:\s*)([^;\n]+)/gi, "$1[reservado]");
+    safe = safe.replace(/(telefono|teléfono|celular|whatsapp)\s*[:\-]?\s*\+?\d[\d\s\-]{6,}/gi, "$1: [reservado]");
+    safe = safe.replace(/\b\+?\d[\d\s\-]{8,}\b/g, "[reservado]");
+    return safe;
+}
+
 function buildFileOptionsMessage(files: SpreadsheetFileRef[]) {
     const options = files.slice(0, 12);
     return [
@@ -547,7 +555,7 @@ export const createKnowledgeTool = (businessId: string) => {
                 // 3. Formatear resultados para el agente
                 const context = results
                     .map(r => {
-                        let text = `- ${r.content}`;
+                        let text = `- ${redactSensitiveText(String(r.content || ""))}`;
                         const meta = r.metadata || {};
                         if (meta.fileUrl) {
                             text += `\n\n[FILE AVAILABLE]: This content is associated with a file. If the user asks for the document, image, or file related to this, you MUST include this tag at the end of your response: [MEDIA_URL: ${meta.fileUrl}]`;
