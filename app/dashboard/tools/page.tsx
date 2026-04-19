@@ -992,9 +992,6 @@ export default function ToolsStore() {
                         </div>
 
                         <h3 className="text-xl font-bold mb-2 relative z-10">{tool.name}</h3>
-                        {usesGoogleConnection(tool.slug) && (
-                            <p className="text-[11px] text-blue-300/90 mb-2 relative z-10">Integracion con Google</p>
-                        )}
                         <p className="text-sm text-white/50 mb-6 min-h-10 relative z-10">
                             {tool.description}
                         </p>
@@ -1003,7 +1000,7 @@ export default function ToolsStore() {
                             {tool.status === "connected" ? (
                                 <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
                                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                    {usesGoogleConnection(tool.slug) ? "Google conectado" : "Activado"}
+                                    Activado
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2 text-sm text-white/40 font-medium">
