@@ -6,6 +6,9 @@ import { processExcelWorkOrder } from "../tools/excel-handler";
 import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { getGraphCheckpointer } from "./checkpointer";
 import { classifyQueryLayer } from "@/lib/rag/layers";
+import { workbookToPreview } from "@/lib/knowledge/spreadsheet";
+import path from "path";
+import { readFile } from "fs/promises";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 
@@ -81,7 +84,7 @@ function trimMessagesForModel(messages: BaseMessage[]) {
 }
 
 function isReservationIntent(text: string) {
-    return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno)/i.test(String(text || ""));
+    return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno|horario|hora|\b\d{1,2}(:\d{2})?\s?(am|pm)?\b)/i.test(String(text || ""));
 }
 
 function isSpreadsheetEditIntent(text: string) {
@@ -157,7 +160,148 @@ function isReservationAvailabilityQuery(text: string) {
 }
 
 function isPrivacyProbeOnReservation(text: string) {
-    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona)/i.test(String(text || ""));
+    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona|cliente|quien tiene|quién tiene|de quien|de quién)/i.test(String(text || ""));
+}
+
+function normalizeKey(value: string) {
+    return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "")
+        .trim();
+}
+
+function normalizeDateKey(value: string) {
+    return normalizeKey(value);
+}
+
+function normalizeTimeKey(value: string) {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return "";
+
+    const match = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+    if (!match) return normalizeKey(text);
+
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || "0");
+    const meridiem = (match[3] || "").toLowerCase();
+
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+
+    const hh = String(Math.max(0, Math.min(23, hour))).padStart(2, "0");
+    const mm = String(Math.max(0, Math.min(59, minute))).padStart(2, "0");
+    return `${hh}:${mm}`;
+}
+
+function toCellAddress(colIndex: number, rowNumber: number) {
+    let n = colIndex;
+    let label = "";
+    while (n >= 0) {
+        label = String.fromCharCode((n % 26) + 65) + label;
+        n = Math.floor(n / 26) - 1;
+    }
+    return `${label}${rowNumber}`;
+}
+
+function redactReservationSensitiveInfo(text: string) {
+    let safe = String(text || "");
+    safe = safe.replace(/a nombre de\s+([A-Za-zÁÉÍÓÚÑáéíóúñ\s]{2,60})/gi, "a nombre de [reservado]");
+    safe = safe.replace(/(telefono|teléfono|celular|whatsapp)\s*[:\-]?\s*\+?\d[\d\s\-]{6,}/gi, "$1: [reservado]");
+    safe = safe.replace(/\b\+?\d[\d\s\-]{8,}\b/g, "[reservado]");
+    return safe;
+}
+
+function hasRecentReservationContext(messages: BaseMessage[]) {
+    const recent = trimMessagesForModel(messages).slice(-6);
+    return recent.some((msg: any) => {
+        const content = normalizeMessageContent(msg?.content || "");
+        return /(reserva|agendar|hora|personas|a nombre de|confirmame|confírmame)/i.test(content);
+    });
+}
+
+function looksLikeReservationFollowUp(text: string) {
+    return /(si|sí|ok|dale|confirmo|cambia|cambiar|mejor|para\s+las|a\s+las|somos|seremos|a nombre de|me llamo|soy\s+[A-Za-z])/i.test(String(text || "").toLowerCase());
+}
+
+async function loadSpreadsheetBufferForGraph(fileUrl: string) {
+    if (fileUrl.startsWith("/uploads/")) {
+        const localPath = path.join(process.cwd(), "public", fileUrl.replace(/^\//, ""));
+        const buffer = await readFile(localPath);
+        return { buffer };
+    }
+
+    if (/^https?:\/\//i.test(fileUrl)) {
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+            throw new Error(`REMOTE_FILE_FETCH_FAILED:${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return { buffer: Buffer.from(arrayBuffer) };
+    }
+
+    throw new Error("UNSUPPORTED_FILE_URL");
+}
+
+async function inspectReservationSheet(params: {
+    fileUrl: string;
+    reservation: ReservationData;
+    customerPhone?: string;
+}) {
+    const loaded = await loadSpreadsheetBufferForGraph(params.fileUrl);
+    const sheets = workbookToPreview(loaded.buffer, { maxSheets: 6, maxRows: 600 });
+
+    const requestedDate = normalizeDateKey(params.reservation.date || "");
+    const requestedTime = normalizeTimeKey(params.reservation.time || "");
+    const requestedName = normalizeKey(params.reservation.name || "");
+    const requestedPhone = normalizeKey(params.customerPhone || "");
+
+    let occupiedByOther: null | { sheet: string; rowNumber: number } = null;
+    let sameCustomerRow: null | { sheet: string; rowNumber: number; idx: Record<string, number> } = null;
+
+    for (const sheet of sheets) {
+        const headerIdx = sheet.headers.map((h: string) => normalizeKey(h));
+        const idx = {
+            fecha: headerIdx.findIndex((h: string) => /fecha|dia/.test(h)),
+            hora: headerIdx.findIndex((h: string) => /hora/.test(h)),
+            nombre: headerIdx.findIndex((h: string) => /nombre|cliente/.test(h)),
+            personas: headerIdx.findIndex((h: string) => /personas|cantidad|asistentes/.test(h)),
+            telefono: headerIdx.findIndex((h: string) => /telefono|celular|whatsapp|contacto/.test(h)),
+            estado: headerIdx.findIndex((h: string) => /estado|status/.test(h)),
+        };
+
+        if (idx.hora < 0) continue;
+
+        for (let rowIndex = 0; rowIndex < sheet.rows.length; rowIndex++) {
+            const row = sheet.rows[rowIndex] || [];
+            const rowNumber = rowIndex + 2;
+            const rowEstado = idx.estado >= 0 ? normalizeKey(String(row[idx.estado] || "")) : "";
+            if (/cancelad|anulad|rechazad/.test(rowEstado)) continue;
+
+            const rowDate = idx.fecha >= 0 ? normalizeDateKey(String(row[idx.fecha] || "")) : "";
+            const rowTime = idx.hora >= 0 ? normalizeTimeKey(String(row[idx.hora] || "")) : "";
+            const rowName = idx.nombre >= 0 ? normalizeKey(String(row[idx.nombre] || "")) : "";
+            const rowPhone = idx.telefono >= 0 ? normalizeKey(String(row[idx.telefono] || "")) : "";
+
+            const dateMatches = requestedDate ? (rowDate === requestedDate || rowDate.includes(requestedDate) || requestedDate.includes(rowDate)) : true;
+            const timeMatches = requestedTime ? rowTime === requestedTime : false;
+            const sameCustomer = Boolean(
+                (requestedPhone && rowPhone && requestedPhone === rowPhone) ||
+                (requestedName && rowName && requestedName === rowName)
+            );
+
+            if (dateMatches && sameCustomer && !sameCustomerRow) {
+                sameCustomerRow = { sheet: sheet.name, rowNumber, idx };
+            }
+
+            if (dateMatches && timeMatches && !sameCustomer) {
+                occupiedByOther = { sheet: sheet.name, rowNumber };
+            }
+        }
+    }
+
+    return { occupiedByOther, sameCustomerRow };
 }
 
 function sanitizeSpreadsheetResultForUser(params: {
@@ -167,7 +311,8 @@ function sanitizeSpreadsheetResultForUser(params: {
     fallback: string;
 }) {
     const requested = String(params.requestedMessage || "");
-    const value = String(params.resultText || "").trim();
+    const value = redactReservationSensitiveInfo(String(params.resultText || "").trim());
+    const safeFallback = redactReservationSensitiveInfo(String(params.fallback || ""));
 
     if (isReservationAvailabilityQuery(requested) && isPrivacyProbeOnReservation(requested)) {
         return "Por seguridad, no comparto datos personales de reservas. Solo puedo confirmar disponibilidad general de horarios.";
@@ -183,14 +328,14 @@ function sanitizeSpreadsheetResultForUser(params: {
     }
 
     if (params.action === "LIST" || params.action === "LIST_SHEETS") {
-        return params.fallback || "Listo, encontré los archivos y hojas disponibles.";
+        return safeFallback || "Listo, encontré los archivos y hojas disponibles.";
     }
 
     if (isReservationAvailabilityQuery(requested) && /Fila agregada:/i.test(value)) {
         return "Listo, la reserva fue registrada correctamente.";
     }
 
-    return params.fallback || value;
+    return safeFallback || value;
 }
 
 export const createAgentGraph = async (businessId: string, businessName: string, config: any, customerPhone?: string) => {
@@ -215,6 +360,14 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         if (state.currentState === "EXTRACTING_RESERVATION" || state.currentState === "READY_TO_SAVE") {
             return { currentPlan: "RESERVATION_FLOW", retrievalLayer };
+        }
+
+        if (hasRecentReservationContext(state.messages as BaseMessage[]) && looksLikeReservationFollowUp(lastUserMessage)) {
+            return {
+                currentPlan: "RESERVATION_FLOW",
+                currentState: "EXTRACTING_RESERVATION" as ReservationState,
+                retrievalLayer,
+            };
         }
 
         if (isReservationIntent(lastUserMessage)) {
@@ -244,7 +397,12 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const reservationExtractorNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const extracted = await reservationExtractorModel.invoke([
-            new SystemMessage("Extrae SOLO del ultimo mensaje del usuario los campos date/time/people/name y si es afirmacion corta. Si no aparece, devuelve null."),
+            new SystemMessage(
+                `Extrae datos de reserva usando el contexto conversacional reciente y el estado actual.\n` +
+                `Estado actual conocido: ${JSON.stringify(state.reservationData || {})}\n` +
+                `Debes completar date/time/people/name e isAffirmative.\n` +
+                `No borres datos previos si el ultimo mensaje solo corrige un campo.`
+            ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
@@ -320,6 +478,57 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 });
             }
 
+            const targetFile = (await ensureAvailableFiles(state)).find((f) => f.fileName === targetFileName) || null;
+            if (targetFile?.fileUrl) {
+                const inspection = await inspectReservationSheet({
+                    fileUrl: targetFile.fileUrl,
+                    reservation,
+                    customerPhone: state.customerPhone || customerPhone,
+                }).catch(() => ({ occupiedByOther: null, sameCustomerRow: null }));
+
+                if (inspection.occupiedByOther) {
+                    return {
+                        isTaskComplete: true,
+                        currentState: "EXTRACTING_RESERVATION",
+                        currentPlan: "RESERVATION_FLOW",
+                        messages: [new AIMessage("Ese horario específico ya está ocupado. Si quieres, te ayudo a reservar una hora cercana disponible.")],
+                    };
+                }
+
+                if (inspection.sameCustomerRow) {
+                    const row = inspection.sameCustomerRow;
+                    const updates: Array<{ sheet: string; cell: string; value: string }> = [];
+                    if (row.idx.hora >= 0 && reservation.time) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.hora, row.rowNumber), value: reservation.time });
+                    }
+                    if (row.idx.personas >= 0 && reservation.people) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.personas, row.rowNumber), value: reservation.people });
+                    }
+                    if (row.idx.nombre >= 0 && reservation.name) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.nombre, row.rowNumber), value: reservation.name });
+                    }
+
+                    for (const update of updates) {
+                        await (spreadsheetTool as any).invoke({
+                            action: "UPDATE_CELL",
+                            targetFileName,
+                            fileRef: targetFileName,
+                            sheet: update.sheet,
+                            cell: update.cell,
+                            value: update.value,
+                        });
+                    }
+
+                    return {
+                        isTaskComplete: true,
+                        currentState: "INIT",
+                        currentPlan: undefined,
+                        reservationData: { date: null, time: null, people: null, name: null },
+                        messages: [new AIMessage(`Listo ${reservation.name || ""}, actualicé tu reserva.`)],
+                    };
+                }
+            }
+
             await processExcelWorkOrder(businessId, {
                 actionType: "APPEND_ROW",
                 targetFileName,
@@ -361,6 +570,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 `Convierte la petición a JSON para ejecutar spreadsheet. Responde SOLO JSON válido.\n` +
                 `Acciones permitidas: LIST, LIST_SHEETS, READ_CELL, UPDATE_CELL, APPEND_ROW, CREATE_FILE, NONE.\n` +
                 `Archivos disponibles: ${JSON.stringify(availableFiles)}\n` +
+                `REGLAS CRITICAS: nunca expongas nombres o telefonos de terceros en responseToUser.\n` +
+                `Para disponibilidad de reservas, valida el slot exacto solicitado (fecha + hora). Una reserva a las 5pm NO bloquea las 6pm.\n` +
                 `Si no se puede ejecutar por datos faltantes o ambigüedad, usa action=NONE y explica en responseToUser.`
             ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
