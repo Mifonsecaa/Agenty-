@@ -7,6 +7,7 @@ import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
+import { classifyQueryLayer } from '@/lib/rag/layers';
 import { z } from "zod";
 
 console.log("[AIService] Module Loading...");
@@ -361,14 +362,19 @@ export const aiService = {
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
             let ragTopScore = 0;
-            
+            let retrievalLayer = classifyQueryLayer(lastUserMessage);
+
             const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
             const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
             const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
 
             try {
                 if (lastUserMessage) {
-                    const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
+                    const retrieval = await retrieveRagContext({
+                        businessId,
+                        query: lastUserMessage,
+                        retrievalLayer,
+                    });
                     ragContext = retrieval.ragContext;
                     availableFiles = retrieval.availableFiles;
                     ragTopScore = retrieval.selected?.[0]?.combinedScore || 0;
@@ -423,7 +429,7 @@ export const aiService = {
 
             // Inyectar contexto RAG al prompt
             if (ragContext) {
-                systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
+                systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG | CAPA=${retrievalLayer}):\n${ragContext}`;
             }
 
             // Inyectar instrucciones para archivos

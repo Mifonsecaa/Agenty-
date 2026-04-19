@@ -155,7 +155,7 @@ export async function POST(req: Request) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, encoding, name, type, url } = validation.data!;
+        let { businessId, text, encoding, name, type, url, layer } = validation.data!;
 
         // --- CAMBIOS APLICADOS AQUÍ PARA SOPORTAR ARCHIVOS DE SUPABASE ---
         let safeType = type || "application/octet-stream";
@@ -349,6 +349,7 @@ export async function POST(req: Request) {
                 fileUrl,
                 source: url ? "website" : "manual_ingestion",
                 url: url || null,
+                layer,
             },
         });
 
@@ -358,6 +359,7 @@ export async function POST(req: Request) {
                 fileName: name || "document",
                 fileType: safeType,
                 fileUrl,
+                layer,
             });
 
             return NextResponse.json({

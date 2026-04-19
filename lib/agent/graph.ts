@@ -5,6 +5,7 @@ import { brainModel, reservationExtractorModel, spreadsheetExecutorRequestModel 
 import { processExcelWorkOrder } from "../tools/excel-handler";
 import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { getGraphCheckpointer } from "./checkpointer";
+import { classifyQueryLayer } from "@/lib/rag/layers";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 
@@ -41,6 +42,10 @@ const AgentGraphState = Annotation.Root({
     availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
+    }),
+    retrievalLayer: Annotation<"productos" | "operaciones" | "general">({
+        reducer: (_prev, next) => next,
+        default: () => "general",
     }),
 });
 
@@ -206,17 +211,22 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
     const plannerNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const retrievalLayer = classifyQueryLayer(lastUserMessage);
 
         if (state.currentState === "EXTRACTING_RESERVATION" || state.currentState === "READY_TO_SAVE") {
-            return { currentPlan: "RESERVATION_FLOW" };
+            return { currentPlan: "RESERVATION_FLOW", retrievalLayer };
         }
 
         if (isReservationIntent(lastUserMessage)) {
-            return { currentPlan: "RESERVATION_FLOW", currentState: "EXTRACTING_RESERVATION" as ReservationState };
+            return {
+                currentPlan: "RESERVATION_FLOW",
+                currentState: "EXTRACTING_RESERVATION" as ReservationState,
+                retrievalLayer,
+            };
         }
 
         if (isSpreadsheetEditIntent(lastUserMessage)) {
-            return { currentPlan: "ACCION_EXCEL" };
+            return { currentPlan: "ACCION_EXCEL", retrievalLayer };
         }
 
         const reply = await brainModel.invoke([
@@ -227,6 +237,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         const plan = normalizeMessageContent((reply as any)?.content);
         return {
             currentPlan: /RESPONDER_DIRECTO/i.test(plan) ? "RESPONDER_DIRECTO" : "RESPONDER_CON_RAG",
+            retrievalLayer,
         };
     };
 
@@ -402,9 +413,15 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const ragResponseNode = async (state: AgentGraphStateType) => {
         const effectiveConfig = state.config || config || {};
         let ragContext = "";
+        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const retrievalLayer = state.retrievalLayer || classifyQueryLayer(lastUserMessage);
 
         try {
-            const retrieval = await retrieveRagContext({ businessId, query: getLastUserMessage(state.messages as BaseMessage[]) });
+            const retrieval = await retrieveRagContext({
+                businessId,
+                query: lastUserMessage,
+                retrievalLayer,
+            });
             ragContext = retrieval.ragContext;
         } catch (error) {
             console.error("RAG retrieval error:", error);
@@ -414,6 +431,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             new SystemMessage(
                 `Responde con grounding estricto usando el contexto del negocio.\n` +
                 `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
+                `Capa prioritaria de consulta: ${retrievalLayer}\n` +
                 `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
                 `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
                 `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`
