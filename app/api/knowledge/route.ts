@@ -14,7 +14,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals, intersectMenuEntries } from "@/lib/rag/menu-precision";
 import { extractSpreadsheetText } from "@/lib/knowledge/spreadsheet";
-import { normalizeKnowledgeLayer } from "@/lib/rag/layers";
 
 const ENABLE_INLINE_QUEUE_KICKOFF = process.env.KNOWLEDGE_INLINE_KICKOFF !== "false";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -156,8 +155,7 @@ export async function POST(req: Request) {
             return validationErrorResponse(validation.errors!);
         }
 
-        let { businessId, text, encoding, name, type, url, layer, category } = validation.data!;
-        const resolvedLayer = normalizeKnowledgeLayer((category || layer) as string | undefined);
+        let { businessId, text, encoding, name, type, url, layer } = validation.data!;
 
         // --- CAMBIOS APLICADOS AQUÍ PARA SOPORTAR ARCHIVOS DE SUPABASE ---
         let safeType = type || "application/octet-stream";
@@ -351,7 +349,7 @@ export async function POST(req: Request) {
                 fileUrl,
                 source: url ? "website" : "manual_ingestion",
                 url: url || null,
-                layer: resolvedLayer,
+                layer,
             },
         });
 
@@ -361,7 +359,7 @@ export async function POST(req: Request) {
                 fileName: name || "document",
                 fileType: safeType,
                 fileUrl,
-                layer: resolvedLayer,
+                layer,
             });
 
             return NextResponse.json({

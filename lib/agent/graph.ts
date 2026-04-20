@@ -5,7 +5,7 @@ import { brainModel, reservationExtractorModel, spreadsheetExecutorRequestModel 
 import { processExcelWorkOrder } from "../tools/excel-handler";
 import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { getGraphCheckpointer } from "./checkpointer";
-import { classifyQueryLayer, type RetrievalLayer } from "@/lib/rag/layers";
+import { classifyQueryLayer } from "@/lib/rag/layers";
 import { workbookToPreview } from "@/lib/knowledge/spreadsheet";
 import path from "path";
 import { readFile } from "fs/promises";
@@ -47,11 +47,7 @@ const AgentGraphState = Annotation.Root({
         reducer: (_prev, next) => next,
         default: () => undefined,
     }),
-    retrievalLayer: Annotation<RetrievalLayer>({
-        reducer: (_prev, next) => next,
-        default: () => "general",
-    }),
-    activeLayer: Annotation<RetrievalLayer>({
+    retrievalLayer: Annotation<"productos" | "operaciones" | "general">({
         reducer: (_prev, next) => next,
         default: () => "general",
     }),
@@ -380,7 +376,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         const retrievalLayer = classifyQueryLayer(lastUserMessage);
 
         if (state.currentState === "EXTRACTING_RESERVATION" || state.currentState === "READY_TO_SAVE") {
-            return { currentPlan: "RESERVATION_FLOW", retrievalLayer, activeLayer: retrievalLayer };
+            return { currentPlan: "RESERVATION_FLOW", retrievalLayer };
         }
 
         if (hasRecentReservationContext(state.messages as BaseMessage[]) && looksLikeReservationFollowUp(lastUserMessage)) {
@@ -388,7 +384,6 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 currentPlan: "RESERVATION_FLOW",
                 currentState: "EXTRACTING_RESERVATION" as ReservationState,
                 retrievalLayer,
-                activeLayer: retrievalLayer,
             };
         }
 
@@ -397,12 +392,11 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 currentPlan: "RESERVATION_FLOW",
                 currentState: "EXTRACTING_RESERVATION" as ReservationState,
                 retrievalLayer,
-                activeLayer: retrievalLayer,
             };
         }
 
         if (isSpreadsheetEditIntent(lastUserMessage)) {
-            return { currentPlan: "ACCION_EXCEL", retrievalLayer, activeLayer: retrievalLayer };
+            return { currentPlan: "ACCION_EXCEL", retrievalLayer };
         }
 
         const reply = await brainModel.invoke([
@@ -414,7 +408,6 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         return {
             currentPlan: /RESPONDER_DIRECTO/i.test(plan) ? "RESPONDER_DIRECTO" : "RESPONDER_CON_RAG",
             retrievalLayer,
-            activeLayer: retrievalLayer,
         };
     };
 
@@ -502,11 +495,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
     const reservationSaveNode = async (state: AgentGraphStateType) => {
         const availableFiles = await ensureAvailableFiles(state);
-        const lock = state.spreadsheetSourceLock || { sourceIds: [], fileUrls: [] };
-        const lockedCandidate = availableFiles.find((f) =>
-            lock.sourceIds.includes(String(f.sourceId || "")) || lock.fileUrls.includes(String(f.fileUrl || ""))
-        );
-        const targetFileName = lockedCandidate?.fileName || pickReservationFileName(availableFiles);
+        const targetFileName = pickReservationFileName(availableFiles);
         const reservation = state.reservationData;
 
         try {
@@ -679,7 +668,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         let ragContext = "";
         let nextSourceLock: SpreadsheetSourceLock = state.spreadsheetSourceLock || { sourceIds: [], fileUrls: [] };
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
-        const retrievalLayer = state.activeLayer || state.retrievalLayer || classifyQueryLayer(lastUserMessage);
+        const retrievalLayer = state.retrievalLayer || classifyQueryLayer(lastUserMessage);
 
         try {
             const retrieval = await retrieveRagContext({
@@ -710,48 +699,22 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             console.error("RAG retrieval error:", error);
         }
 
-        const generationPrompt =
-            `Responde con grounding estricto usando el contexto del negocio.\n` +
-            `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
-            `Capa prioritaria de consulta: ${retrievalLayer}\n` +
-            `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
-            `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
-            `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`;
-
         const reply = await brainModel.invoke([
             new SystemMessage(
-                generationPrompt
+                `Responde con grounding estricto usando el contexto del negocio.\n` +
+                `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
+                `Capa prioritaria de consulta: ${retrievalLayer}\n` +
+                `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
+                `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
+                `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`
             ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
-        let finalReply = normalizeMessageContent((reply as any)?.content);
-
-        const audit = await brainModel.invoke([
-            new SystemMessage(
-                "Actua como auditor de grounding. Si la RESPUESTA incluye datos no presentes explicitamente en CONTEXTO, responde solo FAILED. " +
-                "Si todo esta sustentado, responde solo PASSED."
-            ),
-            new AIMessage(`CONTEXTO:\n${ragContext || "(vacio)"}\n\nRESPUESTA:\n${finalReply}`),
-        ]);
-
-        const auditDecision = normalizeMessageContent((audit as any)?.content).toUpperCase();
-        if (!/PASSED/.test(auditDecision)) {
-            const retry = await brainModel.invoke([
-                new SystemMessage(
-                    generationPrompt +
-                    "\nCORRECCION OBLIGATORIA: te inventaste datos. Cinetete solo al contexto textual. " +
-                    "Si falta evidencia, responde: 'Lo siento, no tengo esa información específica en mis registros'."
-                ),
-                ...trimMessagesForModel(state.messages as BaseMessage[]),
-            ]);
-            finalReply = normalizeMessageContent((retry as any)?.content);
-        }
-
         return {
             isTaskComplete: true,
             spreadsheetSourceLock: nextSourceLock,
-            messages: [new AIMessage(finalReply)],
+            messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))],
         };
     };
 
