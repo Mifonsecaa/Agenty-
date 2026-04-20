@@ -4,8 +4,66 @@ import { aiService } from "@/lib/ai";
 import { transcriptionService } from "@/services/ai/transcription";
 import { sendTelegramMessage, sendTelegramMedia, sendTelegramTyping } from "@/services/telegram-sender";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
+import { callPlannerExecutor, type PlannerState } from "@/lib/planner-executor-client";
+import { createSpreadsheetUpdateTool } from "@/lib/tools/knowledge-tool";
 
 const MAX_HISTORY_MESSAGES = 12;
+const PLANNER_STATE_PREFIX = "[PLANNER_STATE]";
+
+function defaultPlannerState(sessionId: string): PlannerState {
+  return {
+    session_id: sessionId,
+    stage: "INIT",
+    reservation: {},
+    pending_action: "append_row",
+    turn: 0,
+    reask_count: 0,
+    max_reasks: 2,
+  };
+}
+
+async function loadPlannerState(conversationId: string, sessionId: string): Promise<PlannerState> {
+  const row = await prisma.message.findFirst({
+    where: {
+      conversationId,
+      role: "system",
+      content: { startsWith: PLANNER_STATE_PREFIX },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!row?.content) return defaultPlannerState(sessionId);
+
+  const raw = row.content.slice(PLANNER_STATE_PREFIX.length).trim();
+  try {
+    const parsed = JSON.parse(raw) as PlannerState;
+    return { ...defaultPlannerState(sessionId), ...parsed, session_id: sessionId };
+  } catch {
+    return defaultPlannerState(sessionId);
+  }
+}
+
+async function savePlannerState(conversationId: string, state: PlannerState) {
+  await prisma.message.create({
+    data: {
+      conversationId,
+      role: "system",
+      content: `${PLANNER_STATE_PREFIX} ${JSON.stringify(state)}`,
+    },
+  });
+}
+
+function plannerSheetAndRef(config: unknown) {
+  const cfg = (config && typeof config === "object") ? (config as Record<string, unknown>) : {};
+  const sheet = typeof cfg.reservationsSheetName === "string" && cfg.reservationsSheetName.trim()
+    ? cfg.reservationsSheetName.trim()
+    : "Reservas";
+  const fileRef = typeof cfg.reservationsFileRef === "string" && cfg.reservationsFileRef.trim()
+    ? cfg.reservationsFileRef.trim()
+    : undefined;
+
+  return { sheet, fileRef };
+}
 
 export async function POST(req: Request) {
   try {
@@ -165,9 +223,55 @@ export async function POST(req: Request) {
       .filter((msg): msg is { role: "user" | "assistant"; content: string } => Boolean(msg));
 
     console.log(`[Telegram Webhook] Generating AI response for business ${business.id} with ${historyForAi.length} history messages...`);
-    const aiReply = await aiService.generateResponse(business.id, historyForAi);
+    let replyText: string;
+    const plannerSessionId = `telegram:${business.id}:${chatId}`;
+    const plannerState = await loadPlannerState(conversation.id, plannerSessionId);
+    const plannerResult = await callPlannerExecutor({
+      context: {
+        channel: "telegram",
+        businessId: business.id,
+        userId: chatId,
+        conversationId: conversation.id,
+      },
+      message: messageText,
+      state: plannerState,
+    });
 
-    let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    if (plannerResult) {
+      await savePlannerState(conversation.id, plannerResult.state);
+      replyText = plannerResult.assistant_message;
+
+      if (plannerResult.action === "append_row") {
+        const tool = createSpreadsheetUpdateTool(business.id);
+        const payload = (plannerResult.tool_payload || {}) as Record<string, unknown>;
+        const data = (payload.data && typeof payload.data === "object")
+          ? (payload.data as Record<string, unknown>)
+          : {};
+        const { sheet, fileRef } = plannerSheetAndRef(business.config);
+        const rowValues = [
+          String(data.date || ""),
+          String(data.time || ""),
+          String(data.people || ""),
+          String(data.name || ""),
+          String(data.notes || ""),
+        ];
+
+        const toolResult = await tool.invoke({
+          action: "APPEND_ROW",
+          fileRef,
+          sheet,
+          rowValues,
+        });
+
+        if (/^Error al guardar en el Excel|^No se pudo guardar|^Falta 'rowValues'|^No hay archivos Excel/i.test(toolResult)) {
+          replyText = "Pude entender tu solicitud, pero no logré guardarla en la hoja de cálculo. Intenta nuevamente en un momento.";
+        }
+      }
+    } else {
+      const aiReply = await aiService.generateResponse(business.id, historyForAi);
+      replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    }
+
     const parsedReply = extractMediaFromAgentReply(replyText, requestOrigin);
     replyText = parsedReply.cleanText;
     const mediaUrls = parsedReply.mediaUrls;

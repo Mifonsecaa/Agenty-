@@ -5,6 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { metricsService } from "@/lib/metrics";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
+import { callPlannerExecutor, type PlannerState } from "@/lib/planner-executor-client";
+import { createSpreadsheetUpdateTool } from "@/lib/tools/knowledge-tool";
+
+const PLANNER_STATE_PREFIX = "[PLANNER_STATE]";
 
 async function buildConversationMessages(conversationId: string) {
     const { HumanMessage, AIMessage, SystemMessage } = await import("@langchain/core/messages");
@@ -16,10 +20,70 @@ async function buildConversationMessages(conversationId: string) {
     });
 
     return rows.map((row) => {
+        if (row.role === "system" && row.content?.startsWith(PLANNER_STATE_PREFIX)) return null;
         if (row.role === "user") return new HumanMessage(row.content || "");
         if (row.role === "system") return new SystemMessage(row.content || "");
         return new AIMessage(row.content || "");
+    }).filter(Boolean);
+}
+
+function defaultPlannerState(sessionId: string): PlannerState {
+    return {
+        session_id: sessionId,
+        stage: "INIT",
+        reservation: {},
+        pending_action: "append_row",
+        turn: 0,
+        reask_count: 0,
+        max_reasks: 2,
+    };
+}
+
+async function loadPlannerState(conversationId: string, sessionId: string): Promise<PlannerState> {
+    const row = await prisma.message.findFirst({
+        where: {
+            conversationId,
+            role: "system",
+            content: { startsWith: PLANNER_STATE_PREFIX },
+        },
+        orderBy: { createdAt: "desc" },
     });
+
+    if (!row?.content) return defaultPlannerState(sessionId);
+
+    const raw = row.content.slice(PLANNER_STATE_PREFIX.length).trim();
+    try {
+        const parsed = JSON.parse(raw) as PlannerState;
+        return {
+            ...defaultPlannerState(sessionId),
+            ...parsed,
+            session_id: sessionId,
+        };
+    } catch {
+        return defaultPlannerState(sessionId);
+    }
+}
+
+async function savePlannerState(conversationId: string, state: PlannerState) {
+    await prisma.message.create({
+        data: {
+            conversationId,
+            role: "system",
+            content: `${PLANNER_STATE_PREFIX} ${JSON.stringify(state)}`,
+        },
+    });
+}
+
+function plannerSheetAndRef(config: unknown) {
+    const cfg = (config && typeof config === "object") ? (config as Record<string, unknown>) : {};
+    const sheet = typeof cfg.reservationsSheetName === "string" && cfg.reservationsSheetName.trim()
+        ? cfg.reservationsSheetName.trim()
+        : "Reservas";
+    const fileRef = typeof cfg.reservationsFileRef === "string" && cfg.reservationsFileRef.trim()
+        ? cfg.reservationsFileRef.trim()
+        : undefined;
+
+    return { sheet, fileRef };
 }
 
 /**
@@ -240,6 +304,55 @@ async function handleIncomingMessage(
 
         try {
             console.log(`[WhatsApp Message] Invoking agent for: "${messageText}"`);
+            const plannerSessionId = `whatsapp:${business.id}:${from}`;
+            const plannerState = await loadPlannerState(conversation.id, plannerSessionId);
+            const plannerResult = await callPlannerExecutor({
+                context: {
+                    channel: "whatsapp",
+                    businessId: business.id,
+                    userId: from,
+                    conversationId: conversation.id,
+                },
+                message: messageText,
+                state: plannerState,
+            });
+
+            if (plannerResult) {
+                await savePlannerState(conversation.id, plannerResult.state);
+                aiResponse = plannerResult.assistant_message;
+
+                if (plannerResult.action === "append_row" || plannerResult.action === "update_cell") {
+                    const tool = createSpreadsheetUpdateTool(business.id);
+                    const payload = (plannerResult.tool_payload || {}) as Record<string, unknown>;
+                    const data = (payload.data && typeof payload.data === "object")
+                        ? (payload.data as Record<string, unknown>)
+                        : {};
+                    const { sheet, fileRef } = plannerSheetAndRef(business.config);
+
+                    if (plannerResult.action === "append_row") {
+                        const rowValues = [
+                            String(data.date || ""),
+                            String(data.time || ""),
+                            String(data.people || ""),
+                            String(data.name || ""),
+                            String(data.notes || ""),
+                        ];
+
+                        const toolResult = await tool.invoke({
+                            action: "APPEND_ROW",
+                            fileRef,
+                            sheet,
+                            rowValues,
+                        });
+
+                        if (/^Error al guardar en el Excel|^No se pudo guardar|^Falta 'rowValues'|^No hay archivos Excel/i.test(toolResult)) {
+                            aiResponse = "Pude entender tu solicitud, pero no logré guardarla en la hoja de cálculo. Intenta nuevamente en un momento.";
+                        }
+                    }
+                }
+
+                console.log(`[WhatsApp Message] Planner response: "${aiResponse}"`);
+            } else {
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const historyMessages = await buildConversationMessages(conversation.id);
 
@@ -276,6 +389,7 @@ async function handleIncomingMessage(
             mediaUrls = parsedReply.mediaUrls;
 
             console.log(`[WhatsApp Message] Agent response: "${aiResponse}"`);
+            }
         } catch (agentErr: any) {
             console.error("[WhatsApp Message] Agent error:", agentErr);
             aiResponse = "Lo siento, algo salió mal. Por favor, intenta de nuevo más tarde.";
