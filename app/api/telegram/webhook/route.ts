@@ -65,6 +65,18 @@ function plannerSheetAndRef(config: unknown) {
   return { sheet, fileRef };
 }
 
+function isReservationFlowMessage(messageText: string, plannerState: PlannerState) {
+  const normalized = String(messageText || "").toLowerCase().trim();
+  const reservationKeywords = ["reserva", "reservar", "agendar", "mesa", "confirmar", "confirmo"];
+  const shortConfirmations = ["si", "sí", "ok", "dale", "listo", "confirmo"];
+  const stage = String(plannerState.stage || "INIT");
+  const hasReservationKeyword = reservationKeywords.some((k) => normalized.includes(k));
+  const isShortConfirmation = shortConfirmations.includes(normalized);
+  const hasActivePlannerState = stage !== "INIT" && stage !== "DONE";
+
+  return hasReservationKeyword || (hasActivePlannerState && isShortConfirmation) || hasActivePlannerState;
+}
+
 export async function POST(req: Request) {
   try {
     const requestOrigin = new URL(req.url).origin;
@@ -226,6 +238,7 @@ export async function POST(req: Request) {
     let replyText: string;
     const plannerSessionId = `telegram:${business.id}:${chatId}`;
     const plannerState = await loadPlannerState(conversation.id, plannerSessionId);
+    const plannerRequired = isReservationFlowMessage(messageText, plannerState);
     const plannerResult = await callPlannerExecutor({
       context: {
         channel: "telegram",
@@ -267,6 +280,15 @@ export async function POST(req: Request) {
           replyText = "Pude entender tu solicitud, pero no logré guardarla en la hoja de cálculo. Intenta nuevamente en un momento.";
         }
       }
+    } else if (plannerRequired) {
+      const stage = String(plannerState.stage || "INIT");
+      if (stage === "CONFIRMATION_PENDING") {
+        replyText = "Recibí tu confirmación, pero ahora mismo tengo un problema técnico para cerrar la reserva en el sistema. ¿Me confirmas nuevamente en unos segundos para finalizarla?";
+      } else {
+        replyText = "Estoy gestionando tu reserva, pero tengo un problema técnico temporal con el motor de reservas. Inténtalo de nuevo en unos segundos y continuaré desde el mismo punto.";
+      }
+      await savePlannerState(conversation.id, plannerState);
+      console.warn("[Telegram Webhook] Planner required but unavailable; skipped generic LLM fallback to avoid loops.");
     } else {
       const aiReply = await aiService.generateResponse(business.id, historyForAi);
       replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";

@@ -86,6 +86,18 @@ function plannerSheetAndRef(config: unknown) {
     return { sheet, fileRef };
 }
 
+function isReservationFlowMessage(messageText: string, plannerState: PlannerState) {
+    const normalized = String(messageText || "").toLowerCase();
+    const reservationKeywords = ["reserva", "reservar", "agendar", "mesa", "confirmar", "confirmo"];
+    const shortConfirmations = ["si", "sí", "ok", "dale", "listo", "confirmo"];
+    const stage = String(plannerState.stage || "INIT");
+    const hasReservationKeyword = reservationKeywords.some((k) => normalized.includes(k));
+    const isShortConfirmation = shortConfirmations.includes(normalized.trim());
+    const hasActivePlannerState = stage !== "INIT" && stage !== "DONE";
+
+    return hasReservationKeyword || (hasActivePlannerState && isShortConfirmation) || hasActivePlannerState;
+}
+
 /**
  * GET - Verificar el webhook (Meta lo llama en Setup)
  * Meta envía: ?hub.mode=subscribe&hub.challenge=xxx&hub.verify_token=tu_token
@@ -306,6 +318,7 @@ async function handleIncomingMessage(
             console.log(`[WhatsApp Message] Invoking agent for: "${messageText}"`);
             const plannerSessionId = `whatsapp:${business.id}:${from}`;
             const plannerState = await loadPlannerState(conversation.id, plannerSessionId);
+            const plannerRequired = isReservationFlowMessage(messageText, plannerState);
             const plannerResult = await callPlannerExecutor({
                 context: {
                     channel: "whatsapp",
@@ -352,6 +365,15 @@ async function handleIncomingMessage(
                 }
 
                 console.log(`[WhatsApp Message] Planner response: "${aiResponse}"`);
+            } else if (plannerRequired) {
+                const stage = String(plannerState.stage || "INIT");
+                if (stage === "CONFIRMATION_PENDING") {
+                    aiResponse = "Recibí tu confirmación, pero ahora mismo tengo un problema técnico para cerrar la reserva en el sistema. ¿Me confirmas nuevamente en unos segundos para finalizarla?";
+                } else {
+                    aiResponse = "Estoy gestionando tu reserva, pero tengo un problema técnico temporal con el motor de reservas. Inténtalo de nuevo en unos segundos y continuaré desde el mismo punto.";
+                }
+                await savePlannerState(conversation.id, plannerState);
+                console.warn("[WhatsApp Message] Planner required but unavailable; skipped generic LLM fallback to avoid loops.");
             } else {
             const { createAgentGraph } = await import("@/lib/agent/graph");
             const historyMessages = await buildConversationMessages(conversation.id);
