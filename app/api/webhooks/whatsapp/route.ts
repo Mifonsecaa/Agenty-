@@ -7,6 +7,12 @@ import { metricsService } from "@/lib/metrics";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
 import { callPlannerExecutor, type PlannerState } from "@/lib/planner-executor-client";
 import { createSpreadsheetUpdateTool } from "@/lib/tools/knowledge-tool";
+import {
+    commitPlannerOperation,
+    isPlannerOperationCommitted,
+    loadPlannerStatePersistent,
+    savePlannerStatePersistent,
+} from "@/lib/planner/state-store";
 
 const PLANNER_STATE_PREFIX = "[PLANNER_STATE]";
 
@@ -40,38 +46,17 @@ function defaultPlannerState(sessionId: string): PlannerState {
 }
 
 async function loadPlannerState(conversationId: string, sessionId: string): Promise<PlannerState> {
-    const row = await prisma.message.findFirst({
-        where: {
-            conversationId,
-            role: "system",
-            content: { startsWith: PLANNER_STATE_PREFIX },
-        },
-        orderBy: { createdAt: "desc" },
-    });
-
-    if (!row?.content) return defaultPlannerState(sessionId);
-
-    const raw = row.content.slice(PLANNER_STATE_PREFIX.length).trim();
-    try {
-        const parsed = JSON.parse(raw) as PlannerState;
-        return {
-            ...defaultPlannerState(sessionId),
-            ...parsed,
-            session_id: sessionId,
-        };
-    } catch {
-        return defaultPlannerState(sessionId);
-    }
+    const persisted = await loadPlannerStatePersistent(conversationId, sessionId);
+    return {
+        ...defaultPlannerState(sessionId),
+        ...persisted,
+        session_id: sessionId,
+    };
 }
 
 async function savePlannerState(conversationId: string, state: PlannerState) {
-    await prisma.message.create({
-        data: {
-            conversationId,
-            role: "system",
-            content: `${PLANNER_STATE_PREFIX} ${JSON.stringify(state)}`,
-        },
-    });
+    const sessionId = String(state.session_id || "").trim() || `whatsapp:unknown:${conversationId}`;
+    await savePlannerStatePersistent(conversationId, sessionId, state);
 }
 
 function plannerSheetAndRef(config: unknown) {
@@ -85,6 +70,12 @@ function plannerSheetAndRef(config: unknown) {
 
     return { sheet, fileRef };
 }
+
+function normalizeOperationId(value: unknown) {
+    const text = String(value || "").trim();
+    return text.slice(0, 64);
+}
+
 
 function isReservationFlowMessage(messageText: string, plannerState: PlannerState) {
     const normalized = String(messageText || "").toLowerCase();
@@ -340,7 +331,19 @@ async function handleIncomingMessage(
                     const data = (payload.data && typeof payload.data === "object")
                         ? (payload.data as Record<string, unknown>)
                         : {};
+                    const operationId = normalizeOperationId(payload.operation_id || plannerResult.state.pending_operation_id);
+                    const alreadyCommitted = operationId
+                        ? await isPlannerOperationCommitted(conversation.id, operationId)
+                        : false;
                     const { sheet, fileRef } = plannerSheetAndRef(business.config);
+
+                    if (operationId && alreadyCommitted) {
+                        aiResponse = `Listo ${String(data.name || "")}, tu reserva ya estaba confirmada.`.trim();
+                        plannerResult.state.stage = "DONE";
+                        plannerResult.state.pending_operation_id = null;
+                        plannerResult.state.critical_flow = false;
+                        await savePlannerState(conversation.id, plannerResult.state);
+                    } else {
 
                     if (plannerResult.action === "append_row") {
                         const rowValues = [
@@ -360,7 +363,23 @@ async function handleIncomingMessage(
 
                         if (/^Error al guardar en el Excel|^No se pudo guardar|^Falta 'rowValues'|^No hay archivos Excel/i.test(toolResult)) {
                             aiResponse = "Pude entender tu solicitud, pero no logré guardarla en la hoja de cálculo. Intenta nuevamente en un momento.";
+                        } else {
+                            plannerResult.state.pending_operation_id = null;
+                            plannerResult.state.stage = "DONE";
+                            plannerResult.state.critical_flow = false;
+                            const plannerSessionIdValue = String(plannerResult.state.session_id || plannerSessionId || "");
+                            if (operationId) {
+                                await commitPlannerOperation({
+                                    conversationId: conversation.id,
+                                    sessionId: plannerSessionIdValue,
+                                    operationId,
+                                    payload,
+                                    nextState: plannerResult.state,
+                                });
+                            }
+                            await savePlannerState(conversation.id, plannerResult.state);
                         }
+                    }
                     }
                 }
 

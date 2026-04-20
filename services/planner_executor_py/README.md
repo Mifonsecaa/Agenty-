@@ -23,6 +23,8 @@ Devuelve un JSON determinista con una de estas acciones:
 - Confirmación explícita antes de `append_row`.
 - Loop breaker con `max_reasks`.
 - Guardrail de privacidad para no revelar datos de terceros.
+- Idempotencia con `operation_id` para evitar dobles escrituras por reintentos.
+- Modo crítico de reserva (`critical_flow`) para que el canal evite fallback genérico.
 
 ## Estructura
 

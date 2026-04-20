@@ -8,7 +8,7 @@ import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type ToolCard = {
     id: number;
-    slug: "google-calendar" | "payments" | "shopify" | "email" | "knowledge-excel-viewer";
+    slug: "google-calendar" | "payments" | "events" | "email" | "knowledge-excel-viewer";
     name: string;
     description: string;
     icon: React.ReactNode;
@@ -672,12 +672,12 @@ export default function ToolsStore() {
         },
         {
             id: 3,
-            slug: "shopify",
-            name: "Shopify Inventory",
-            description: "Conecta tu catálogo para que el agente vea el stock en tiempo real.",
+            slug: "events",
+            name: "Eventos del dia",
+            description: "Monitorea pedidos en cola, reservas de hoy y otros eventos operativos del dia actual.",
             icon: <ShoppingBag className="w-6 h-6 text-purple-400" />,
             status: "disconnected",
-            category: "E-Commerce"
+            category: "Operaciones"
         },
         {
             id: 4,
@@ -784,7 +784,7 @@ export default function ToolsStore() {
             const configTargetBySlug: Record<ToolCard["slug"], string> = {
                 "google-calendar": "/dashboard/settings?tab=integrations&tool=google-calendar",
                 "payments": "/dashboard/settings?tab=integrations&tool=payments",
-                "shopify": "/dashboard/knowledge",
+                "events": "/dashboard/inbox",
                 "email": "/dashboard/settings?tab=integrations&tool=email",
                 "knowledge-excel-viewer": "/dashboard/tools",
             };

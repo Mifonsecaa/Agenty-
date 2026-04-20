@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.models import ActionType, ConversationState, PlannerInput
+from app.models import ActionType, ConversationState, PlannerInput, Stage
 from app.service import plan_and_execute
 
 
@@ -53,6 +53,47 @@ class PlannerExecutorTests(unittest.TestCase):
         third = plan_and_execute(PlannerInput(context={}, message="no se", state=second.state))
         self.assertEqual(third.action, ActionType.ERROR)
         self.assertIn("confiable", third.assistant_message.lower())
+
+    def test_idempotent_confirmation_does_not_duplicate_operation(self) -> None:
+        state = ConversationState(session_id="t4")
+
+        first = plan_and_execute(
+            PlannerInput(
+                context={},
+                message="Quiero reservar mañana a las 8 pm para 2 personas",
+                state=state,
+            )
+        )
+        second = plan_and_execute(PlannerInput(context={}, message="David", state=first.state))
+        third = plan_and_execute(PlannerInput(context={}, message="si", state=second.state))
+
+        self.assertEqual(third.action, ActionType.APPEND_ROW)
+        operation_id = third.tool_payload.get("operation_id")
+        self.assertTrue(operation_id)
+
+        # Simula commit exitoso del ejecutor en el estado persistido.
+        third.state.committed_operation_ids.append(str(operation_id))
+
+        fourth = plan_and_execute(PlannerInput(context={}, message="si", state=third.state))
+        self.assertEqual(fourth.action, ActionType.CONFIRM)
+        self.assertIn("ya estaba confirmada", fourth.assistant_message.lower())
+
+    def test_new_reservation_after_done_resets_state(self) -> None:
+        state = ConversationState(session_id="t5", stage=Stage.DONE)
+        state.reservation.date = "mañana"
+        state.reservation.time = "20:00"
+        state.reservation.people = 4
+        state.reservation.name = "David"
+
+        out = plan_and_execute(
+            PlannerInput(
+                context={},
+                message="Quiero reservar hoy a las 6 pm para 3 personas",
+                state=state,
+            )
+        )
+        self.assertIn(out.action, {ActionType.ASK_MISSING, ActionType.CONFIRM})
+        self.assertNotEqual(out.state.reservation.time, "20:00")
 
 
 if __name__ == "__main__":

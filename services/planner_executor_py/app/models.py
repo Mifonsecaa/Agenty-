@@ -44,6 +44,11 @@ class ConversationState:
     last_prompted_field: Optional[str] = None
     max_reasks: int = 2
     last_user_message: Optional[str] = None
+    confirmation_token: Optional[str] = None
+    pending_operation_id: Optional[str] = None
+    committed_operation_ids: List[str] = field(default_factory=list)
+    critical_flow: bool = False
+    last_transition: Optional[str] = None
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "ConversationState":
@@ -67,6 +72,15 @@ class ConversationState:
             last_prompted_field=data.get("last_prompted_field"),
             max_reasks=int(data.get("max_reasks", 2)),
             last_user_message=data.get("last_user_message"),
+            confirmation_token=data.get("confirmation_token"),
+            pending_operation_id=data.get("pending_operation_id"),
+            committed_operation_ids=[
+                str(x)
+                for x in (data.get("committed_operation_ids") or [])
+                if isinstance(x, (str, int, float)) and str(x).strip()
+            ][:50],
+            critical_flow=bool(data.get("critical_flow", False)),
+            last_transition=data.get("last_transition"),
         )
 
     def to_dict(self) -> Dict[str, Any]:

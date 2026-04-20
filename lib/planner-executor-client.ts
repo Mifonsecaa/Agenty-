@@ -16,6 +16,11 @@ export type PlannerState = {
   last_prompted_field?: string | null;
   max_reasks?: number;
   last_user_message?: string | null;
+  confirmation_token?: string | null;
+  pending_operation_id?: string | null;
+  committed_operation_ids?: string[];
+  critical_flow?: boolean;
+  last_transition?: string | null;
 };
 
 export type PlannerRequest = {

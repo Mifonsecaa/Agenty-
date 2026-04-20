@@ -86,15 +86,79 @@ export const toolExecutionPlanModel = workerModel.withStructuredOutput(ToolExecu
 
 export const SpreadsheetExecutorRequestSchema = z.object({
     action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"]),
-    targetFileName: z.string().optional().default(""),
-    sourceId: z.string().optional().default(""),
-    fileRef: z.string().optional().default(""),
-    sheet: z.string().optional().default(""),
-    cell: z.string().optional().default(""),
-    value: z.string().optional().default(""),
-    rowValues: z.array(z.string()).optional().default([]),
-    data: z.record(z.any()).optional().default({}),
-    responseToUser: z.string().optional().default(""),
+    targetFileName: z.string().optional(),
+    sourceId: z.string().optional(),
+    fileRef: z.string().optional(),
+    sheet: z.string().optional(),
+    cell: z.string().optional(),
+    value: z.string().optional(),
+    rowValues: z.array(z.string()).optional(),
+    data: z.record(z.any()).optional(),
+    responseToUser: z.string().optional(),
+}).superRefine((payload, ctx) => {
+    const needsTarget = payload.action !== "NONE" && payload.action !== "LIST";
+    const hasTarget = Boolean(payload.targetFileName || payload.sourceId || payload.fileRef);
+
+    if (needsTarget && !hasTarget) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["fileRef"],
+            message: "MISSING_FILE_REF",
+        });
+    }
+
+    if (["LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"].includes(payload.action) && !payload.sheet) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["sheet"],
+            message: "MISSING_SHEET",
+        });
+    }
+
+    if (payload.action === "READ_CELL" && !payload.cell) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["cell"],
+            message: "MISSING_CELL",
+        });
+    }
+
+    if (payload.action === "UPDATE_CELL") {
+        if (!payload.cell) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["cell"],
+                message: "MISSING_CELL",
+            });
+        }
+        if (typeof payload.value !== "string" || !payload.value.trim()) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["value"],
+                message: "MISSING_VALUE",
+            });
+        }
+    }
+
+    if (payload.action === "APPEND_ROW") {
+        const rowValues = Array.isArray(payload.rowValues) ? payload.rowValues : [];
+        const hasRowValues = rowValues.some((v) => String(v || "").trim().length > 0);
+        if (!hasRowValues) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["rowValues"],
+                message: "MISSING_ROW_VALUES",
+            });
+        }
+    }
+
+    if (payload.action === "CREATE_FILE" && !payload.targetFileName) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targetFileName"],
+            message: "MISSING_TARGET_FILE_NAME",
+        });
+    }
 });
 
 export const spreadsheetExecutorRequestModel = workerModel.withStructuredOutput(SpreadsheetExecutorRequestSchema);

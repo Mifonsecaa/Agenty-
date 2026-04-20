@@ -15,6 +15,19 @@ const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES
 type ReservationState = "INIT" | "EXTRACTING_RESERVATION" | "READY_TO_SAVE";
 type ReservationData = { date: string | null; time: string | null; people: string | null; name: string | null };
 type SpreadsheetSourceLock = { sourceIds: string[]; fileUrls: string[] };
+type SpreadsheetPlanAction = "LIST" | "LIST_SHEETS" | "READ_CELL" | "UPDATE_CELL" | "APPEND_ROW" | "CREATE_FILE" | "NONE";
+type SpreadsheetActionPlan = {
+    action: SpreadsheetPlanAction;
+    targetFileName?: string;
+    sourceId?: string;
+    fileRef?: string;
+    sheet?: string;
+    cell?: string;
+    value?: string;
+    rowValues?: string[];
+    data?: Record<string, unknown>;
+    responseToUser?: string;
+};
 
 const AgentGraphState = Annotation.Root({
     ...MessagesAnnotation.spec,
@@ -151,6 +164,74 @@ function tryParseExecutorRequest(raw: string): any | null {
     } catch {
         return null;
     }
+}
+
+function normalizePlanAction(value: unknown): SpreadsheetPlanAction {
+    const action = String(value || "").trim().toUpperCase();
+    if (["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"].includes(action)) {
+        return action as SpreadsheetPlanAction;
+    }
+    return "NONE";
+}
+
+function normalizeSpreadsheetPlan(raw: any): SpreadsheetActionPlan {
+    const action = normalizePlanAction(raw?.action);
+    const rowValues = Array.isArray(raw?.rowValues)
+        ? raw.rowValues.map((v: unknown) => String(v ?? "")).filter((v: string) => v.trim().length > 0).slice(0, 80)
+        : [];
+
+    return {
+        action,
+        targetFileName: raw?.targetFileName ? String(raw.targetFileName).trim() : undefined,
+        sourceId: raw?.sourceId ? String(raw.sourceId).trim() : undefined,
+        fileRef: raw?.fileRef ? String(raw.fileRef).trim() : undefined,
+        sheet: raw?.sheet ? String(raw.sheet).trim() : undefined,
+        cell: raw?.cell ? String(raw.cell).trim().toUpperCase() : undefined,
+        value: typeof raw?.value === "string" ? raw.value : undefined,
+        rowValues,
+        data: raw?.data && typeof raw.data === "object" && !Array.isArray(raw.data)
+            ? raw.data as Record<string, unknown>
+            : undefined,
+        responseToUser: raw?.responseToUser ? String(raw.responseToUser).trim() : "",
+    };
+}
+
+function validateSpreadsheetPlan(params: {
+    plan: SpreadsheetActionPlan;
+    availableFiles: Array<{ fileName: string; sourceId: string; fileUrl: string }>;
+}) {
+    const { plan, availableFiles } = params;
+    const action = plan.action;
+    const hasTarget = Boolean(plan.targetFileName || plan.sourceId || plan.fileRef);
+    const needsTarget = action !== "NONE" && action !== "LIST";
+
+    if (needsTarget && !hasTarget && availableFiles.length > 1) {
+        return { ok: false as const, message: "Necesito que indiques qué archivo editar (fileRef, sourceId o nombre exacto)." };
+    }
+
+    if (["LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"].includes(action) && !plan.sheet) {
+        return { ok: false as const, message: "Falta el nombre de la hoja (sheet)." };
+    }
+
+    if (action === "READ_CELL" && !plan.cell) {
+        return { ok: false as const, message: "Falta la celda para leer (cell, formato A1)." };
+    }
+
+    if (action === "UPDATE_CELL") {
+        if (!plan.cell) return { ok: false as const, message: "Falta la celda a actualizar (cell, formato A1)." };
+        if (typeof plan.value !== "string") return { ok: false as const, message: "Falta el valor para actualizar (value)." };
+    }
+
+    if (action === "APPEND_ROW") {
+        const safe = Array.isArray(plan.rowValues) ? plan.rowValues.filter((v) => String(v || "").trim().length > 0) : [];
+        if (!safe.length) return { ok: false as const, message: "Faltan datos de fila para guardar (rowValues)." };
+    }
+
+    if (action === "CREATE_FILE" && !plan.targetFileName) {
+        return { ok: false as const, message: "Falta el nombre del archivo a crear (targetFileName)." };
+    }
+
+    return { ok: true as const };
 }
 
 function normalizeSpreadsheetFailureMessage(raw: string) {
@@ -605,7 +686,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         const allowedSourceIds = state.spreadsheetSourceLock?.sourceIds || [];
         const allowedFileUrls = state.spreadsheetSourceLock?.fileUrls || [];
 
-        const plan = directRequest || await spreadsheetExecutorRequestModel.invoke([
+        const rawPlan = directRequest || await spreadsheetExecutorRequestModel.invoke([
             new SystemMessage(
                 `Convierte la petición a JSON para ejecutar spreadsheet. Responde SOLO JSON válido.\n` +
                 `Acciones permitidas: LIST, LIST_SHEETS, READ_CELL, UPDATE_CELL, APPEND_ROW, CREATE_FILE, NONE.\n` +
@@ -617,10 +698,30 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
+        const plan = normalizeSpreadsheetPlan(rawPlan);
+
+        console.log("[SpreadsheetActionNode] plan", JSON.stringify({
+            action: plan.action,
+            targetFileName: plan.targetFileName || "",
+            sourceId: plan.sourceId || "",
+            fileRef: plan.fileRef || "",
+            sheet: plan.sheet || "",
+            hasCell: Boolean(plan.cell),
+            rowValuesCount: Array.isArray(plan.rowValues) ? plan.rowValues.length : 0,
+        }));
+
         if (!plan || plan.action === "NONE") {
             return {
                 isTaskComplete: true,
                 messages: [new AIMessage(plan?.responseToUser || "Necesito más datos para buscar o editar la hoja de cálculo.")],
+            };
+        }
+
+        const validation = validateSpreadsheetPlan({ plan, availableFiles });
+        if (!validation.ok) {
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(validation.message)],
             };
         }
 
