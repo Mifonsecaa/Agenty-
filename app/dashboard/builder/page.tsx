@@ -1,25 +1,33 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { Bot, Save, Play, Send, Settings2, Sparkles, User, Loader2 } from "lucide-react";
 import { useBrainia } from "@/context/BrainiaContext";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
 export default function BuilderPlayground() {
-    const { activeAgent, saveAgent } = useBrainia();
+    const { activeAgent, saveAgent, refreshAgents } = useBrainia();
     const router = useRouter();
     const [agentName, setAgentName] = useState("AgentBot");
     const [aiProvider, setAiProvider] = useState("openai");
     const [systemPrompt, setSystemPrompt] = useState("Cargando personalidad...");
     const [messages, setMessages] = useState([
-        { role: "assistant", text: "¡Hola! Soy tu asistente de prueba. ¿En qué te ayudo hoy?" }
+        {
+            role: "assistant",
+            text: "Soy Brainia Builder. Empecemos por lo basico: como se llama tu negocio y a que se dedica?"
+        }
     ]);
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const [isSaving, setIsSaving] = useState(false);
-    const [isPanelOpen, setIsPanelOpen] = useState(true);
+
+    const quickStartChips = [
+        "Restaurante con reservas",
+        "Tienda de productos fisicos",
+        "Atencion y soporte al cliente"
+    ];
 
     const handleDeploy = () => {
         router.push('/dashboard/connections');
@@ -70,7 +78,12 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
         if (activeAgent.greeting) {
             setMessages([{ role: "assistant", text: activeAgent.greeting }]);
         } else {
-            setMessages([{ role: "assistant", text: `¡Hola! Soy tu asistente de ${config.businessName || 'este negocio'}. ¿En qué te puedo asesorar?` }]);
+            setMessages([
+                {
+                    role: "assistant",
+                    text: `Soy Brainia Builder para ${config.businessName || 'tu negocio'}. Dime como se llama tu negocio y que hace.`
+                }
+            ]);
         }
     }, [activeAgent]);
 
@@ -138,7 +151,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
         }
     };
 
-    const handleSendMessage = async (e?: React.FormEvent) => {
+    const handleSendMessage = async (e?: FormEvent) => {
         e?.preventDefault();
         if (!input.trim() || isTyping) return;
         if (!activeAgent) {
@@ -172,6 +185,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     provider: aiProvider,
                     agentId: activeAgent?.id,
                     systemPrompt,
+                    mode: "builder_interview"
                 })
             });
 
@@ -182,6 +196,15 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
 
             const data = await res.json();
             setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
+
+            if (data?.completed && data?.saved && data?.systemPromptFinal) {
+                setSystemPrompt(data.systemPromptFinal);
+                setAgentName(data.businessName || agentName);
+
+                await refreshAgents();
+                toast.success("SOP guardado. Redirigiendo al dashboard...");
+                setTimeout(() => router.push("/dashboard"), 900);
+            }
 
         } catch (error) {
             console.error("Error enviando mensaje al chat:", error);
@@ -281,6 +304,69 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     </div>
                 </div>
 
+            </div>
+
+            <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col min-h-[420px]">
+                <div className="flex items-center gap-2 mb-4">
+                    <Bot className="w-5 h-5 text-blue-400" />
+                    <h2 className="text-lg font-bold">Entrevista Guiada (Brainia Builder)</h2>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                    {messages.map((m, idx) => (
+                        <div
+                            key={`${m.role}-${idx}`}
+                            className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                        >
+                            <div
+                                className={`max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed border ${
+                                    m.role === "user"
+                                        ? "bg-blue-600/30 border-blue-400/30 text-white"
+                                        : "bg-white/5 border-white/10 text-white/90"
+                                }`}
+                            >
+                                <div className="flex items-center gap-2 mb-1 text-xs text-white/50">
+                                    {m.role === "user" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                                    <span>{m.role === "user" ? "Tú" : "Builder"}</span>
+                                </div>
+                                <p className="whitespace-pre-wrap">{m.text}</p>
+                            </div>
+                        </div>
+                    ))}
+                    {isTyping && <p className="text-xs text-white/50">Brainia Builder esta escribiendo...</p>}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                <form onSubmit={handleSendMessage} className="mt-4">
+                    <div className="flex gap-2">
+                        <input
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="¿Cómo se llama tu negocio y qué hace? (Ej: Soy Domenico, una panadería)"
+                            className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/35 focus:outline-none focus:border-blue-500 transition-colors"
+                        />
+                        <button
+                            type="submit"
+                            disabled={isTyping || !activeAgent || !input.trim()}
+                            className="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+                        >
+                            <Send className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        {quickStartChips.map((chip) => (
+                            <button
+                                key={chip}
+                                type="button"
+                                onClick={() => setInput(chip)}
+                                className="px-3 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-white/85"
+                            >
+                                {chip}
+                            </button>
+                        ))}
+                    </div>
+                </form>
             </div>
 
             {/* Playground ahora es un componente global montado en layout (PlaygroundPanel). */}
