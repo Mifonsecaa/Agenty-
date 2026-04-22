@@ -5,13 +5,50 @@ import { useBrainia } from "@/context/BrainiaContext";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
+type BuilderMessage = {
+    role: "assistant" | "user";
+    text: string;
+};
+
+function buildDraftPrompt(messages: BuilderMessage[], fallbackBusinessName: string) {
+    const userInputs = messages
+        .filter((m) => m.role === "user")
+        .map((m) => m.text.trim())
+        .filter(Boolean);
+
+    const identity = userInputs[0] || "Pendiente: nombre del negocio, rubro y tono de voz.";
+    const objective = userInputs[1] || "Pendiente: objetivo principal del agente.";
+    const logistics = userInputs[2] || "Pendiente: horarios, dias, zonas y metodos de pago.";
+    const guardrails = userInputs[3] || "Pendiente: limites/guardrails (que nunca debe hacer).";
+
+    return `SOP DRAFT - ${fallbackBusinessName || "Negocio"}
+
+PASO 1 - IDENTIDAD
+${identity}
+
+PASO 2 - OBJETIVO PRINCIPAL
+${objective}
+
+PASO 3 - LOGISTICA
+${logistics}
+
+PASO 4 - LIMITES (GUARDRAILS)
+${guardrails}
+
+REGLAS OPERATIVAS
+- Nunca inventar informacion fuera del contexto validado.
+- Hacer una sola pregunta por turno cuando falte informacion critica.
+- Confirmar accion solo cuando haya datos completos.
+- Mantener continuidad sin reiniciar la conversacion.`;
+}
+
 export default function BuilderPlayground() {
     const { activeAgent, saveAgent, refreshAgents } = useBrainia();
     const router = useRouter();
     const [agentName, setAgentName] = useState("AgentBot");
     const [aiProvider, setAiProvider] = useState("openai");
     const [systemPrompt, setSystemPrompt] = useState("Cargando personalidad...");
-    const [messages, setMessages] = useState([
+    const [messages, setMessages] = useState<BuilderMessage[]>([
         {
             role: "assistant",
             text: "Soy Brainia Builder. Empecemos por lo basico: como se llama tu negocio y a que se dedica?"
@@ -160,9 +197,10 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
         }
 
         const userMsg = input.trim();
-        const currentMessages = [...messages, { role: "user", text: userMsg }];
+        const currentMessages: BuilderMessage[] = [...messages, { role: "user", text: userMsg }];
 
         setMessages(currentMessages);
+        setSystemPrompt(buildDraftPrompt(currentMessages, agentName));
         setInput("");
         setIsTyping(true);
 
@@ -195,11 +233,34 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
             }
 
             const data = await res.json();
-            setMessages(prev => [...prev, { role: "assistant", text: data.content }]);
+            const nextMessages: BuilderMessage[] = [...currentMessages, { role: "assistant", text: data.content }];
+            setMessages(nextMessages);
+
+            if (!data?.systemPromptFinal) {
+                setSystemPrompt(buildDraftPrompt(nextMessages, agentName));
+            }
 
             if (data?.completed && data?.saved && data?.systemPromptFinal) {
+                const finalBusinessName = data.businessName || agentName;
                 setSystemPrompt(data.systemPromptFinal);
-                setAgentName(data.businessName || agentName);
+                setAgentName(finalBusinessName);
+
+                const mergedConfig = {
+                    ...(fullAgentConfig || activeAgent.config || {}),
+                    businessName: finalBusinessName,
+                    aiProvider,
+                    systemPrompt: data.systemPromptFinal,
+                    builderInterview: {
+                        completedAt: new Date().toISOString(),
+                        transcript: nextMessages,
+                    },
+                };
+
+                const persisted = await saveAgent(activeAgent.id, finalBusinessName, mergedConfig);
+                if (!persisted) {
+                    toast.warning("El SOP se genero, pero no se pudo confirmar el guardado local. Intenta guardar manualmente.");
+                    return;
+                }
 
                 await refreshAgents();
                 toast.success("SOP guardado. Redirigiendo al dashboard...");
@@ -250,6 +311,69 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                 </div>
             </div>
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-1 gap-6 min-h-0 overflow-hidden">
+
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col min-h-[420px]">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Bot className="w-5 h-5 text-blue-400" />
+                        <h2 className="text-lg font-bold">Entrevista Guiada (Brainia Builder)</h2>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                        {messages.map((m, idx) => (
+                            <div
+                                key={`${m.role}-${idx}`}
+                                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                            >
+                                <div
+                                    className={`max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed border ${
+                                        m.role === "user"
+                                            ? "bg-blue-600/30 border-blue-400/30 text-white"
+                                            : "bg-white/5 border-white/10 text-white/90"
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2 mb-1 text-xs text-white/50">
+                                        {m.role === "user" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                                        <span>{m.role === "user" ? "Tu" : "Builder"}</span>
+                                    </div>
+                                    <p className="whitespace-pre-wrap">{m.text}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {isTyping && <p className="text-xs text-white/50">Brainia Builder esta escribiendo...</p>}
+                        <div ref={messagesEndRef} />
+                    </div>
+
+                    <form onSubmit={handleSendMessage} className="mt-4">
+                        <div className="flex gap-2">
+                            <input
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder="Como se llama tu negocio y que hace? (Ej: Soy Domenico, una panaderia)"
+                                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/35 focus:outline-none focus:border-blue-500 transition-colors"
+                            />
+                            <button
+                                type="submit"
+                                disabled={isTyping || !activeAgent || !input.trim()}
+                                className="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+                            >
+                                <Send className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            {quickStartChips.map((chip) => (
+                                <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setInput(chip)}
+                                    className="px-3 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-white/85"
+                                >
+                                    {chip}
+                                </button>
+                            ))}
+                        </div>
+                    </form>
+                </div>
 
                 {/* Left Column: Configuration */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col overflow-y-auto">
@@ -304,69 +428,6 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     </div>
                 </div>
 
-            </div>
-
-            <div className="mt-6 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col min-h-[420px]">
-                <div className="flex items-center gap-2 mb-4">
-                    <Bot className="w-5 h-5 text-blue-400" />
-                    <h2 className="text-lg font-bold">Entrevista Guiada (Brainia Builder)</h2>
-                </div>
-
-                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                    {messages.map((m, idx) => (
-                        <div
-                            key={`${m.role}-${idx}`}
-                            className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-                        >
-                            <div
-                                className={`max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed border ${
-                                    m.role === "user"
-                                        ? "bg-blue-600/30 border-blue-400/30 text-white"
-                                        : "bg-white/5 border-white/10 text-white/90"
-                                }`}
-                            >
-                                <div className="flex items-center gap-2 mb-1 text-xs text-white/50">
-                                    {m.role === "user" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
-                                    <span>{m.role === "user" ? "Tú" : "Builder"}</span>
-                                </div>
-                                <p className="whitespace-pre-wrap">{m.text}</p>
-                            </div>
-                        </div>
-                    ))}
-                    {isTyping && <p className="text-xs text-white/50">Brainia Builder esta escribiendo...</p>}
-                    <div ref={messagesEndRef} />
-                </div>
-
-                <form onSubmit={handleSendMessage} className="mt-4">
-                    <div className="flex gap-2">
-                        <input
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="¿Cómo se llama tu negocio y qué hace? (Ej: Soy Domenico, una panadería)"
-                            className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/35 focus:outline-none focus:border-blue-500 transition-colors"
-                        />
-                        <button
-                            type="submit"
-                            disabled={isTyping || !activeAgent || !input.trim()}
-                            className="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
-                        >
-                            <Send className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mt-3">
-                        {quickStartChips.map((chip) => (
-                            <button
-                                key={chip}
-                                type="button"
-                                onClick={() => setInput(chip)}
-                                className="px-3 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-white/85"
-                            >
-                                {chip}
-                            </button>
-                        ))}
-                    </div>
-                </form>
             </div>
 
             {/* Playground ahora es un componente global montado en layout (PlaygroundPanel). */}
