@@ -1,7 +1,13 @@
 import { Annotation, END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { AIMessage, BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { retrieveRagContext } from "@/lib/rag/retriever";
-import { brainModel, reservationExtractorModel, spreadsheetExecutorRequestModel } from "@/lib/ai";
+import {
+    brainModel,
+    reservationExtractorModel,
+    SpreadsheetExecutorRequestSchema,
+    spreadsheetExecutorRequestModel,
+    spreadsheetToolDecisionModel,
+} from "@/lib/ai";
 import { processExcelWorkOrder } from "../tools/excel-handler";
 import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { getGraphCheckpointer } from "./checkpointer";
@@ -480,6 +486,18 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             return { currentPlan: "ACCION_EXCEL", retrievalLayer };
         }
 
+        const spreadsheetDecision = await spreadsheetToolDecisionModel.invoke([
+            new SystemMessage(
+                "Responde JSON estructurado. shouldInvokeTool=true solo si la peticion requiere leer o editar una hoja de calculo/Excel ahora. " +
+                "Si es solo charla, shouldInvokeTool=false."
+            ),
+            ...trimMessagesForModel(state.messages as BaseMessage[]),
+        ]).catch(() => ({ shouldInvokeTool: false, reason: "decision_error" }));
+
+        if (spreadsheetDecision?.shouldInvokeTool) {
+            return { currentPlan: "ACCION_EXCEL", retrievalLayer };
+        }
+
         const reply = await brainModel.invoke([
             new SystemMessage("Clasifica la intención en exactamente una etiqueta: RESPONDER_DIRECTO o RESPONDER_CON_RAG."),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
@@ -581,7 +599,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         try {
             if (!availableFiles.length) {
-                await processExcelWorkOrder(businessId, {
+                const createResult = await processExcelWorkOrder(businessId, {
                     actionType: "CREATE_FILE",
                     targetFileName,
                     extractedData: {
@@ -593,6 +611,9 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                         Cliente: "",
                     },
                 });
+                if (!createResult?.success) {
+                    throw new Error(createResult?.error || "Fallo al crear archivo de reservas");
+                }
             }
 
             const targetFile = (await ensureAvailableFiles(state)).find((f) => f.fileName === targetFileName) || null;
@@ -646,7 +667,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 }
             }
 
-            await processExcelWorkOrder(businessId, {
+            const appendResult = await processExcelWorkOrder(businessId, {
                 actionType: "APPEND_ROW",
                 targetFileName,
                 extractedData: {
@@ -658,6 +679,9 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                     Cliente: state.customerPhone || customerPhone || "",
                 },
             });
+            if (!appendResult?.success) {
+                throw new Error(appendResult?.error || "Fallo al agregar fila de reserva");
+            }
 
             return {
                 isTaskComplete: true,
@@ -682,7 +706,10 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
 
         // Si otro agente ya envió JSON estructurado, se respeta y se ejecuta directo.
-        const directRequest = tryParseExecutorRequest(lastUserMessage);
+        const directRequestRaw = tryParseExecutorRequest(lastUserMessage);
+        const directRequest = directRequestRaw
+            ? (SpreadsheetExecutorRequestSchema.safeParse(directRequestRaw).success ? directRequestRaw : null)
+            : null;
         const allowedSourceIds = state.spreadsheetSourceLock?.sourceIds || [];
         const allowedFileUrls = state.spreadsheetSourceLock?.fileUrls || [];
 
@@ -726,6 +753,13 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         }
 
         try {
+            console.log("🧰 [SpreadsheetActionNode] Invocando knowledge_spreadsheet_editor", {
+                action: plan.action,
+                targetFileName: plan.targetFileName || "",
+                sourceId: plan.sourceId || "",
+                fileRef: plan.fileRef || "",
+                sheet: plan.sheet || "",
+            });
             const toolResult = await (spreadsheetTool as any).invoke({
                 action: plan.action,
                 targetFileName: plan.targetFileName || undefined,
@@ -741,6 +775,10 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             });
 
             const resultText = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+            console.log("🧰 [SpreadsheetActionNode] Resultado tool", {
+                action: plan.action,
+                failed: /Error al guardar|No se pudo|Falta '|ambigua|No se encontro archivo|necesito que indiques|problema tecnico/i.test(resultText),
+            });
             const failed = /Error al guardar|No se pudo|Falta '|ambigua|No se encontro archivo|necesito que indiques|problema tecnico/i.test(resultText);
 
             return {

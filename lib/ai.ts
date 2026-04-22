@@ -66,11 +66,11 @@ export const ConversationStateSchema = z.object({
 export const stateExtractorModel = brainModel.withStructuredOutput(ConversationStateSchema);
 
 export const ReservationExtractionSchema = z.object({
-    time: z.string().nullable().default(null).describe("Hora de la reserva si fue mencionada, ej: 20:00, 8pm."),
-    people: z.string().nullable().default(null).describe("Cantidad de personas si fue mencionada."),
-    name: z.string().nullable().default(null).describe("Nombre del cliente si fue mencionado."),
-    date: z.string().nullable().default(null).describe("Fecha si fue mencionada, ej: mañana, 2026-04-16."),
-    isAffirmative: z.boolean().default(false).describe("true solo si el mensaje es una confirmación corta tipo si/ok/dale."),
+    time: z.coerce.string().nullable().default(null).describe("Hora de la reserva si fue mencionada, ej: 20:00, 8pm."),
+    people: z.coerce.string().nullable().default(null).describe("Cantidad de personas si fue mencionada."),
+    name: z.coerce.string().nullable().default(null).describe("Nombre del cliente si fue mencionado."),
+    date: z.coerce.string().nullable().default(null).describe("Fecha si fue mencionada, ej: mañana, 2026-04-16."),
+    isAffirmative: z.coerce.boolean().default(false).describe("true solo si el mensaje es una confirmación corta tipo si/ok/dale."),
 });
 
 export const reservationExtractorModel = workerModel.withStructuredOutput(ReservationExtractionSchema);
@@ -86,15 +86,15 @@ export const toolExecutionPlanModel = workerModel.withStructuredOutput(ToolExecu
 
 export const SpreadsheetExecutorRequestSchema = z.object({
     action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"]),
-    targetFileName: z.string().optional(),
-    sourceId: z.string().optional(),
-    fileRef: z.string().optional(),
-    sheet: z.string().optional(),
-    cell: z.string().optional(),
-    value: z.string().optional(),
-    rowValues: z.array(z.string()).optional(),
+    targetFileName: z.coerce.string().optional(),
+    sourceId: z.coerce.string().optional(),
+    fileRef: z.coerce.string().optional(),
+    sheet: z.coerce.string().optional(),
+    cell: z.coerce.string().optional(),
+    value: z.coerce.string().optional(),
+    rowValues: z.array(z.coerce.string()).optional(),
     data: z.record(z.any()).optional(),
-    responseToUser: z.string().optional(),
+    responseToUser: z.coerce.string().optional(),
 }).superRefine((payload, ctx) => {
     const needsTarget = payload.action !== "NONE" && payload.action !== "LIST";
     const hasTarget = Boolean(payload.targetFileName || payload.sourceId || payload.fileRef);
@@ -162,6 +162,13 @@ export const SpreadsheetExecutorRequestSchema = z.object({
 });
 
 export const spreadsheetExecutorRequestModel = workerModel.withStructuredOutput(SpreadsheetExecutorRequestSchema);
+
+export const SpreadsheetToolDecisionSchema = z.object({
+    shouldInvokeTool: z.coerce.boolean().default(false),
+    reason: z.coerce.string().default(""),
+});
+
+export const spreadsheetToolDecisionModel = workerModel.withStructuredOutput(SpreadsheetToolDecisionSchema);
 
 export function createRequiredToolAgent(tools: any[]) {
     return (toolModel as any).bindTools(tools, { tool_choice: "required" });

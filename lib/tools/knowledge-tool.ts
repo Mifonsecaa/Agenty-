@@ -14,7 +14,7 @@ import {
 } from "@/lib/knowledge/spreadsheet";
 import { replaceKnowledgeFileByPublicUrl, uploadKnowledgeFileToStorage } from "@/lib/storage/knowledge-files";
 import path from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 
 const TOOL_RAG_MIN_SCORE = Number(process.env.RAG_TOOL_MIN_SCORE || 0.58);
 
@@ -221,23 +221,23 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
         description: "Edita o crea archivos Excel (.xlsm/.xlsx) de la base de conocimiento y reindexa los cambios para que el agente responda con datos actualizados.",
         schema: z.object({
             action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE"]).describe("LIST para archivos, LIST_SHEETS para hojas, READ_CELL para leer, UPDATE_CELL para editar, APPEND_ROW para agregar registros y CREATE_FILE para crear un archivo Excel nuevo."),
-            targetFileName: z.string().optional().describe("Nombre de archivo objetivo, por ejemplo 'reservas.xlsx'."),
-            sourceId: z.string().optional().describe("sourceId del archivo en knowledge metadata."),
-            fileRef: z.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
-            allowedSourceIds: z.array(z.string()).optional().describe("Lista de sourceId permitidos por contexto previo (lock de procedencia)."),
-            allowedFileUrls: z.array(z.string()).optional().describe("Lista de URLs de archivo permitidas por contexto previo (lock de procedencia)."),
-            sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
-            sheetName: z.string().optional().describe("Alias de sheet para compatibilidad con prompts/tool-calling."),
-            cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
-            value: z.string().optional().describe("Nuevo valor textual de la celda."),
-            rowValues: z.array(z.string()).optional().describe("Valores de una nueva fila para APPEND_ROW."),
+            targetFileName: z.coerce.string().optional().describe("Nombre de archivo objetivo, por ejemplo 'reservas.xlsx'."),
+            sourceId: z.coerce.string().optional().describe("sourceId del archivo en knowledge metadata."),
+            fileRef: z.coerce.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
+            allowedSourceIds: z.array(z.coerce.string()).optional().describe("Lista de sourceId permitidos por contexto previo (lock de procedencia)."),
+            allowedFileUrls: z.array(z.coerce.string()).optional().describe("Lista de URLs de archivo permitidas por contexto previo (lock de procedencia)."),
+            sheet: z.coerce.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
+            sheetName: z.coerce.string().optional().describe("Alias de sheet para compatibilidad con prompts/tool-calling."),
+            cell: z.coerce.string().optional().describe("Celda en formato A1, por ejemplo B3."),
+            value: z.coerce.string().optional().describe("Nuevo valor textual de la celda."),
+            rowValues: z.array(z.coerce.string()).optional().describe("Valores de una nueva fila para APPEND_ROW."),
             data: z.any().optional().describe("Datos libres para crear/editar (ej: { headers: [...], rowValues: [...] })."),
         }).superRefine((payload, ctx) => {
-            if (payload.action !== "LIST" && !payload.targetFileName && !payload.sourceId) {
+            if (payload.action !== "LIST" && !payload.targetFileName && !payload.sourceId && !payload.fileRef) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    message: "Debes indicar targetFileName o sourceId para esta operacion.",
-                    path: ["targetFileName"],
+                    message: "Debes indicar targetFileName, sourceId o fileRef para esta operacion.",
+                    path: ["fileRef"],
                 });
             }
         }),
@@ -422,6 +422,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 let updatedBuffer: Buffer;
                 let updateSummary = "";
                 let updatedCellsMeta: Array<{ sheet: string; cell: string }> = [];
+                let finalFileUrl = target.fileUrl;
 
                 if (action === "UPDATE_CELL") {
                     const cellAddress = String(cell || "").trim();
@@ -460,8 +461,19 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                     updatedCellsMeta = [{ sheet: sheetNameResolved, cell: "APPEND_ROW" }];
                 }
 
-                if (loaded.source === "local" && loaded.localPath) {
-                    await writeFile(loaded.localPath, updatedBuffer);
+                if (loaded.source === "local") {
+                    const uploaded = await uploadKnowledgeFileToStorage({
+                        buffer: updatedBuffer,
+                        fileName: target.fileName,
+                        contentType: /\.xlsm$/i.test(target.fileName)
+                            ? "application/vnd.ms-excel.sheet.macroEnabled.12"
+                            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        businessId,
+                    });
+                    if (!uploaded.publicUrl) {
+                        return `No se pudo guardar el archivo actualizado en storage: ${uploaded.error || "error desconocido"}`;
+                    }
+                    finalFileUrl = uploaded.publicUrl;
                 } else {
                     const replaceResult = await replaceKnowledgeFileByPublicUrl({
                         publicUrl: target.fileUrl,
@@ -489,7 +501,7 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                         fileType: target.fileType || (target.fileName.endsWith(".xlsm")
                             ? "application/vnd.ms-excel.sheet.macroEnabled.12"
                             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-                        fileUrl: target.fileUrl,
+                        fileUrl: finalFileUrl,
                         source: "spreadsheet_update_by_agent",
                         updatedCells: updatedCellsMeta,
                         updatedAt: new Date().toISOString(),
