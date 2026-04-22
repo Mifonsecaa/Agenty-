@@ -33,19 +33,25 @@ const BUILDER_INTERVIEW_PROMPT = `Eres "Brainia Builder", un experto Arquitecto 
 Tu unico objetivo es entrevistar al usuario paso a paso para recopilar la informacion exacta y construir un "Procedimiento Operativo Estandar (SOP)" para su futuro agente de IA.
 
 REGLA DE ORO:
-NO asumas informacion. Tu trabajo es hacer preguntas UNA POR UNA hasta completar los 4 Pilares del Negocio. Nunca hagas mas de dos preguntas en un solo mensaje.
+NO asumas informacion. Tu trabajo es hacer preguntas UNA POR UNA hasta completar los 5 Pilares del Negocio. Nunca hagas mas de dos preguntas en un solo mensaje.
 
-LOS 4 PILARES A RECOPILAR:
+LOS 5 PILARES A RECOPILAR:
 1. Identidad: Nombre del negocio, rubro exacto y tono de voz (ej. formal, casual, directo).
 2. Objetivo Principal: Que hara el agente? (ej. agendar reservas, tomar pedidos a domicilio, soporte tecnico, o solo dar informacion).
 3. Logistica: Horarios de atencion, dias laborales, zonas de cobertura y metodos de pago aceptados.
 4. Limites (Guardrails): Que cosas NUNCA debe hacer el agente? (ej. no dar descuentos, no dar recetas, no aceptar cancelaciones).
+5. Protocolo de Ejecucion por Accion: Como debe ejecutar cada accion critica el agente. Debes preguntarlo explicitamente.
+   Ejemplos:
+   - "Cuando pidan reserva: registrar en la hoja de calculo 'Reservas' del conocimiento usando la herramienta de spreadsheet."
+   - "Cuando consulten disponibilidad: leer la misma hoja y responder sin revelar datos personales de otros clientes."
+   - "Cuando pidan pedido: crear registro en la hoja de pedidos y confirmar numero de orden."
 
 INSTRUCCIONES DE INTERACCION:
 - Saluda amablemente basandote en el primer mensaje del usuario.
-- Revisa mentalmente cuales de los 4 pilares faltan.
+- Revisa mentalmente cuales de los 5 pilares faltan.
 - Si el usuario da respuestas vagas, pide detalles (ej. "Entiendo que venden pizzas, el bot tomara el pedido para domicilio o solo dara el menu?").
 - Manten un tono motivador y profesional.
+- Si falta el Pilar 5, pregunta especificamente: "Como quieres que ejecute cada accion clave (reserva, pedido, consulta), y en que sistema/archivo debe escribir o leer?".
 
 CIERRE Y EXTRACCION:
 Una vez que tengas los 4 pilares completos, despidete diciendo: "Perfecto! Tengo todo lo necesario. Generando el cerebro de tu agente..."
@@ -57,7 +63,7 @@ A continuacion, y en formato estrictamente JSON, genera la configuracion final u
 }
 
 REGLA CRITICA DE CIERRE:
-JAMAS generes el JSON final si no validaste explicitamente el Pilar 4 (Limites/Guardrails).`;
+JAMAS generes el JSON final si no validaste explicitamente el Pilar 4 (Limites/Guardrails) y el Pilar 5 (Protocolo de Ejecucion por Accion).`;
 
 function normalizeProvider(value: unknown): Provider {
   return value === 'openai' || value === 'github' || value === 'gemini' ? value : 'openai';
@@ -169,6 +175,30 @@ function hasExplicitGuardrails(systemPromptFinal: string): boolean {
     normalized.includes('limites') ||
     normalized.includes('nunca')
   );
+}
+
+function hasExecutionProtocol(systemPromptFinal: string): boolean {
+  const normalized = systemPromptFinal.toLowerCase();
+  const hasActionLanguage =
+    normalized.includes('protocolo de ejecucion') ||
+    normalized.includes('flujo de accion') ||
+    normalized.includes('cuando el usuario') ||
+    normalized.includes('si solicita');
+
+  const hasOperationalTarget =
+    normalized.includes('hoja de calculo') ||
+    normalized.includes('spreadsheet') ||
+    normalized.includes('tabla') ||
+    normalized.includes('archivo');
+
+  const hasExecutionVerb =
+    normalized.includes('registrar') ||
+    normalized.includes('anotar') ||
+    normalized.includes('guardar') ||
+    normalized.includes('actualizar') ||
+    normalized.includes('leer');
+
+  return hasActionLanguage && hasOperationalTarget && hasExecutionVerb;
 }
 
 async function generateDemoReply(messages: ChatMessage[], provider: Provider, systemPrompt: string) {
@@ -353,6 +383,18 @@ export async function POST(request: Request) {
           role: 'assistant',
           content:
             'Antes de cerrar, necesito el Pilar 4: define los limites/guardrails de forma explicita (que NUNCA debe hacer el agente).',
+          completed: false,
+          saved: false,
+        });
+      }
+
+      if (!hasExecutionProtocol(completion.systemPromptFinal)) {
+        incrementOpsCounter('chat.success');
+        recordOpsDuration('chat.latency_ms', Date.now() - startedAt);
+        return NextResponse.json({
+          role: 'assistant',
+          content:
+            'Antes de cerrar, necesito el Pilar 5: define como debe ejecutar cada accion clave (por ejemplo, reserva -> registrar en hoja de calculo; consulta -> leer hoja sin exponer datos sensibles).',
           completed: false,
           saved: false,
         });

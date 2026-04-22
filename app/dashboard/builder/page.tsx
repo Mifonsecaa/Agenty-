@@ -20,6 +20,9 @@ function buildDraftPrompt(messages: BuilderMessage[], fallbackBusinessName: stri
     const objective = userInputs[1] || "Pendiente: objetivo principal del agente.";
     const logistics = userInputs[2] || "Pendiente: horarios, dias, zonas y metodos de pago.";
     const guardrails = userInputs[3] || "Pendiente: limites/guardrails (que nunca debe hacer).";
+    const executionProtocol =
+        userInputs[4] ||
+        "Pendiente: como ejecutar cada accion clave (ej: reserva -> anotar en hoja de calculo, consulta -> leer hoja sin revelar datos de terceros).";
 
     return `SOP DRAFT - ${fallbackBusinessName || "Negocio"}
 
@@ -35,11 +38,15 @@ ${logistics}
 PASO 4 - LIMITES (GUARDRAILS)
 ${guardrails}
 
+PASO 5 - PROTOCOLO DE EJECUCION POR ACCION
+${executionProtocol}
+
 REGLAS OPERATIVAS
 - Nunca inventar informacion fuera del contexto validado.
 - Hacer una sola pregunta por turno cuando falte informacion critica.
 - Confirmar accion solo cuando haya datos completos.
-- Mantener continuidad sin reiniciar la conversacion.`;
+- Mantener continuidad sin reiniciar la conversacion.
+- Ejecutar acciones criticas en el sistema definido por el negocio (ej. hoja de calculo del conocimiento).`;
 }
 
 export default function BuilderPlayground() {
@@ -51,7 +58,7 @@ export default function BuilderPlayground() {
     const [messages, setMessages] = useState<BuilderMessage[]>([
         {
             role: "assistant",
-            text: "Soy Brainia Builder. Empecemos por lo basico: como se llama tu negocio y a que se dedica?"
+            text: "Soy Brainia Builder. Empecemos por lo basico: como se llama tu negocio y a que se dedica? Luego te preguntare como quieres que el agente ejecute cada accion clave."
         }
     ]);
     const [input, setInput] = useState("");
@@ -348,7 +355,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                             <input
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder="Como se llama tu negocio y que hace? (Ej: Soy Domenico, una panaderia)"
+                                placeholder="Como se llama tu negocio y que hace? (Luego definimos como ejecutar reservas, pedidos y consultas)"
                                 className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/35 focus:outline-none focus:border-blue-500 transition-colors"
                             />
                             <button
