@@ -10,36 +10,104 @@ type BuilderMessage = {
     text: string;
 };
 
-function buildDraftPrompt(messages: BuilderMessage[], fallbackBusinessName: string) {
-    const userInputs = messages
-        .filter((m) => m.role === "user")
-        .map((m) => m.text.trim())
-        .filter(Boolean);
+type DraftPillars = {
+    identity: string[];
+    objective: string[];
+    logistics: string[];
+    guardrails: string[];
+    executionProtocol: string[];
+};
 
-    const identity = userInputs[0] || "Pendiente: nombre del negocio, rubro y tono de voz.";
-    const objective = userInputs[1] || "Pendiente: objetivo principal del agente.";
-    const logistics = userInputs[2] || "Pendiente: horarios, dias, zonas y metodos de pago.";
-    const guardrails = userInputs[3] || "Pendiente: limites/guardrails (que nunca debe hacer).";
-    const executionProtocol =
-        userInputs[4] ||
-        "Pendiente: como ejecutar cada accion clave (ej: reserva -> anotar en hoja de calculo, consulta -> leer hoja sin revelar datos de terceros).";
+function normalizeForMatch(value: string) {
+    return value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+}
+
+function hasAnyKeyword(value: string, keywords: string[]) {
+    return keywords.some((keyword) => value.includes(keyword));
+}
+
+function extractPillars(messages: BuilderMessage[]): DraftPillars {
+    const pillars: DraftPillars = {
+        identity: [],
+        objective: [],
+        logistics: [],
+        guardrails: [],
+        executionProtocol: [],
+    };
+
+    const identityKeywords = ["nombre", "se llama", "somos", "soy", "rubro", "tono", "formal", "casual", "directo", "restaurante", "tienda", "panaderia"];
+    const objectiveKeywords = ["objetivo", "agendar", "reserva", "pedido", "soporte", "informacion", "atencion", "vender", "cotizar", "responder"];
+    const logisticsKeywords = ["horario", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", "festivo", "festivos", "zona", "cobertura", "direccion", "ubicacion", "pago", "metodo", "am", "pm"];
+    const guardrailKeywords = ["nunca", "no debe", "no puede", "prohibido", "limite", "limites", "guardrail", "evitar", "privado", "datos", "descuento", "cancelacion"];
+    const executionKeywords = ["protocolo", "flujo", "cuando", "si piden", "si preguntan", "accion", "paso", "registrar", "anotar", "guardar", "actualizar", "hoja", "excel", "spreadsheet", "tabla", "calendario", "crm", "herramienta"];
+
+    for (const message of messages) {
+        if (message.role !== "user") continue;
+        const rawText = message.text.trim();
+        if (!rawText) continue;
+        const text = normalizeForMatch(rawText);
+
+        const isExecution = hasAnyKeyword(text, executionKeywords);
+        const isGuardrail = hasAnyKeyword(text, guardrailKeywords);
+        const isLogistics = hasAnyKeyword(text, logisticsKeywords);
+        const isObjective = hasAnyKeyword(text, objectiveKeywords);
+        const isIdentity = hasAnyKeyword(text, identityKeywords);
+
+        if (isExecution) pillars.executionProtocol.push(rawText);
+        if (isGuardrail) pillars.guardrails.push(rawText);
+        if (isLogistics) pillars.logistics.push(rawText);
+        if (isObjective && !isExecution) pillars.objective.push(rawText);
+        if (isIdentity && !isObjective && !isLogistics && !isGuardrail) pillars.identity.push(rawText);
+
+        // Fallback controlado: si no matchea ningun pilar, se guarda en identidad
+        // para evitar perder informacion en el borrador.
+        if (!isExecution && !isGuardrail && !isLogistics && !isObjective && !isIdentity) {
+            pillars.identity.push(rawText);
+        }
+    }
+
+    return pillars;
+}
+
+function buildDraftPrompt(messages: BuilderMessage[], fallbackBusinessName: string) {
+    const pillars = extractPillars(messages);
+
+    const identity = pillars.identity.length
+        ? pillars.identity.join("\n- ")
+        : "Pendiente: nombre del negocio, rubro y tono de voz.";
+    const objective = pillars.objective.length
+        ? pillars.objective.join("\n- ")
+        : "Pendiente: objetivo principal del agente (ej: reservas, pedidos, soporte).";
+    const logistics = pillars.logistics.length
+        ? pillars.logistics.join("\n- ")
+        : "Pendiente: horarios, dias, zonas de cobertura, direccion y metodos de pago.";
+    const guardrails = pillars.guardrails.length
+        ? pillars.guardrails.join("\n- ")
+        : "Pendiente: limites/guardrails (que nunca debe hacer y que datos no puede revelar).";
+    const executionProtocol = pillars.executionProtocol.length
+        ? pillars.executionProtocol.join("\n- ")
+        : "Pendiente: como ejecutar cada accion clave (ej: reserva -> anotar en hoja de calculo, consulta -> leer hoja sin revelar datos de terceros).";
 
     return `SOP DRAFT - ${fallbackBusinessName || "Negocio"}
 
 PASO 1 - IDENTIDAD
-${identity}
+- ${identity}
 
 PASO 2 - OBJETIVO PRINCIPAL
-${objective}
+- ${objective}
 
 PASO 3 - LOGISTICA
-${logistics}
+- ${logistics}
 
 PASO 4 - LIMITES (GUARDRAILS)
-${guardrails}
+- ${guardrails}
 
 PASO 5 - PROTOCOLO DE EJECUCION POR ACCION
-${executionProtocol}
+- ${executionProtocol}
 
 REGLAS OPERATIVAS
 - Nunca inventar informacion fuera del contexto validado.
@@ -205,9 +273,10 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
 
         const userMsg = input.trim();
         const currentMessages: BuilderMessage[] = [...messages, { role: "user", text: userMsg }];
+        const draftPrompt = buildDraftPrompt(currentMessages, agentName);
 
         setMessages(currentMessages);
-        setSystemPrompt(buildDraftPrompt(currentMessages, agentName));
+        setSystemPrompt(draftPrompt);
         setInput("");
         setIsTyping(true);
 
@@ -218,7 +287,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
             }));
 
             const reqMessages = [
-                { role: 'system', content: systemPrompt },
+                { role: 'system', content: draftPrompt },
                 ...apiMessages
             ];
 
@@ -229,7 +298,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     messages: reqMessages,
                     provider: aiProvider,
                     agentId: activeAgent?.id,
-                    systemPrompt,
+                    systemPrompt: draftPrompt,
                     mode: "builder_interview"
                 })
             });
@@ -317,7 +386,7 @@ Por favor, actúa estrictamente basándote en esta personalidad, conocimientos d
                     </button>
                 </div>
             </div>
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-1 gap-6 min-h-0 overflow-hidden">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden">
 
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col min-h-[420px]">
                     <div className="flex items-center gap-2 mb-4">
