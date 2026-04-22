@@ -5,11 +5,29 @@ import { brainModel, reservationExtractorModel, spreadsheetExecutorRequestModel 
 import { processExcelWorkOrder } from "../tools/excel-handler";
 import { createSpreadsheetUpdateTool, listSpreadsheetFilesForBusiness } from "../tools/knowledge-tool";
 import { getGraphCheckpointer } from "./checkpointer";
+import { classifyQueryLayer } from "@/lib/rag/layers";
+import { workbookToPreview } from "@/lib/knowledge/spreadsheet";
+import path from "path";
+import { readFile } from "fs/promises";
 
 const AGENT_MAX_HISTORY_MESSAGES = Number(process.env.AGENT_MAX_HISTORY_MESSAGES || 8);
 
 type ReservationState = "INIT" | "EXTRACTING_RESERVATION" | "READY_TO_SAVE";
 type ReservationData = { date: string | null; time: string | null; people: string | null; name: string | null };
+type SpreadsheetSourceLock = { sourceIds: string[]; fileUrls: string[] };
+type SpreadsheetPlanAction = "LIST" | "LIST_SHEETS" | "READ_CELL" | "UPDATE_CELL" | "APPEND_ROW" | "CREATE_FILE" | "NONE";
+type SpreadsheetActionPlan = {
+    action: SpreadsheetPlanAction;
+    targetFileName?: string;
+    sourceId?: string;
+    fileRef?: string;
+    sheet?: string;
+    cell?: string;
+    value?: string;
+    rowValues?: string[];
+    data?: Record<string, unknown>;
+    responseToUser?: string;
+};
 
 const AgentGraphState = Annotation.Root({
     ...MessagesAnnotation.spec,
@@ -41,6 +59,22 @@ const AgentGraphState = Annotation.Root({
     availableFiles: Annotation<Array<{ fileName: string; sourceId: string; fileUrl: string }> | undefined>({
         reducer: (_prev, next) => next,
         default: () => undefined,
+    }),
+    retrievalLayer: Annotation<"productos" | "operaciones" | "general">({
+        reducer: (_prev, next) => next,
+        default: () => "general",
+    }),
+    spreadsheetSourceLock: Annotation<SpreadsheetSourceLock>({
+        reducer: (_prev, next) => next,
+        default: () => ({ sourceIds: [], fileUrls: [] }),
+    }),
+    repeatedPromptCount: Annotation<number>({
+        reducer: (_prev, next) => next,
+        default: () => 0,
+    }),
+    lastPromptFingerprint: Annotation<string>({
+        reducer: (_prev, next) => next,
+        default: () => "",
     }),
 });
 
@@ -76,7 +110,7 @@ function trimMessagesForModel(messages: BaseMessage[]) {
 }
 
 function isReservationIntent(text: string) {
-    return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno)/i.test(String(text || ""));
+    return /(reserv|reserva|agendar|agenda|mesa\b|personas\b|cita|turno|horario|hora|\b\d{1,2}(:\d{2})?\s?(am|pm)?\b)/i.test(String(text || ""));
 }
 
 function isSpreadsheetEditIntent(text: string) {
@@ -132,6 +166,74 @@ function tryParseExecutorRequest(raw: string): any | null {
     }
 }
 
+function normalizePlanAction(value: unknown): SpreadsheetPlanAction {
+    const action = String(value || "").trim().toUpperCase();
+    if (["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"].includes(action)) {
+        return action as SpreadsheetPlanAction;
+    }
+    return "NONE";
+}
+
+function normalizeSpreadsheetPlan(raw: any): SpreadsheetActionPlan {
+    const action = normalizePlanAction(raw?.action);
+    const rowValues = Array.isArray(raw?.rowValues)
+        ? raw.rowValues.map((v: unknown) => String(v ?? "")).filter((v: string) => v.trim().length > 0).slice(0, 80)
+        : [];
+
+    return {
+        action,
+        targetFileName: raw?.targetFileName ? String(raw.targetFileName).trim() : undefined,
+        sourceId: raw?.sourceId ? String(raw.sourceId).trim() : undefined,
+        fileRef: raw?.fileRef ? String(raw.fileRef).trim() : undefined,
+        sheet: raw?.sheet ? String(raw.sheet).trim() : undefined,
+        cell: raw?.cell ? String(raw.cell).trim().toUpperCase() : undefined,
+        value: typeof raw?.value === "string" ? raw.value : undefined,
+        rowValues,
+        data: raw?.data && typeof raw.data === "object" && !Array.isArray(raw.data)
+            ? raw.data as Record<string, unknown>
+            : undefined,
+        responseToUser: raw?.responseToUser ? String(raw.responseToUser).trim() : "",
+    };
+}
+
+function validateSpreadsheetPlan(params: {
+    plan: SpreadsheetActionPlan;
+    availableFiles: Array<{ fileName: string; sourceId: string; fileUrl: string }>;
+}) {
+    const { plan, availableFiles } = params;
+    const action = plan.action;
+    const hasTarget = Boolean(plan.targetFileName || plan.sourceId || plan.fileRef);
+    const needsTarget = action !== "NONE" && action !== "LIST";
+
+    if (needsTarget && !hasTarget && availableFiles.length > 1) {
+        return { ok: false as const, message: "Necesito que indiques qué archivo editar (fileRef, sourceId o nombre exacto)." };
+    }
+
+    if (["LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"].includes(action) && !plan.sheet) {
+        return { ok: false as const, message: "Falta el nombre de la hoja (sheet)." };
+    }
+
+    if (action === "READ_CELL" && !plan.cell) {
+        return { ok: false as const, message: "Falta la celda para leer (cell, formato A1)." };
+    }
+
+    if (action === "UPDATE_CELL") {
+        if (!plan.cell) return { ok: false as const, message: "Falta la celda a actualizar (cell, formato A1)." };
+        if (typeof plan.value !== "string") return { ok: false as const, message: "Falta el valor para actualizar (value)." };
+    }
+
+    if (action === "APPEND_ROW") {
+        const safe = Array.isArray(plan.rowValues) ? plan.rowValues.filter((v) => String(v || "").trim().length > 0) : [];
+        if (!safe.length) return { ok: false as const, message: "Faltan datos de fila para guardar (rowValues)." };
+    }
+
+    if (action === "CREATE_FILE" && !plan.targetFileName) {
+        return { ok: false as const, message: "Falta el nombre del archivo a crear (targetFileName)." };
+    }
+
+    return { ok: true as const };
+}
+
 function normalizeSpreadsheetFailureMessage(raw: string) {
     const value = String(raw || "").trim();
     if (!value) return "No pude procesar la hoja de cálculo por un problema técnico.";
@@ -152,7 +254,152 @@ function isReservationAvailabilityQuery(text: string) {
 }
 
 function isPrivacyProbeOnReservation(text: string) {
-    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona)/i.test(String(text || ""));
+    return /(quien|quién|nombre|telefono|teléfono|a nombre de|persona|cliente|quien tiene|quién tiene|de quien|de quién)/i.test(String(text || ""));
+}
+
+function normalizeKey(value: string) {
+    return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "")
+        .trim();
+}
+
+function normalizeDateKey(value: string) {
+    return normalizeKey(value);
+}
+
+function normalizeTimeKey(value: string) {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return "";
+
+    const match = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+    if (!match) return normalizeKey(text);
+
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || "0");
+    const meridiem = (match[3] || "").toLowerCase();
+
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+
+    const hh = String(Math.max(0, Math.min(23, hour))).padStart(2, "0");
+    const mm = String(Math.max(0, Math.min(59, minute))).padStart(2, "0");
+    return `${hh}:${mm}`;
+}
+
+function toCellAddress(colIndex: number, rowNumber: number) {
+    let n = colIndex;
+    let label = "";
+    while (n >= 0) {
+        label = String.fromCharCode((n % 26) + 65) + label;
+        n = Math.floor(n / 26) - 1;
+    }
+    return `${label}${rowNumber}`;
+}
+
+function redactReservationSensitiveInfo(text: string) {
+    let safe = String(text || "");
+    safe = safe.replace(/a nombre de\s+([A-Za-zÁÉÍÓÚÑáéíóúñ\s]{2,60})/gi, "a nombre de [reservado]");
+    safe = safe.replace(/(telefono|teléfono|celular|whatsapp)\s*[:\-]?\s*\+?\d[\d\s\-]{6,}/gi, "$1: [reservado]");
+    safe = safe.replace(/\b\+?\d[\d\s\-]{8,}\b/g, "[reservado]");
+    return safe;
+}
+
+function hasRecentReservationContext(messages: BaseMessage[]) {
+    const recent = trimMessagesForModel(messages).slice(-6);
+    return recent.some((msg: any) => {
+        const content = normalizeMessageContent(msg?.content || "");
+        return /(reserva|agendar|hora|personas|a nombre de|confirmame|confírmame)/i.test(content);
+    });
+}
+
+function looksLikeReservationFollowUp(text: string) {
+    return /(si|sí|ok|dale|confirmo|cambia|cambiar|mejor|para\s+las|a\s+las|somos|seremos|a nombre de|me llamo|soy\s+[A-Za-z])/i.test(String(text || "").toLowerCase());
+}
+
+function promptFingerprint(value: string) {
+    return normalizeKey(value).slice(0, 240);
+}
+
+async function loadSpreadsheetBufferForGraph(fileUrl: string) {
+    if (fileUrl.startsWith("/uploads/")) {
+        const localPath = path.join(process.cwd(), "public", fileUrl.replace(/^\//, ""));
+        const buffer = await readFile(localPath);
+        return { buffer };
+    }
+
+    if (/^https?:\/\//i.test(fileUrl)) {
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+            throw new Error(`REMOTE_FILE_FETCH_FAILED:${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return { buffer: Buffer.from(arrayBuffer) };
+    }
+
+    throw new Error("UNSUPPORTED_FILE_URL");
+}
+
+async function inspectReservationSheet(params: {
+    fileUrl: string;
+    reservation: ReservationData;
+    customerPhone?: string;
+}) {
+    const loaded = await loadSpreadsheetBufferForGraph(params.fileUrl);
+    const sheets = workbookToPreview(loaded.buffer, { maxSheets: 6, maxRows: 600 });
+
+    const requestedDate = normalizeDateKey(params.reservation.date || "");
+    const requestedTime = normalizeTimeKey(params.reservation.time || "");
+    const requestedName = normalizeKey(params.reservation.name || "");
+    const requestedPhone = normalizeKey(params.customerPhone || "");
+
+    let occupiedByOther: null | { sheet: string; rowNumber: number } = null;
+    let sameCustomerRow: null | { sheet: string; rowNumber: number; idx: Record<string, number> } = null;
+
+    for (const sheet of sheets) {
+        const headerIdx = sheet.headers.map((h: string) => normalizeKey(h));
+        const idx = {
+            fecha: headerIdx.findIndex((h: string) => /fecha|dia/.test(h)),
+            hora: headerIdx.findIndex((h: string) => /hora/.test(h)),
+            nombre: headerIdx.findIndex((h: string) => /nombre|cliente/.test(h)),
+            personas: headerIdx.findIndex((h: string) => /personas|cantidad|asistentes/.test(h)),
+            telefono: headerIdx.findIndex((h: string) => /telefono|celular|whatsapp|contacto/.test(h)),
+            estado: headerIdx.findIndex((h: string) => /estado|status/.test(h)),
+        };
+
+        if (idx.hora < 0) continue;
+
+        for (let rowIndex = 0; rowIndex < sheet.rows.length; rowIndex++) {
+            const row = sheet.rows[rowIndex] || [];
+            const rowNumber = rowIndex + 2;
+            const rowEstado = idx.estado >= 0 ? normalizeKey(String(row[idx.estado] || "")) : "";
+            if (/cancelad|anulad|rechazad/.test(rowEstado)) continue;
+
+            const rowDate = idx.fecha >= 0 ? normalizeDateKey(String(row[idx.fecha] || "")) : "";
+            const rowTime = idx.hora >= 0 ? normalizeTimeKey(String(row[idx.hora] || "")) : "";
+            const rowName = idx.nombre >= 0 ? normalizeKey(String(row[idx.nombre] || "")) : "";
+            const rowPhone = idx.telefono >= 0 ? normalizeKey(String(row[idx.telefono] || "")) : "";
+
+            const dateMatches = requestedDate ? (rowDate === requestedDate || rowDate.includes(requestedDate) || requestedDate.includes(rowDate)) : true;
+            const timeMatches = requestedTime ? rowTime === requestedTime : false;
+            const sameCustomer = Boolean(
+                (requestedPhone && rowPhone && requestedPhone === rowPhone) ||
+                (requestedName && rowName && requestedName === rowName)
+            );
+
+            if (dateMatches && sameCustomer && !sameCustomerRow) {
+                sameCustomerRow = { sheet: sheet.name, rowNumber, idx };
+            }
+
+            if (dateMatches && timeMatches && !sameCustomer) {
+                occupiedByOther = { sheet: sheet.name, rowNumber };
+            }
+        }
+    }
+
+    return { occupiedByOther, sameCustomerRow };
 }
 
 function sanitizeSpreadsheetResultForUser(params: {
@@ -162,7 +409,8 @@ function sanitizeSpreadsheetResultForUser(params: {
     fallback: string;
 }) {
     const requested = String(params.requestedMessage || "");
-    const value = String(params.resultText || "").trim();
+    const value = redactReservationSensitiveInfo(String(params.resultText || "").trim());
+    const safeFallback = redactReservationSensitiveInfo(String(params.fallback || ""));
 
     if (isReservationAvailabilityQuery(requested) && isPrivacyProbeOnReservation(requested)) {
         return "Por seguridad, no comparto datos personales de reservas. Solo puedo confirmar disponibilidad general de horarios.";
@@ -178,14 +426,14 @@ function sanitizeSpreadsheetResultForUser(params: {
     }
 
     if (params.action === "LIST" || params.action === "LIST_SHEETS") {
-        return params.fallback || "Listo, encontré los archivos y hojas disponibles.";
+        return safeFallback || "Listo, encontré los archivos y hojas disponibles.";
     }
 
     if (isReservationAvailabilityQuery(requested) && /Fila agregada:/i.test(value)) {
         return "Listo, la reserva fue registrada correctamente.";
     }
 
-    return params.fallback || value;
+    return safeFallback || value;
 }
 
 export const createAgentGraph = async (businessId: string, businessName: string, config: any, customerPhone?: string) => {
@@ -206,17 +454,30 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
     const plannerNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const retrievalLayer = classifyQueryLayer(lastUserMessage);
 
         if (state.currentState === "EXTRACTING_RESERVATION" || state.currentState === "READY_TO_SAVE") {
-            return { currentPlan: "RESERVATION_FLOW" };
+            return { currentPlan: "RESERVATION_FLOW", retrievalLayer };
+        }
+
+        if (hasRecentReservationContext(state.messages as BaseMessage[]) && looksLikeReservationFollowUp(lastUserMessage)) {
+            return {
+                currentPlan: "RESERVATION_FLOW",
+                currentState: "EXTRACTING_RESERVATION" as ReservationState,
+                retrievalLayer,
+            };
         }
 
         if (isReservationIntent(lastUserMessage)) {
-            return { currentPlan: "RESERVATION_FLOW", currentState: "EXTRACTING_RESERVATION" as ReservationState };
+            return {
+                currentPlan: "RESERVATION_FLOW",
+                currentState: "EXTRACTING_RESERVATION" as ReservationState,
+                retrievalLayer,
+            };
         }
 
         if (isSpreadsheetEditIntent(lastUserMessage)) {
-            return { currentPlan: "ACCION_EXCEL" };
+            return { currentPlan: "ACCION_EXCEL", retrievalLayer };
         }
 
         const reply = await brainModel.invoke([
@@ -227,13 +488,19 @@ export const createAgentGraph = async (businessId: string, businessName: string,
         const plan = normalizeMessageContent((reply as any)?.content);
         return {
             currentPlan: /RESPONDER_DIRECTO/i.test(plan) ? "RESPONDER_DIRECTO" : "RESPONDER_CON_RAG",
+            retrievalLayer,
         };
     };
 
     const reservationExtractorNode = async (state: AgentGraphStateType) => {
         const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
         const extracted = await reservationExtractorModel.invoke([
-            new SystemMessage("Extrae SOLO del ultimo mensaje del usuario los campos date/time/people/name y si es afirmacion corta. Si no aparece, devuelve null."),
+            new SystemMessage(
+                `Extrae datos de reserva usando el contexto conversacional reciente y el estado actual.\n` +
+                `Estado actual conocido: ${JSON.stringify(state.reservationData || {})}\n` +
+                `Debes completar date/time/people/name e isAffirmative.\n` +
+                `No borres datos previos si el ultimo mensaje solo corrige un campo.`
+            ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
@@ -265,11 +532,28 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         const missingField = getFirstMissingReservationField(mergedData);
         if (missingField) {
+            const prompt = buildMissingFieldQuestion(missingField);
+            const fingerprint = promptFingerprint(prompt);
+            const repeated = state.lastPromptFingerprint === fingerprint ? (state.repeatedPromptCount || 0) + 1 : 1;
+
+            if (repeated >= 3) {
+                return {
+                    isTaskComplete: true,
+                    currentState: "EXTRACTING_RESERVATION",
+                    reservationData: mergedData,
+                    lastPromptFingerprint: fingerprint,
+                    repeatedPromptCount: repeated,
+                    messages: [new AIMessage("Para continuar sin errores, comparte todo junto en un solo mensaje: fecha, hora, cantidad de personas y nombre.")],
+                };
+            }
+
             return {
                 isTaskComplete: true,
                 currentState: "EXTRACTING_RESERVATION",
                 reservationData: mergedData,
-                messages: [new AIMessage(buildMissingFieldQuestion(missingField))],
+                lastPromptFingerprint: fingerprint,
+                repeatedPromptCount: repeated,
+                messages: [new AIMessage(prompt)],
             };
         }
 
@@ -285,6 +569,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             currentState: "READY_TO_SAVE",
             reservationData: mergedData,
             messages: [new AIMessage(`Confírmame por favor con 'sí' para guardar esta reserva:\n${summary}`)],
+            repeatedPromptCount: 0,
+            lastPromptFingerprint: "",
         };
     };
 
@@ -309,6 +595,57 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 });
             }
 
+            const targetFile = (await ensureAvailableFiles(state)).find((f) => f.fileName === targetFileName) || null;
+            if (targetFile?.fileUrl) {
+                const inspection = await inspectReservationSheet({
+                    fileUrl: targetFile.fileUrl,
+                    reservation,
+                    customerPhone: state.customerPhone || customerPhone,
+                }).catch(() => ({ occupiedByOther: null, sameCustomerRow: null }));
+
+                if (inspection.occupiedByOther) {
+                    return {
+                        isTaskComplete: true,
+                        currentState: "EXTRACTING_RESERVATION",
+                        currentPlan: "RESERVATION_FLOW",
+                        messages: [new AIMessage("Ese horario específico ya está ocupado. Si quieres, te ayudo a reservar una hora cercana disponible.")],
+                    };
+                }
+
+                if (inspection.sameCustomerRow) {
+                    const row = inspection.sameCustomerRow;
+                    const updates: Array<{ sheet: string; cell: string; value: string }> = [];
+                    if (row.idx.hora >= 0 && reservation.time) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.hora, row.rowNumber), value: reservation.time });
+                    }
+                    if (row.idx.personas >= 0 && reservation.people) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.personas, row.rowNumber), value: reservation.people });
+                    }
+                    if (row.idx.nombre >= 0 && reservation.name) {
+                        updates.push({ sheet: row.sheet, cell: toCellAddress(row.idx.nombre, row.rowNumber), value: reservation.name });
+                    }
+
+                    for (const update of updates) {
+                        await (spreadsheetTool as any).invoke({
+                            action: "UPDATE_CELL",
+                            targetFileName,
+                            fileRef: targetFileName,
+                            sheet: update.sheet,
+                            cell: update.cell,
+                            value: update.value,
+                        });
+                    }
+
+                    return {
+                        isTaskComplete: true,
+                        currentState: "INIT",
+                        currentPlan: undefined,
+                        reservationData: { date: null, time: null, people: null, name: null },
+                        messages: [new AIMessage(`Listo ${reservation.name || ""}, actualicé tu reserva.`)],
+                    };
+                }
+            }
+
             await processExcelWorkOrder(businessId, {
                 actionType: "APPEND_ROW",
                 targetFileName,
@@ -327,6 +664,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 currentState: "INIT",
                 currentPlan: undefined,
                 reservationData: { date: null, time: null, people: null, name: null },
+                repeatedPromptCount: 0,
+                lastPromptFingerprint: "",
                 messages: [new AIMessage(`Listo ${reservation.name || ""}, tu reserva quedo confirmada.`)],
             };
         } catch (error: any) {
@@ -344,21 +683,45 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         // Si otro agente ya envió JSON estructurado, se respeta y se ejecuta directo.
         const directRequest = tryParseExecutorRequest(lastUserMessage);
+        const allowedSourceIds = state.spreadsheetSourceLock?.sourceIds || [];
+        const allowedFileUrls = state.spreadsheetSourceLock?.fileUrls || [];
 
-        const plan = directRequest || await spreadsheetExecutorRequestModel.invoke([
+        const rawPlan = directRequest || await spreadsheetExecutorRequestModel.invoke([
             new SystemMessage(
                 `Convierte la petición a JSON para ejecutar spreadsheet. Responde SOLO JSON válido.\n` +
                 `Acciones permitidas: LIST, LIST_SHEETS, READ_CELL, UPDATE_CELL, APPEND_ROW, CREATE_FILE, NONE.\n` +
                 `Archivos disponibles: ${JSON.stringify(availableFiles)}\n` +
+                `REGLAS CRITICAS: nunca expongas nombres o telefonos de terceros en responseToUser.\n` +
+                `Para disponibilidad de reservas, valida el slot exacto solicitado (fecha + hora). Una reserva a las 5pm NO bloquea las 6pm.\n` +
                 `Si no se puede ejecutar por datos faltantes o ambigüedad, usa action=NONE y explica en responseToUser.`
             ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 
+        const plan = normalizeSpreadsheetPlan(rawPlan);
+
+        console.log("[SpreadsheetActionNode] plan", JSON.stringify({
+            action: plan.action,
+            targetFileName: plan.targetFileName || "",
+            sourceId: plan.sourceId || "",
+            fileRef: plan.fileRef || "",
+            sheet: plan.sheet || "",
+            hasCell: Boolean(plan.cell),
+            rowValuesCount: Array.isArray(plan.rowValues) ? plan.rowValues.length : 0,
+        }));
+
         if (!plan || plan.action === "NONE") {
             return {
                 isTaskComplete: true,
                 messages: [new AIMessage(plan?.responseToUser || "Necesito más datos para buscar o editar la hoja de cálculo.")],
+            };
+        }
+
+        const validation = validateSpreadsheetPlan({ plan, availableFiles });
+        if (!validation.ok) {
+            return {
+                isTaskComplete: true,
+                messages: [new AIMessage(validation.message)],
             };
         }
 
@@ -373,6 +736,8 @@ export const createAgentGraph = async (businessId: string, businessName: string,
                 value: plan.value || undefined,
                 rowValues: Array.isArray(plan.rowValues) ? plan.rowValues : undefined,
                 data: plan.data || undefined,
+                allowedSourceIds,
+                allowedFileUrls,
             });
 
             const resultText = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
@@ -402,10 +767,35 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const ragResponseNode = async (state: AgentGraphStateType) => {
         const effectiveConfig = state.config || config || {};
         let ragContext = "";
+        let nextSourceLock: SpreadsheetSourceLock = state.spreadsheetSourceLock || { sourceIds: [], fileUrls: [] };
+        const lastUserMessage = getLastUserMessage(state.messages as BaseMessage[]);
+        const retrievalLayer = state.retrievalLayer || classifyQueryLayer(lastUserMessage);
 
         try {
-            const retrieval = await retrieveRagContext({ businessId, query: getLastUserMessage(state.messages as BaseMessage[]) });
+            const retrieval = await retrieveRagContext({
+                businessId,
+                query: lastUserMessage,
+                retrievalLayer,
+            });
             ragContext = retrieval.ragContext;
+
+            const spreadsheetCandidates = (retrieval.selected || [])
+                .filter((item) => {
+                    const md = item.metadata || {};
+                    const fileName = String((md as any).fileName || "").toLowerCase();
+                    const fileType = String((md as any).fileType || "").toLowerCase();
+                    return /\.xlsx|\.xlsm|\.xls/.test(fileName) || /spreadsheet|excel/.test(fileType);
+                })
+                .slice(0, 8);
+
+            nextSourceLock = {
+                sourceIds: Array.from(new Set(spreadsheetCandidates
+                    .map((x) => String((x.metadata as any)?.sourceId || "").trim())
+                    .filter(Boolean))),
+                fileUrls: Array.from(new Set(spreadsheetCandidates
+                    .map((x) => String((x.metadata as any)?.fileUrl || "").trim())
+                    .filter(Boolean))),
+            };
         } catch (error) {
             console.error("RAG retrieval error:", error);
         }
@@ -414,6 +804,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
             new SystemMessage(
                 `Responde con grounding estricto usando el contexto del negocio.\n` +
                 `Contexto negocio: ${effectiveConfig?.businessDescription || ""}\n` +
+                `Capa prioritaria de consulta: ${retrievalLayer}\n` +
                 `RAG:\n${ragContext || "(sin contexto adicional)"}\n` +
                 `REGLA DE PRIVACIDAD: nunca reveles nombres, telefonos u otros datos personales de reservas de terceros. ` +
                 `Si preguntan quien tiene una hora, responde solo disponibilidad (ocupado/disponible) sin identidad.`
@@ -423,6 +814,7 @@ export const createAgentGraph = async (businessId: string, businessName: string,
 
         return {
             isTaskComplete: true,
+            spreadsheetSourceLock: nextSourceLock,
             messages: [new AIMessage(normalizeMessageContent((reply as any)?.content))],
         };
     };
@@ -430,7 +822,10 @@ export const createAgentGraph = async (businessId: string, businessName: string,
     const directResponseNode = async (state: AgentGraphStateType) => {
         const effectiveConfig = state.config || config || {};
         const reply = await brainModel.invoke([
-            new SystemMessage(`Responde directo y breve. Contexto del negocio: ${effectiveConfig?.businessDescription || ""}`),
+            new SystemMessage(
+                `Responde directo y breve. Contexto del negocio: ${effectiveConfig?.businessDescription || ""}. ` +
+                `Nunca reveles datos personales (nombre, telefono, identificadores) de otros clientes.`
+            ),
             ...trimMessagesForModel(state.messages as BaseMessage[]),
         ]);
 

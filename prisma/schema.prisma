@@ -122,8 +122,38 @@ model Conversation {
   business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   messages      Message[]
+  plannerSession PlannerSession?
 
   @@index([businessId, lastMessageAt])
+}
+
+model PlannerSession {
+  id              String            @id @default(cuid())
+  conversationId  String            @unique
+  sessionId       String
+  stage           String            @default("INIT")
+  state           Json              @default("{}")
+  criticalFlow    Boolean           @default(false)
+  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime          @default(now())
+  conversation    Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  operations      PlannerOperation[]
+
+  @@index([sessionId])
+  @@index([stage])
+}
+
+model PlannerOperation {
+  id             String         @id @default(cuid())
+  plannerSessionId String
+  operationId    String
+  status         String         @default("COMMITTED")
+  payload        Json           @default("{}")
+  committedAt    DateTime       @default(now())
+  plannerSession PlannerSession @relation(fields: [plannerSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([plannerSessionId, operationId])
+  @@index([operationId])
 }
 
 model Message {

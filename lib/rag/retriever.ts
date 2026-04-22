@@ -2,6 +2,7 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { normalizeKnowledgeLayer, type RetrievalLayer } from "@/lib/rag/layers";
 
 type RetrieverCandidate = {
   content: string;
@@ -19,6 +20,7 @@ type RetrieverFileTypeFilter = {
   excludeHints?: string[];
 };
 
+
 type RetrieverResult = {
   selected: RetrieverCandidate[];
   ragContext: string;
@@ -32,6 +34,7 @@ type RetrieverParams = {
   query: string;
   fileTypeFilter?: RetrieverFileTypeFilter;
   parentFolderId?: string;
+  retrievalLayer?: RetrievalLayer | string;
 };
 
 type CacheEntry<T> = {
@@ -58,6 +61,8 @@ const RAG_MULTI_QUERY_ENABLED = (process.env.RAG_MULTI_QUERY_ENABLED || "true").
 const RAG_MULTI_QUERY_MAX_VARIANTS = Number(process.env.RAG_MULTI_QUERY_MAX_VARIANTS || 2);
 const RAG_KNOWLEDGE_PRESENCE_TTL_MS = Number(process.env.RAG_KNOWLEDGE_PRESENCE_TTL_MS || 90000);
 const RAG_METADATA_FILTERING_ENABLED = (process.env.RAG_METADATA_FILTERING_ENABLED || "true").toLowerCase() !== "false";
+const RAG_LAYER_STRICT = (process.env.RAG_LAYER_STRICT || "false").toLowerCase() === "true";
+const RAG_LAYER_FALLBACK_TO_ALL = (process.env.RAG_LAYER_FALLBACK_TO_ALL || "true").toLowerCase() !== "false";
 
 let embeddingsClient: OpenAIEmbeddings | null = null;
 
@@ -86,6 +91,8 @@ function normalizeForMatch(value: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+export const normalizeRetrievalLayer = normalizeKnowledgeLayer;
 
 function extractTerms(value: string) {
   return normalizeForMatch(value)
@@ -215,6 +222,39 @@ function getMetadataText(metadata: unknown) {
   return `${fileType} ${fileName} ${fileUrl} ${source} ${parentFolderId}`.toLowerCase();
 }
 
+function layerMetadataFromRow(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return { layer: "", category: "", tagsText: "" };
+  }
+  const md = metadata as Record<string, unknown>;
+  const layer = typeof md.layer === "string" ? md.layer.toLowerCase().trim() : "";
+  const category = typeof md.category === "string" ? md.category.toLowerCase().trim() : "";
+  const tagsText = Array.isArray(md.tags)
+    ? md.tags.map((x) => String(x || "").toLowerCase().trim()).join(" ")
+    : (typeof md.tags === "string" ? md.tags.toLowerCase().trim() : "");
+  return { layer, category, tagsText };
+}
+
+function metadataMatchesLayerFilter(metadata: unknown, retrievalLayer?: RetrievalLayer | null) {
+  if (!retrievalLayer) return true;
+
+  const normalized = normalizeRetrievalLayer(retrievalLayer);
+  const { layer, category, tagsText } = layerMetadataFromRow(metadata);
+  const hasLayer = Boolean(layer || category || tagsText);
+  const byDirectMatch = layer === normalized || category === normalized || tagsText.includes(normalized);
+
+  if (normalized === "general") {
+    return byDirectMatch || !hasLayer;
+  }
+
+  if (RAG_LAYER_STRICT) {
+    return byDirectMatch;
+  }
+
+  // Modo estable: permite capa pedida + general + items sin capa para no dejar la respuesta vacia.
+  return byDirectMatch || layer === "general" || category === "general" || tagsText.includes("general") || !hasLayer;
+}
+
 function metadataMatchesFileTypeFilter(metadata: unknown, filter?: RetrieverFileTypeFilter | null) {
   const normalizedFilter = normalizeFileTypeFilter(filter || undefined);
   if (!normalizedFilter) return true;
@@ -269,6 +309,44 @@ function buildMetadataSqlFilter(filter?: RetrieverFileTypeFilter | null) {
 
   if (!clauses.length) return Prisma.sql``;
   return Prisma.sql` AND ${Prisma.join(clauses, " AND ")}`;
+}
+
+function buildLayerSqlFilter(retrievalLayer?: RetrievalLayer | null) {
+  if (!retrievalLayer) return Prisma.sql``;
+
+  const layer = normalizeRetrievalLayer(retrievalLayer);
+  if (layer === "general") {
+    return Prisma.sql` AND (
+      lower(coalesce(metadata->>'layer', '')) = 'general'
+      OR lower(coalesce(metadata->>'category', '')) = 'general'
+      OR lower(coalesce(metadata->>'tags', '')) LIKE '%general%'
+      OR (
+        coalesce(metadata->>'layer', '') = ''
+        AND coalesce(metadata->>'category', '') = ''
+        AND coalesce(metadata->>'tags', '') = ''
+      )
+    )`;
+  }
+
+  if (RAG_LAYER_STRICT) {
+    return Prisma.sql` AND (
+      lower(coalesce(metadata->>'layer', '')) = ${layer}
+      OR lower(coalesce(metadata->>'category', '')) = ${layer}
+      OR lower(coalesce(metadata->>'tags', '')) LIKE ${`%${layer}%`}
+    )`;
+  }
+
+  return Prisma.sql` AND (
+    lower(coalesce(metadata->>'layer', '')) IN (${layer}, 'general')
+    OR lower(coalesce(metadata->>'category', '')) IN (${layer}, 'general')
+    OR lower(coalesce(metadata->>'tags', '')) LIKE ${`%${layer}%`}
+    OR lower(coalesce(metadata->>'tags', '')) LIKE '%general%'
+    OR (
+      coalesce(metadata->>'layer', '') = ''
+      AND coalesce(metadata->>'category', '') = ''
+      AND coalesce(metadata->>'tags', '') = ''
+    )
+  )`;
 }
 
 function normalizeParentFolderId(parentFolderId?: string) {
@@ -333,11 +411,13 @@ async function retrieveRowsForQuery(params: {
   candidatesLimit: number;
   fileTypeFilter?: RetrieverFileTypeFilter | null;
   parentFolderId?: string;
+  retrievalLayer?: RetrievalLayer | null;
 }) {
   const queryVector = await params.embeddings.embedQuery(params.queryText);
   const vectorStr = `[${queryVector.join(",")}]`;
   const metadataSqlFilter = buildMetadataSqlFilter(params.fileTypeFilter);
   const parentFolderSqlFilter = buildParentFolderSqlFilter(params.parentFolderId);
+  const layerSqlFilter = buildLayerSqlFilter(params.retrievalLayer);
 
   const rows = await prisma.$queryRaw<Array<{ content: string; metadata: unknown; distance: number }>>(
     Prisma.sql`
@@ -347,6 +427,7 @@ async function retrieveRowsForQuery(params: {
         AND embedding IS NOT NULL
         ${metadataSqlFilter}
         ${parentFolderSqlFilter}
+        ${layerSqlFilter}
       ORDER BY embedding <-> ${vectorStr}::vector
       LIMIT ${params.candidatesLimit}
     `
@@ -361,6 +442,7 @@ async function retrieveRowsLexicalFallback(params: {
   candidatesLimit: number;
   fileTypeFilter?: RetrieverFileTypeFilter | null;
   parentFolderId?: string;
+  retrievalLayer?: RetrievalLayer | null;
 }): Promise<RetrieverRow[]> {
   const queryTerms = extractTerms(params.queryText);
   const terms = queryTerms.length > 0 ? queryTerms.slice(0, 5) : [params.queryText.trim()];
@@ -380,6 +462,7 @@ async function retrieveRowsLexicalFallback(params: {
   const normalizedParentFolderId = normalizeParentFolderId(params.parentFolderId);
   const filteredRows = rows.filter((row) => {
     if (!metadataMatchesFileTypeFilter(row.metadata, params.fileTypeFilter)) return false;
+    if (!metadataMatchesLayerFilter(row.metadata, params.retrievalLayer)) return false;
     if (!normalizedParentFolderId) return true;
     if (!row.metadata || typeof row.metadata !== "object" || Array.isArray(row.metadata)) return false;
     return (row.metadata as Record<string, unknown>).parentFolderId === normalizedParentFolderId;
@@ -525,6 +608,7 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
 
   const effectiveFileTypeFilter = normalizeFileTypeFilter(params.fileTypeFilter) || inferFileTypeFilterFromQuery(query);
   const normalizedParentFolderId = normalizeParentFolderId(params.parentFolderId);
+  const normalizedLayer = normalizeRetrievalLayer(params.retrievalLayer);
   const normalizedFilterKey = effectiveFileTypeFilter
     ? {
       includeHints: normalizeFilterHints(effectiveFileTypeFilter.includeHints),
@@ -532,7 +616,15 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
     }
     : null;
 
-  const cacheKey = buildKey(["retrieval", businessId, normalizeForMatch(query), normalizedFilterKey, normalizedParentFolderId]);
+  const cacheKey = buildKey([
+    "retrieval",
+    businessId,
+    normalizeForMatch(query),
+    normalizedFilterKey,
+    normalizedParentFolderId,
+    normalizedLayer,
+    RAG_LAYER_STRICT,
+  ]);
   const cached = getCachedResult(cacheKey);
   if (cached) return cached;
 
@@ -542,39 +634,52 @@ export async function retrieveRagContext(params: RetrieverParams): Promise<Retri
   const topK = Math.max(1, Math.min(8, RAG_RETRIEVAL_TOP_K));
   const variants = buildQueryVariants(query);
 
-  let rowBatches: RetrieverRow[][] = [];
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const embeddings = getEmbeddingsClient();
-      rowBatches = await Promise.all(
+  async function retrieveBatchesForLayer(layerFilter?: RetrievalLayer | null) {
+    let batches: RetrieverRow[][] = [];
+
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const embeddings = getEmbeddingsClient();
+        batches = await Promise.all(
+          variants.map((variant) =>
+            retrieveRowsForQuery({
+              businessId,
+              queryText: variant,
+              embeddings,
+              candidatesLimit,
+              fileTypeFilter: effectiveFileTypeFilter,
+              parentFolderId: normalizedParentFolderId || undefined,
+              retrievalLayer: layerFilter || undefined,
+            })
+          )
+        );
+      } catch (vectorError) {
+        console.warn("[RAG Retriever] Vector retrieval failed, fallback to lexical:", vectorError);
+      }
+    }
+
+    if (!batches.length || batches.every((batch) => batch.length === 0)) {
+      batches = await Promise.all(
         variants.map((variant) =>
-          retrieveRowsForQuery({
+          retrieveRowsLexicalFallback({
             businessId,
             queryText: variant,
-            embeddings,
             candidatesLimit,
             fileTypeFilter: effectiveFileTypeFilter,
             parentFolderId: normalizedParentFolderId || undefined,
+            retrievalLayer: layerFilter || undefined,
           })
         )
       );
-    } catch (vectorError) {
-      console.warn("[RAG Retriever] Vector retrieval failed, fallback to lexical:", vectorError);
     }
+
+    return batches;
   }
 
-  if (!rowBatches.length || rowBatches.every((batch) => batch.length === 0)) {
-    rowBatches = await Promise.all(
-      variants.map((variant) =>
-        retrieveRowsLexicalFallback({
-          businessId,
-          queryText: variant,
-          candidatesLimit,
-          fileTypeFilter: effectiveFileTypeFilter,
-          parentFolderId: normalizedParentFolderId || undefined,
-        })
-      )
-    );
+  let rowBatches = await retrieveBatchesForLayer(normalizedLayer);
+
+  if (RAG_LAYER_FALLBACK_TO_ALL && rowBatches.every((batch) => batch.length === 0)) {
+    rowBatches = await retrieveBatchesForLayer(null);
   }
 
   const rows: Array<{ content: string; metadata: unknown; distance: number; rank: number }> = [];

@@ -4,8 +4,68 @@ import { aiService } from "@/lib/ai";
 import { transcriptionService } from "@/services/ai/transcription";
 import { sendTelegramMessage, sendTelegramMedia, sendTelegramTyping } from "@/services/telegram-sender";
 import { extractMediaFromAgentReply } from "@/lib/media-parser";
+import { callPlannerExecutor, type PlannerState } from "@/lib/planner-executor-client";
+import { createSpreadsheetUpdateTool } from "@/lib/tools/knowledge-tool";
+import {
+  commitPlannerOperation,
+  isPlannerOperationCommitted,
+  loadPlannerStatePersistent,
+  savePlannerStatePersistent,
+} from "@/lib/planner/state-store";
 
 const MAX_HISTORY_MESSAGES = 12;
+const PLANNER_STATE_PREFIX = "[PLANNER_STATE]";
+
+function defaultPlannerState(sessionId: string): PlannerState {
+  return {
+    session_id: sessionId,
+    stage: "INIT",
+    reservation: {},
+    pending_action: "append_row",
+    turn: 0,
+    reask_count: 0,
+    max_reasks: 2,
+  };
+}
+
+async function loadPlannerState(conversationId: string, sessionId: string): Promise<PlannerState> {
+  const persisted = await loadPlannerStatePersistent(conversationId, sessionId);
+  return { ...defaultPlannerState(sessionId), ...persisted, session_id: sessionId };
+}
+
+async function savePlannerState(conversationId: string, state: PlannerState) {
+  const sessionId = String(state.session_id || "").trim() || `telegram:unknown:${conversationId}`;
+  await savePlannerStatePersistent(conversationId, sessionId, state);
+}
+
+function plannerSheetAndRef(config: unknown) {
+  const cfg = (config && typeof config === "object") ? (config as Record<string, unknown>) : {};
+  const sheet = typeof cfg.reservationsSheetName === "string" && cfg.reservationsSheetName.trim()
+    ? cfg.reservationsSheetName.trim()
+    : "Reservas";
+  const fileRef = typeof cfg.reservationsFileRef === "string" && cfg.reservationsFileRef.trim()
+    ? cfg.reservationsFileRef.trim()
+    : undefined;
+
+  return { sheet, fileRef };
+}
+
+function normalizeOperationId(value: unknown) {
+  const text = String(value || "").trim();
+  return text.slice(0, 64);
+}
+
+function isReservationFlowMessage(messageText: string, plannerState: PlannerState) {
+  const normalized = String(messageText || "").toLowerCase().trim();
+  const reservationKeywords = ["reserva", "reservar", "agendar", "mesa", "confirmar", "confirmo"];
+  const shortConfirmations = ["si", "sí", "ok", "dale", "listo", "confirmo"];
+  const stage = String(plannerState.stage || "INIT");
+  const hasReservationKeyword = reservationKeywords.some((k) => normalized.includes(k));
+  const isShortConfirmation = shortConfirmations.includes(normalized);
+  const hasActivePlannerState = stage !== "INIT" && stage !== "DONE";
+
+  return hasReservationKeyword || (hasActivePlannerState && isShortConfirmation) || hasActivePlannerState;
+}
 
 export async function POST(req: Request) {
   try {
@@ -165,9 +225,92 @@ export async function POST(req: Request) {
       .filter((msg): msg is { role: "user" | "assistant"; content: string } => Boolean(msg));
 
     console.log(`[Telegram Webhook] Generating AI response for business ${business.id} with ${historyForAi.length} history messages...`);
-    const aiReply = await aiService.generateResponse(business.id, historyForAi);
+    let replyText: string;
+    const plannerSessionId = `telegram:${business.id}:${chatId}`;
+    const plannerState = await loadPlannerState(conversation.id, plannerSessionId);
+    const plannerRequired = isReservationFlowMessage(messageText, plannerState);
+    const plannerResult = await callPlannerExecutor({
+      context: {
+        channel: "telegram",
+        businessId: business.id,
+        userId: chatId,
+        conversationId: conversation.id,
+      },
+      message: messageText,
+      state: plannerState,
+    });
 
-    let replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    if (plannerResult) {
+      await savePlannerState(conversation.id, plannerResult.state);
+      replyText = plannerResult.assistant_message;
+
+      if (plannerResult.action === "append_row") {
+        const tool = createSpreadsheetUpdateTool(business.id);
+        const payload = (plannerResult.tool_payload || {}) as Record<string, unknown>;
+        const data = (payload.data && typeof payload.data === "object")
+          ? (payload.data as Record<string, unknown>)
+          : {};
+        const operationId = normalizeOperationId(payload.operation_id || plannerResult.state.pending_operation_id);
+        const alreadyCommitted = operationId
+          ? await isPlannerOperationCommitted(conversation.id, operationId)
+          : false;
+        const { sheet, fileRef } = plannerSheetAndRef(business.config);
+        if (operationId && alreadyCommitted) {
+          replyText = `Listo ${String(data.name || "")}, tu reserva ya estaba confirmada.`.trim();
+          plannerResult.state.stage = "DONE";
+          plannerResult.state.pending_operation_id = null;
+          plannerResult.state.critical_flow = false;
+          await savePlannerState(conversation.id, plannerResult.state);
+        } else {
+          const rowValues = [
+            String(data.date || ""),
+            String(data.time || ""),
+            String(data.people || ""),
+            String(data.name || ""),
+            String(data.notes || ""),
+          ];
+
+          const toolResult = await tool.invoke({
+            action: "APPEND_ROW",
+            fileRef,
+            sheet,
+            rowValues,
+          });
+
+          if (/^Error al guardar en el Excel|^No se pudo guardar|^Falta 'rowValues'|^No hay archivos Excel/i.test(toolResult)) {
+            replyText = "Pude entender tu solicitud, pero no logré guardarla en la hoja de cálculo. Intenta nuevamente en un momento.";
+          } else {
+            plannerResult.state.pending_operation_id = null;
+            plannerResult.state.stage = "DONE";
+            plannerResult.state.critical_flow = false;
+            const plannerSessionIdValue = String(plannerResult.state.session_id || plannerSessionId || "");
+            if (operationId) {
+              await commitPlannerOperation({
+                conversationId: conversation.id,
+                sessionId: plannerSessionIdValue,
+                operationId,
+                payload,
+                nextState: plannerResult.state,
+              });
+            }
+            await savePlannerState(conversation.id, plannerResult.state);
+          }
+        }
+      }
+    } else if (plannerRequired) {
+      const stage = String(plannerState.stage || "INIT");
+      if (stage === "CONFIRMATION_PENDING") {
+        replyText = "Recibí tu confirmación, pero ahora mismo tengo un problema técnico para cerrar la reserva en el sistema. ¿Me confirmas nuevamente en unos segundos para finalizarla?";
+      } else {
+        replyText = "Estoy gestionando tu reserva, pero tengo un problema técnico temporal con el motor de reservas. Inténtalo de nuevo en unos segundos y continuaré desde el mismo punto.";
+      }
+      await savePlannerState(conversation.id, plannerState);
+      console.warn("[Telegram Webhook] Planner required but unavailable; skipped generic LLM fallback to avoid loops.");
+    } else {
+      const aiReply = await aiService.generateResponse(business.id, historyForAi);
+      replyText = aiReply || "Lo siento, tuve un problema interno procesando tu mensaje.";
+    }
+
     const parsedReply = extractMediaFromAgentReply(replyText, requestOrigin);
     replyText = parsedReply.cleanText;
     const mediaUrls = parsedReply.mediaUrls;

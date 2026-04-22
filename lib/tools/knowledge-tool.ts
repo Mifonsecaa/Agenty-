@@ -224,6 +224,8 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
             targetFileName: z.string().optional().describe("Nombre de archivo objetivo, por ejemplo 'reservas.xlsx'."),
             sourceId: z.string().optional().describe("sourceId del archivo en knowledge metadata."),
             fileRef: z.string().optional().describe("Referencia de archivo (numero de lista, nombre o fileUrl). Si hay mas de un archivo, es obligatorio para editar."),
+            allowedSourceIds: z.array(z.string()).optional().describe("Lista de sourceId permitidos por contexto previo (lock de procedencia)."),
+            allowedFileUrls: z.array(z.string()).optional().describe("Lista de URLs de archivo permitidas por contexto previo (lock de procedencia)."),
             sheet: z.string().optional().describe("Nombre de la hoja, por ejemplo 'Catalogo'."),
             sheetName: z.string().optional().describe("Alias de sheet para compatibilidad con prompts/tool-calling."),
             cell: z.string().optional().describe("Celda en formato A1, por ejemplo B3."),
@@ -239,9 +241,25 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 });
             }
         }),
-        func: async ({ action, targetFileName, sourceId, fileRef, sheet, sheetName, cell, value, rowValues, data }) => {
+        func: async ({ action, targetFileName, sourceId, fileRef, allowedSourceIds, allowedFileUrls, sheet, sheetName, cell, value, rowValues, data }) => {
             try {
                 const files = await listSpreadsheetFilesForBusiness(businessId);
+                const lockedSourceIds = Array.isArray(allowedSourceIds)
+                    ? allowedSourceIds.map((s) => normalizeRef(s)).filter(Boolean)
+                    : [];
+                const lockedFileUrls = Array.isArray(allowedFileUrls)
+                    ? allowedFileUrls.map((u) => normalizeRef(u)).filter(Boolean)
+                    : [];
+                const hasLock = lockedSourceIds.length > 0 || lockedFileUrls.length > 0;
+
+                const effectiveFiles = hasLock
+                    ? files.filter((f) => {
+                        const bySource = lockedSourceIds.length > 0 && normalizeRef(f.sourceId || "") && lockedSourceIds.includes(normalizeRef(f.sourceId || ""));
+                        const byUrl = lockedFileUrls.length > 0 && lockedFileUrls.includes(normalizeRef(f.fileUrl));
+                        return bySource || byUrl;
+                    })
+                    : files;
+
                 const effectiveSheet = String(sheetName || sheet || "").trim();
 
                 if (action === "CREATE_FILE") {
@@ -316,29 +334,32 @@ export const createSpreadsheetUpdateTool = (businessId: string) => {
                 }
 
                 if (action === "LIST") {
-                    if (!files.length) {
+                    if (!effectiveFiles.length) {
                         return "No hay archivos Excel (.xlsm/.xlsx) disponibles en la base de conocimiento.";
                     }
 
                     return [
                         "Archivos Excel disponibles:",
-                        ...files.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})${f.sourceId ? ` [sourceId: ${f.sourceId}]` : ""}`),
+                        ...effectiveFiles.slice(0, 20).map((f, idx) => `${idx + 1}. ${f.fileName} (${f.fileUrl})${f.sourceId ? ` [sourceId: ${f.sourceId}]` : ""}`),
                         "Usa fileRef, sourceId o targetFileName para seleccionar el archivo correcto.",
                     ].join("\n");
                 }
 
-                if (!files.length) {
+                if (!effectiveFiles.length) {
+                    if (hasLock) {
+                        return "No encontre el archivo dentro del contexto actual. Para evitar inconsistencias, debo editar el mismo archivo de referencia. Indica ese archivo o vuelve a consultarlo primero.";
+                    }
                     return "No hay archivos Excel para editar. Sube primero un .xlsm o .xlsx a Knowledge.";
                 }
 
                 let resolvedBySourceId: SpreadsheetFileRef | null = null;
                 if (sourceId) {
-                    resolvedBySourceId = files.find((f) => normalizeRef(f.sourceId || "") === normalizeRef(sourceId)) || null;
+                    resolvedBySourceId = effectiveFiles.find((f) => normalizeRef(f.sourceId || "") === normalizeRef(sourceId)) || null;
                 }
 
-                const inferredBySheet = await tryResolveBySheetName(files, effectiveSheet);
+                const inferredBySheet = await tryResolveBySheetName(effectiveFiles, effectiveSheet);
                 const effectiveRef = resolvedBySourceId?.fileUrl || targetFileName || inferredBySheet?.fileUrl || fileRef;
-                const resolution = resolveSpreadsheetFile(files, effectiveRef);
+                const resolution = resolveSpreadsheetFile(effectiveFiles, effectiveRef);
                 if (resolution.status === "missing_file_ref") {
                     return [
                         "Hay mas de un archivo Excel en la base de conocimiento. Necesito que indiques cual editar.",

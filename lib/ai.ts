@@ -7,6 +7,7 @@ import { prisma } from './prisma';
 import { retrieveRagContext } from '@/lib/rag/retriever';
 import { analyzeMenuConsistency } from '@/lib/rag/menu-precision';
 import { buildCanonicalMenuText, extractMenuEntries, hasMenuLikeSignals } from '@/lib/rag/menu-precision';
+import { classifyQueryLayer } from '@/lib/rag/layers';
 import { z } from "zod";
 
 console.log("[AIService] Module Loading...");
@@ -85,15 +86,79 @@ export const toolExecutionPlanModel = workerModel.withStructuredOutput(ToolExecu
 
 export const SpreadsheetExecutorRequestSchema = z.object({
     action: z.enum(["LIST", "LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW", "CREATE_FILE", "NONE"]),
-    targetFileName: z.string().optional().default(""),
-    sourceId: z.string().optional().default(""),
-    fileRef: z.string().optional().default(""),
-    sheet: z.string().optional().default(""),
-    cell: z.string().optional().default(""),
-    value: z.string().optional().default(""),
-    rowValues: z.array(z.string()).optional().default([]),
-    data: z.record(z.any()).optional().default({}),
-    responseToUser: z.string().optional().default(""),
+    targetFileName: z.string().optional(),
+    sourceId: z.string().optional(),
+    fileRef: z.string().optional(),
+    sheet: z.string().optional(),
+    cell: z.string().optional(),
+    value: z.string().optional(),
+    rowValues: z.array(z.string()).optional(),
+    data: z.record(z.any()).optional(),
+    responseToUser: z.string().optional(),
+}).superRefine((payload, ctx) => {
+    const needsTarget = payload.action !== "NONE" && payload.action !== "LIST";
+    const hasTarget = Boolean(payload.targetFileName || payload.sourceId || payload.fileRef);
+
+    if (needsTarget && !hasTarget) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["fileRef"],
+            message: "MISSING_FILE_REF",
+        });
+    }
+
+    if (["LIST_SHEETS", "READ_CELL", "UPDATE_CELL", "APPEND_ROW"].includes(payload.action) && !payload.sheet) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["sheet"],
+            message: "MISSING_SHEET",
+        });
+    }
+
+    if (payload.action === "READ_CELL" && !payload.cell) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["cell"],
+            message: "MISSING_CELL",
+        });
+    }
+
+    if (payload.action === "UPDATE_CELL") {
+        if (!payload.cell) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["cell"],
+                message: "MISSING_CELL",
+            });
+        }
+        if (typeof payload.value !== "string" || !payload.value.trim()) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["value"],
+                message: "MISSING_VALUE",
+            });
+        }
+    }
+
+    if (payload.action === "APPEND_ROW") {
+        const rowValues = Array.isArray(payload.rowValues) ? payload.rowValues : [];
+        const hasRowValues = rowValues.some((v) => String(v || "").trim().length > 0);
+        if (!hasRowValues) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["rowValues"],
+                message: "MISSING_ROW_VALUES",
+            });
+        }
+    }
+
+    if (payload.action === "CREATE_FILE" && !payload.targetFileName) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targetFileName"],
+            message: "MISSING_TARGET_FILE_NAME",
+        });
+    }
 });
 
 export const spreadsheetExecutorRequestModel = workerModel.withStructuredOutput(SpreadsheetExecutorRequestSchema);
@@ -361,14 +426,19 @@ export const aiService = {
             let ragContext = "";
             let availableFiles: { url: string, description: string }[] = [];
             let ragTopScore = 0;
-            
+            let retrievalLayer = classifyQueryLayer(lastUserMessage);
+
             const asksForDocument = /(menu|men[uú]|cat[aá]logo|carta|pdf|archivo|documento|imagen|foto|lista\s+de\s+precios|precios\s+completos|menu\s+completo|base\s+de\s+conocimiento|conocimiento|compartir|muestrame|mu[eé]strame)/i.test(lastUserMessage);
             const asksForEverything = /(todo|toda|todos|todas|completo|completa|cualquier\s+cosa|todo\s+lo\s+que\s+tengas|todo\s+el\s+menu|men[uú]\s+completo)/i.test(lastUserMessage);
             const asksMenuOrPrice = /(menu|men[uú]|carta|precio|precios|lista\s+de\s+precios|catalogo|cat[aá]logo)/i.test(lastUserMessage);
 
             try {
                 if (lastUserMessage) {
-                    const retrieval = await retrieveRagContext({ businessId, query: lastUserMessage });
+                    const retrieval = await retrieveRagContext({
+                        businessId,
+                        query: lastUserMessage,
+                        retrievalLayer,
+                    });
                     ragContext = retrieval.ragContext;
                     availableFiles = retrieval.availableFiles;
                     ragTopScore = retrieval.selected?.[0]?.combinedScore || 0;
@@ -423,7 +493,7 @@ export const aiService = {
 
             // Inyectar contexto RAG al prompt
             if (ragContext) {
-                systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG):\n${ragContext}`;
+                systemPrompt += `\n\nINFORMACIÓN RELEVANTE DE TU BASE DE CONOCIMIENTO (RAG | CAPA=${retrievalLayer}):\n${ragContext}`;
             }
 
             // Inyectar instrucciones para archivos

@@ -8,7 +8,7 @@ import { getDashboardCopy } from "@/components/dashboard/dashboardCopy";
 
 type ToolCard = {
     id: number;
-    slug: "google-calendar" | "payments" | "shopify" | "email" | "knowledge-excel-viewer";
+    slug: "google-calendar" | "payments" | "events" | "email" | "knowledge-excel-viewer";
     name: string;
     description: string;
     icon: React.ReactNode;
@@ -39,12 +39,6 @@ type SpreadsheetPreview = {
     };
     error?: string;
 };
-
-const GOOGLE_CONNECTION_TOOL_SLUGS: ToolCard["slug"][] = ["google-calendar", "knowledge-excel-viewer"];
-
-function usesGoogleConnection(slug: ToolCard["slug"]) {
-    return GOOGLE_CONNECTION_TOOL_SLUGS.includes(slug);
-}
 
 function isSpreadsheetFile(fileName: string, fileType?: string) {
     if (/\.(xlsx|xlsm|xls)$/i.test(fileName)) return true;
@@ -678,12 +672,12 @@ export default function ToolsStore() {
         },
         {
             id: 3,
-            slug: "shopify",
-            name: "Shopify Inventory",
-            description: "Conecta tu catálogo para que el agente vea el stock en tiempo real.",
+            slug: "events",
+            name: "Eventos del dia",
+            description: "Monitorea pedidos en cola, reservas de hoy y otros eventos operativos del dia actual.",
             icon: <ShoppingBag className="w-6 h-6 text-purple-400" />,
             status: "disconnected",
-            category: "E-Commerce"
+            category: "Operaciones"
         },
         {
             id: 4,
@@ -715,48 +709,22 @@ export default function ToolsStore() {
     const [excelPreview, setExcelPreview] = useState<SpreadsheetPreview["data"] | null>(null);
     const [loadingExcelPreview, setLoadingExcelPreview] = useState(false);
 
-    useEffect(() => {
-        const googleDriveState = searchParams.get("googleDrive");
-        const toolSlug = searchParams.get("tool");
-        if (!googleDriveState) return;
-
-        if (googleDriveState === "connected") {
-            setStatusMessage({
-                type: "success",
-                text: `Google conectado correctamente${toolSlug ? ` para ${toolSlug}` : ""}.`,
-            });
-            return;
-        }
-
-        setStatusMessage({
-            type: "error",
-            text: `No se pudo completar la conexion con Google (${googleDriveState}).`,
-        });
-    }, [searchParams]);
-
     // Leer tools recomendadas desde el contexto
     useEffect(() => {
         if (!activeAgent) return;
 
         const config = activeAgent.config || activeAgent;
-        const googleDriveConnected = Boolean(
-            config?.googleDrive && typeof config.googleDrive === "object" && (config.googleDrive as Record<string, unknown>).connected
-        );
         if (config.recommendedTools && Array.isArray(config.recommendedTools)) {
             setTools(prevTools => prevTools.map(tool => ({
                 ...tool,
-                status: usesGoogleConnection(tool.slug)
-                    ? (googleDriveConnected ? "connected" : "disconnected")
-                    : (config.recommendedTools.includes(tool.id) ? "connected" : "disconnected")
+                status: config.recommendedTools.includes(tool.id) ? "connected" : "disconnected"
             })));
             return;
         }
 
         setTools(prevTools => prevTools.map(tool => ({
             ...tool,
-            status: usesGoogleConnection(tool.slug)
-                ? (googleDriveConnected ? "connected" : "disconnected")
-                : tool.status,
+            status: tool.status,
         })));
     }, [activeAgent]);
 
@@ -807,18 +775,6 @@ export default function ToolsStore() {
     };
 
     const handlePrimaryAction = (tool: ToolCard) => {
-        if (usesGoogleConnection(tool.slug) && tool.status === "disconnected") {
-            const businessId = activeAgent?.id;
-            if (!businessId) {
-                setStatusMessage({ type: "error", text: "Selecciona un agente para conectar Google." });
-                return;
-            }
-
-            const connectUrl = `/api/integrations/google-drive/connect?businessId=${encodeURIComponent(businessId)}&tool=${encodeURIComponent(tool.slug)}`;
-            window.location.href = connectUrl;
-            return;
-        }
-
         if (tool.slug === "knowledge-excel-viewer" && tool.status === "connected") {
             void openExcelViewer();
             return;
@@ -828,7 +784,7 @@ export default function ToolsStore() {
             const configTargetBySlug: Record<ToolCard["slug"], string> = {
                 "google-calendar": "/dashboard/settings?tab=integrations&tool=google-calendar",
                 "payments": "/dashboard/settings?tab=integrations&tool=payments",
-                "shopify": "/dashboard/knowledge",
+                "events": "/dashboard/inbox",
                 "email": "/dashboard/settings?tab=integrations&tool=email",
                 "knowledge-excel-viewer": "/dashboard/tools",
             };
@@ -852,7 +808,6 @@ export default function ToolsStore() {
             return "Configurar";
         }
 
-        if (usesGoogleConnection(tool.slug)) return "Conectar Google";
         return "Conectar";
     };
 
@@ -1037,9 +992,6 @@ export default function ToolsStore() {
                         </div>
 
                         <h3 className="text-xl font-bold mb-2 relative z-10">{tool.name}</h3>
-                        {usesGoogleConnection(tool.slug) && (
-                            <p className="text-[11px] text-blue-300/90 mb-2 relative z-10">Integracion con Google</p>
-                        )}
                         <p className="text-sm text-white/50 mb-6 min-h-10 relative z-10">
                             {tool.description}
                         </p>
@@ -1048,7 +1000,7 @@ export default function ToolsStore() {
                             {tool.status === "connected" ? (
                                 <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
                                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                    {usesGoogleConnection(tool.slug) ? "Google conectado" : "Activado"}
+                                    Activado
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2 text-sm text-white/40 font-medium">
