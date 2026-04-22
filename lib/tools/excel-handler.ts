@@ -3,7 +3,7 @@ import { applyCellUpdatesToWorkbookBuffer, appendRowsToWorkbookBuffer, extractSp
 import { listSpreadsheetFilesForBusiness } from "./knowledge-tool";
 import { replaceKnowledgeFileByPublicUrl, uploadKnowledgeFileToStorage } from "../storage/knowledge-files";
 import path from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 
 async function loadSpreadsheetBuffer(fileUrl: string) {
     if (fileUrl.startsWith("/uploads/")) {
@@ -51,6 +51,12 @@ export async function processExcelWorkOrder(
     businessId: string,
     workOrder: any
 ) {
+    console.log("🔥 [EXCEL HANDLER] Herramienta invocada con args:", {
+        businessId,
+        actionType: workOrder?.actionType,
+        targetFileName: workOrder?.targetFileName,
+        hasExtractedData: Boolean(workOrder?.extractedData),
+    });
     let finalFileUrl = "";
 
     try {
@@ -88,9 +94,19 @@ export async function processExcelWorkOrder(
                updatedBuffer = applyCellUpdatesToWorkbookBuffer(loaded.buffer, [{ sheet: fallbackSheet, cell: "A1", value: JSON.stringify(workOrder.extractedData) }], targetFileName);
             }
 
-             if (loaded.source === "local" && loaded.localPath) {
-                   await writeFile(loaded.localPath, updatedBuffer);
-                   finalFileUrl = targetFile.fileUrl;
+             if (loaded.source === "local") {
+                   // Entornos serverless (ej: Vercel) no permiten mutar /public en runtime.
+                   // En vez de escribir localmente, subimos un nuevo binario a storage y usamos esa URL.
+                   const uploaded = await uploadKnowledgeFileToStorage({
+                       buffer: updatedBuffer,
+                       fileName: targetFile.fileName,
+                       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       businessId,
+                   });
+                   if (!uploaded.publicUrl) {
+                       throw new Error(`STORAGE_UPLOAD_FAILED:${uploaded.error || "unknown"}`);
+                   }
+                   finalFileUrl = uploaded.publicUrl;
              } else {
                    const replaceResult = await replaceKnowledgeFileByPublicUrl({
                        publicUrl: targetFile.fileUrl,
@@ -99,6 +115,8 @@ export async function processExcelWorkOrder(
                    });
                    if (replaceResult.success) {
                        finalFileUrl = targetFile.fileUrl;
+                   } else {
+                        throw new Error(`REMOTE_REPLACE_FAILED:${replaceResult.error || "unknown"}`);
                    }
              }
         }
@@ -126,9 +144,13 @@ export async function processExcelWorkOrder(
             });
         }
 
-        return { success: true };
+        console.log("✅ [EXCEL HANDLER] Edición exitosa completada.", {
+            actionType: workOrder?.actionType,
+            fileUrl: finalFileUrl,
+        });
+        return { success: true, message: "Datos guardados correctamente.", fileUrl: finalFileUrl };
     } catch (error) {
-        console.error("Error en processExcelWorkOrder:", error);
-        throw new Error("Fallo en la ejecución física del archivo.");
+        console.error("❌ [EXCEL HANDLER] Error crítico:", error);
+        return { success: false, error: String(error) };
     }
 }
